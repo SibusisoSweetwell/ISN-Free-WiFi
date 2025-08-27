@@ -1,0 +1,13 @@
+{
+  "name": "isn-free-wifi",
+  "version": "1.0.0",
+  "description": "ISN Free WiFi demo auth with Excel storage",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "xlsx": "^0.18.5"
+  }
+}

@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>ISN Free WiFi - Login</title>
+	<style>
+		:root {
+			--brand-red: #f60000; /* Updated main red */
+			--translucent-white: rgba(255,255,255,0.73); /* 73% white */
+			--text-black: #000;
+			--radius-sm: 6px;
+			--radius-lg: 14px;
+			--font-stack: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', Arial, sans-serif;
+		}
+
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font-family: var(--font-stack);
+			background: #fff;
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: calc(24px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-right));
+			-webkit-font-smoothing: antialiased;
+			color: #fff;
+			touch-action: manipulation;
+		}
+		@supports (min-height: 100dvh) {
+			body { min-height: 100dvh; }
+		}
+
+		/* Outer wrapper */
+		.phone {
+			position: relative;
+			width: 100%;
+			max-width: 100%;
+			background: transparent;
+			display: flex;
+			justify-content: center;
+		}
+		/* Remove notch visuals */
+		.notch { display: none; }
+
+		/* Inner red card */
+		.panel {
+			background: var(--brand-red);
+			border-radius: 32px;
+			padding: 46px 42px 48px;
+			position: relative;
+			width: 100%;
+			max-width: 430px; /* narrow centered panel like reference */
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 38px;
+			box-shadow: 0 18px 46px -12px rgba(0,0,0,0.35);
+			max-height: 100%;
+		}
+		.panel::-webkit-scrollbar { width: 6px; }
+		.panel::-webkit-scrollbar-track { background: rgba(255,255,255,.05); }
+		.panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,.35); border-radius: 3px; }
+
+		/* Logo centered in flow (desktop mock shows large logo above title) */
+		.logo-box {
+			background: #fff;
+			width: 120px;
+			height: 120px;
+			border-radius: 6px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			box-shadow: 0 4px 14px -4px rgba(0,0,0,.35);
+			padding: 12px;
+			position: relative; /* no absolute positioning */
+			margin: 0 auto 8px;
+		}
+		.logo-box img { width: 100%; height: 100%; object-fit: contain; }
+
+		/* Left column base layout so logo & title center on mobile too */
+		.left-col { display: flex; flex-direction: column; align-items: center; gap: 32px; width: 100%; }
+
+		.site-title {
+			margin: 0;
+			font-size: 46px;
+			font-weight: 700;
+			letter-spacing: 1px;
+			color: #fff;
+			text-align: center;
+		}
+
+		/* Generic translucent white card */
+		.card {
+			background: var(--translucent-white);
+			border-radius: 8px;
+			box-shadow: 0 4px 14px -4px rgba(0,0,0,.35);
+			color: var(--text-black);
+			width: 100%;
+			max-width: 540px;
+		}
+		.intro.card { padding: 20px 26px 26px; text-align: center; }
+		.intro.card h2 { margin: 0 0 10px; font-size: clamp(15px,2.2vw,18px); font-weight: 700; }
+		.intro.card p { margin: 0; line-height: 1.25; font-size: clamp(12px,1.5vw,14px); }
+
+		.login-heading { margin: 0; font-size: 44px; font-weight: 700; color: #fff; text-align: center; }
+
+		/* Form card */
+		.login-card { padding: 24px 28px 34px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+		.login-card p.login-note { margin: 0 0 6px; font-size: 15px; font-weight: 500; color: #000; }
+		.login-card label.field-label { font-size: 15px; font-weight: 600; color: #000; display: block; margin: 12px 0 6px; }
+
+		.login-card input[type=text],
+		.login-card input[type=email],
+		.login-card input[type=password] {
+			width: 100%;
+			background: var(--brand-red);
+			border: none;
+			outline: none;
+			padding: 14px 18px 13px;
+			font-size: 15px;
+			border-radius: 6px;
+			font-family: inherit;
+			color: #fff;
+			text-align: center;
+			box-shadow: 0 2px 6px rgba(0,0,0,.30) inset, 0 4px 14px -4px rgba(0,0,0,.35);
+			transition: box-shadow .25s, background .25s, color .25s;
+		}
+		.login-card input::placeholder { color: #fff; opacity: .95; text-align:center; }
+		.login-card input:focus { box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(255,255,255,.45); }
+		.login-card input.filled { background:#fff; color:#000; box-shadow:0 2px 6px rgba(0,0,0,.15) inset, 0 4px 14px -4px rgba(0,0,0,.35); }
+		.login-card input.filled::placeholder { color:#000; opacity:.75; }
+
+		.login-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-top: 2px; }
+		.login-meta a { color: #000; text-decoration: none; }
+		.login-meta a:hover { text-decoration: underline; }
+		.login-meta label { color: #000; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+		.login-meta input[type=checkbox] { accent-color: var(--brand-red); }
+
+		button.login-btn { margin-top: 10px; background: var(--brand-red); color: #fff; border: none; border-radius: 8px; padding: 14px 20px 15px; font-size: 20px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px -4px rgba(0,0,0,.4); transition: background .25s, transform .15s; font-family: inherit; }
+		button.login-btn:hover { background: #ff2626; color: #fff; }
+		button.login-btn:active { transform: translateY(2px); box-shadow: 0 2px 8px -2px rgba(0,0,0,.4); }
+
+		.signup { margin: 12px 0 0; font-size: 12px; text-align: center; color: #000; }
+		.signup a { color: var(--brand-red); text-decoration: none; font-weight: 700; cursor:pointer; }
+		.signup a:hover { text-decoration: underline; }
+
+		/* Register modal (same style family as forgot) */
+		.register-overlay { position: fixed; inset:0; background: rgba(255,255,255,0.25); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); display:flex; align-items:flex-start; justify-content:center; padding:70px 40px 60px; z-index:1100; overflow-y:auto; opacity:0; pointer-events:none; transition: opacity .3s; }
+		.register-overlay.active { opacity:1; pointer-events:auto; }
+		.register-modal { background: var(--translucent-white); width:100%; max-width:860px; border-radius:14px; box-shadow:0 20px 60px -18px rgba(0,0,0,.45); padding:52px 60px 60px; position:relative; display:grid; gap:26px 48px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+		.register-modal h3 { grid-column:1 / -1; margin:0 0 4px; font-size:46px; text-align:center; color:#000; }
+		.register-desc { grid-column:1 / -1; margin:0 0 4px; text-align:center; font-weight:500; font-size:16px; color:#000; }
+		.register-modal label { font-weight:600; font-size:15px; color:#000; text-align:center; display:block; margin:4px 0 6px; }
+		.register-modal input { width:100%; background: var(--brand-red); color:#fff; border:none; border-radius:6px; padding:14px 16px 13px; font-size:15px; font-family:inherit; text-align:center; box-shadow:0 2px 6px rgba(0,0,0,.3) inset,0 4px 14px -4px rgba(0,0,0,.35); transition: background .25s,color .25s, box-shadow .25s; }
+		.register-modal input::placeholder { color:#fff; opacity:.9; }
+		.register-modal input.filled { background:#fff; color:#000; box-shadow:0 2px 6px rgba(0,0,0,.15) inset,0 4px 14px -4px rgba(0,0,0,.35); }
+		.register-modal input.filled::placeholder { color:#000; opacity:.7; }
+		.register-modal .submit-reg { grid-column:1 / -1; margin-top:10px; background: var(--brand-red); color:#fff; border:none; border-radius:10px; padding:16px 42px 17px; font-size:20px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px -4px rgba(0,0,0,.4); justify-self:center; }
+		.register-modal .submit-reg:hover { background:#ff2626; }
+		.register-modal .close-reg { position:absolute; top:10px; right:14px; background:transparent; border:none; font-size:40px; line-height:1; color:#000; cursor:pointer; font-weight:400; }
+		.register-modal .close-reg:hover { color:#333; }
+		.register-modal .login-back { grid-column:1 / -1; text-align:center; font-size:13px; color:#000; }
+		.register-modal .login-back a { color: var(--brand-red); font-weight:700; text-decoration:none; }
+		.register-modal .login-back a:hover { text-decoration:underline; }
+		.register-modal .status { grid-column:1 / -1; display:none; padding:14px 18px 15px; border-radius:10px; font-size:15px; font-weight:600; text-align:center; line-height:1.25; box-shadow:0 4px 12px -4px rgba(0,0,0,.35); }
+		.register-modal .status.error { display:block; background: var(--brand-red); color:#fff; }
+		.register-modal .status.success { display:block; background:#fff; color:#000; }
+		.register-modal .submit-reg[disabled] { opacity:.65; cursor:default; }
+		/* Toast notifications */
+		.toast-stack{position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:12px;z-index:3000;width:min(560px,92%);} 
+		.toast{background:var(--translucent-white);color:#000;padding:16px 22px 18px;border-radius:14px;font-weight:600;font-size:16px;text-align:center;box-shadow:0 18px 46px -18px rgba(0,0,0,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:2px solid #fff;animation:toastIn .35s ease;} 
+		.toast.success{background:#fff;} .toast.error{background:var(--brand-red);color:#fff;border-color:rgba(255,255,255,.6);} 
+		.toast small{display:block;margin-top:4px;font-size:13px;font-weight:500;opacity:.85;} 
+		@keyframes toastIn{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);}}
+		@media (max-width:900px){ .register-modal{padding:48px 40px 54px;} .register-modal h3{font-size:40px;} }
+		@media (max-width:600px){ .register-modal{padding:44px 30px 50px; display:flex; flex-direction:column; } .register-modal h3{font-size:36px;} }
+
+		.powered { margin-top: 10px; font-size: 13px; color: #fff; font-weight: 500; letter-spacing: .5px; text-align: center; }
+		.powered span { font-family: 'Brush Script MT', 'Segoe Script', cursive; font-weight: 400; font-size: 14px; }
+
+		/* Forgot password modal */
+		.forgot-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.25); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); display: flex; align-items: flex-start; justify-content: center; padding: 70px 40px 60px; z-index: 1000; overflow-y:auto; opacity:0; pointer-events:none; transition: opacity .3s; }
+		.forgot-overlay.active { opacity:1; pointer-events:auto; }
+		.forgot-modal { background: var(--translucent-white); width: 100%; max-width: 720px; border-radius: 14px; box-shadow: 0 20px 60px -18px rgba(0,0,0,.45); padding: 52px 60px 60px; position: relative; display:flex; flex-direction:column; gap:24px; }
+		.forgot-modal h3 { margin:0 0 6px; font-size: 46px; text-align:center; color:#000; }
+		.forgot-modal label { font-weight:700; font-size:16px; color:#000; display:block; margin:14px 0 6px; text-align:center; }
+		.forgot-modal input { width:100%; background: var(--brand-red); color:#fff; border:none; border-radius:4px; padding:14px 16px 13px; font-size:15px; font-family:inherit; text-align:center; box-shadow:0 2px 6px rgba(0,0,0,.3) inset, 0 4px 14px -4px rgba(0,0,0,.35); transition: background .25s, color .25s; }
+		.forgot-modal input.strong { background:#fff; color:#000; box-shadow:0 2px 6px rgba(0,0,0,.15) inset, 0 4px 14px -4px rgba(0,0,0,.35); }
+		.forgot-modal input::placeholder { color:#fff; opacity:.9; }
+		.send-code-btn { align-self:center; background: var(--brand-red); color:#fff; border:none; border-radius:6px; padding:14px 36px 15px; font-size:18px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px -4px rgba(0,0,0,.4); }
+		.send-code-btn:hover { background:#ff2626; }
+		.close-forgot { position:absolute; top:10px; right:14px; background:transparent; border:none; font-size:32px; line-height:1; color:#000; cursor:pointer; font-weight:400; }
+		.close-forgot:hover { color:#333; }
+		.forgot-desc { margin:0; text-align:center; color:#000; font-size:15px; font-weight:500; }
+		@media (max-width:900px){ .forgot-modal { padding:48px 40px 54px; } .forgot-modal h3{font-size:40px;} }
+		@media (max-width:600px){ .forgot-modal { padding:44px 30px 50px; } .forgot-modal h3{font-size:36px;} }
+
+		/* Deprecated previous layout classes retained for safety */
+		.inline-links, .about-link, .field-wrapper, h2.section-label { display: none !important; }
+
+		/* Small responsiveness tweaks */
+		@media (max-width: 480px) {
+			.panel { padding: 40px 28px 44px; max-width: 92vw; border-radius: 28px; gap: 32px; }
+			.site-title { font-size: 40px; }
+			.login-heading { font-size: 40px; }
+			.logo-box { width: 100px; height: 100px; margin-bottom: 4px; }
+		}
+		.field-error { border-color:#e53935 !important; background:#fff5f5 !important; box-shadow:0 0 0 3px rgba(229,57,53,.25) !important; }
+	/* Forgot password code input alignment */
+	.code-box { display:flex; justify-content:center; gap:12px; margin:18px 0 8px; }
+	.code-box input.code-digit { width:54px; height:54px; padding:0; font-size:26px; text-align:center; background:var(--brand-red); color:#fff; border:none; border-radius:12px; font-weight:600; box-shadow:0 3px 8px rgba(0,0,0,.35); transition:transform .15s, background .25s; }
+	.code-box input.code-digit:focus { outline:none; transform:translateY(-2px) scale(1.03); box-shadow:0 6px 14px rgba(0,0,0,.4); }
+	@media (max-width:480px){ .code-box { gap:8px; } .code-box input.code-digit { width:46px; height:52px; font-size:22px; } }
+		/* Desktop / large screens: convert to two-column layout */
+		/* Desktop OR tablet landscape (>=760px wide) shows two-column grid */
+		@media (min-width: 900px), (orientation: landscape) and (min-width: 760px) {
+			.panel {
+				max-width: 1280px;
+				padding: 70px 80px 70px;
+				display: grid;
+				grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+				align-items: start;
+				justify-items: start;
+				gap: 80px 90px;
+			}
+			.left-col, .right-col { display: flex; flex-direction: column; gap: 40px; width: 100%; align-items: center; }
+			.left-col .logo-box { width: 180px; height: 180px; margin-bottom: 4px; }
+			.left-col .site-title { text-align: center; }
+			.left-col .intro.card { max-width: 420px; }
+			.right-col { align-items: center; }
+			.right-col .login-heading { text-align: center; font-size: 56px; width: 100%; }
+			.right-col .login-card { text-align: center; padding: 40px 48px 50px; max-width: 560px; }
+			.right-col .login-card label.field-label { text-align: center; }
+			button.login-btn { align-self: center; min-width: 240px; }
+			.powered { grid-column: 1 / -1; margin-top: 30px; text-align: center; justify-self: center; width: 100%; }
+		}
+		/* Force stacked (phone style) for portrait tablets even if width slightly large */
+		@media (orientation: portrait) and (min-width: 760px) and (max-width: 1024px) {
+			.panel {
+				display: flex;
+				flex-direction: column;
+				max-width: 520px;
+				padding: 52px 46px 60px;
+				gap: 42px;
+			}
+			.left-col, .right-col { width: 100%; }
+			.right-col .login-heading { text-align: center; font-size: 44px; }
+			button.login-btn { align-self: center; }
+		}
+		/* Very small phones / constrained height */
+		@media (max-width: 380px) {
+			.panel { padding: 34px 22px 38px; gap: 28px; }
+			.site-title, .login-heading { font-size: 34px; }
+			.intro.card { padding: 16px 18px 20px; }
+			.login-card { padding: 18px 18px 26px; }
+			.login-card label.field-label { margin: 8px 0 4px; font-size: 13px; }
+			button.login-btn { font-size: 18px; padding: 12px 18px 13px; }
+		}
+		@media (max-height: 640px) and (max-width: 480px) {
+			body { align-items: flex-start; }
+			.panel { margin-top: 8px; margin-bottom: 12px; }
+		}
+	</style>
+</head>
+<body>
+<script>
+// Warn if loaded from Live Server (5500) instead of Node backend (3000)
+if(location.port==='5500'){
+	console.warn('You are viewing via port 5500 (likely Live Server). Start Node: node server.js and browse http://localhost:3000/login.html for API to work.');
+	const warn=document.createElement('div');
+	warn.style.cssText='background:#ff9800;color:#000;padding:10px 14px;font-weight:600;text-align:center;font-family:Arial, sans-serif';
+	warn.textContent='Running on port 5500 (static). Start backend (node server.js) then use http://localhost:3000/login.html for registration to work.';
+	document.body.prepend(warn);
+}
+</script>
+	<main class="phone" role="main" aria-label="Login screen">
+		<div class="notch" aria-hidden="true"></div>
+		<div class="panel">
+			<div class="left-col">
+				<div class="logo-box" aria-hidden="true">
+					<img src="InShot_20250822_121439525.jpg" alt="ISN Free WiFi logo" />
+				</div>
+				<h1 class="site-title">ISN Free WiFi</h1>
+				<section class="intro card" aria-label="About ISN Free WiFi">
+					<h2>Welcome to ISN Free WiFi</h2>
+					<p>Connect to free internet in taxis, clinics, and public spaces. Watch short ads, unlock data, and empower your journey. Join the ISN Community today.</p>
+				</section>
+			</div>
+			<div class="right-col">
+				<h2 class="login-heading" aria-hidden="true">Login Portal</h2>
+				<form class="login-card card" autocomplete="on" aria-label="Login form" onsubmit="return fakeLogin(event)">
+					<p class="login-note">Please login to access your account.</p>
+					<div id="login-status" class="login-status" role="alert" aria-live="polite"></div>
+					<label class="field-label" for="login-email">Email or Phone</label>
+					<input id="login-email" name="email" type="text" placeholder="Enter email or phone" required autocomplete="username" />
+					<label class="field-label" for="login-password">Password</label>
+					<input id="login-password" name="password" type="password" placeholder="Enter your password" required autocomplete="current-password" />
+					<div class="login-meta">
+							<label><input type="checkbox" name="remember" /> Remember me</label>
+							<a href="#forgot" onclick="openForgot();return false;">Forgot password?</a>
+						</div>
+					<button type="submit" class="login-btn">Log In</button>
+					<p class="signup">Don't have an account? <a onclick="openRegister();return false;">Sign up</a></p>
+				</form>
+			</div>
+			<p class="powered">Powered by : <span>ISN COMPANY</span></p>
+		</div>
+	</main>
+
+	<div class="forgot-overlay" id="forgotOverlay" aria-hidden="true" role="dialog" aria-modal="true">
+		<div class="forgot-modal" role="document">
+			<button class="close-forgot" aria-label="Close" onclick="closeForgot()">&times;</button>
+			<h3>Forgot Password</h3>
+			<p class="forgot-desc" id="fp-desc">Fill the details below to receive a reset code.</p>
+			<div id="fp-stage-collect">
+				<label for="fp-email">Email Address</label>
+				<input id="fp-email" type="email" placeholder="Enter your registered email" autocomplete="email" />
+				<label for="fp-phone">Phone Number</label>
+				<input id="fp-phone" type="tel" placeholder="Enter your registered number" />
+				<label for="fp-password">Reset Your Password</label>
+				<input id="fp-password" type="password" placeholder="Enter new strong password" />
+				<label for="fp-password2">Confirm New Password</label>
+				<input id="fp-password2" type="password" placeholder="Confirm new password" />
+			</div>
+			<div id="fp-stage-code" style="display:none;">
+				<label for="fp-code-box">Enter Code</label>
+				<div id="fp-code-box" class="code-inputs" aria-label="Reset code input"></div>
+				<p id="fp-demo-code" style="margin:2px 0 0;font-size:13px;color:#000;"></p>
+			</div>
+			<div id="fp-status" style="display:none;font-size:14px;font-weight:600;text-align:center;border-radius:8px;padding:10px 14px;line-height:1.3;"></div>
+			<button id="fp-action-btn" class="send-code-btn" onclick="startResetSimple()">Send Code</button>
+		</div>
+	</div>
+
+	<div class="register-overlay" id="registerOverlay" aria-hidden="true" role="dialog" aria-modal="true">
+		<form class="register-modal" onsubmit="return submitRegister(event)" autocomplete="on" novalidate>
+			<button class="close-reg" aria-label="Close" onclick="closeRegister();return false;">&times;</button>
+			<h3>Create Account</h3>
+			<p class="register-desc">Join the ISN Community today.</p>
+			<div id="reg-status" class="status" aria-live="polite"></div>
+			<label for="reg-first">First Name</label>
+			<input id="reg-first" type="text" placeholder="Enter first name" required />
+			<label for="reg-surname">Surname</label>
+			<input id="reg-surname" type="text" placeholder="Enter surname" required />
+			<label for="reg-dob">Date of Birth</label>
+			<input id="reg-dob" type="date" required />
+			<label for="reg-email2">Email (optional)</label>
+			<div id="email-optional-wrap" style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+				<input id="reg-email2" list="common-email-domains" type="email" placeholder="Enter your email or leave blank" />
+				<datalist id="common-email-domains">
+					<option value="@gmail.com"></option>
+					<option value="@yahoo.com"></option>
+					<option value="@outlook.com"></option>
+					<option value="@icloud.com"></option>
+					<option value="@hotmail.com"></option>
+				</datalist>
+				<button type="button" id="noEmailBtn" style="background:#fff;color:#000;border:1px solid #ccc;font-size:12px;padding:4px 10px;border-radius:20px;cursor:pointer;">I don't have / want to use email</button>
+			</div>
+			<label for="reg-phone">Phone (SA, optional)</label>
+			<input id="reg-phone" type="tel" placeholder="e.g. 0721233456 or +27 72 123 3456" />
+			<label for="reg-password">Password</label>
+			<input id="reg-password" type="password" placeholder="Create password" required />
+			<label for="reg-password2">Confirm Password</label>
+			<input id="reg-password2" type="password" placeholder="Repeat password" required />
+			<button class="submit-reg" type="submit">Create Account</button>
+			<p class="login-back">Already have an account? <a href="#" onclick="closeRegister();return false;">Log In</a></p>
+		</form>
+	</div>
+
+	<!-- Optional accessibility helper for hidden labels -->
+	<style>
+		.sr-only { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+		.login-status {display:none;margin:0 0 18px;padding:12px 16px;border-radius:10px;font-weight:600;font-size:14px;line-height:1.3;background:var(--brand-red);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.25);text-align:center;}
+		.login-status.success{background:#059669;color:#fff;}
+		.login-status.warn{background:#f59e0b;color:#000;}
+	</style>
+	<script>
+// ----- Helper (fallback) storage using localStorage -----
+const LS_KEY='isn_users';
+function normalizePhone(raw){
+	if(!raw) return '';
+	let s=(''+raw).trim().replace(/\s+/g,'');
+	if(s.startsWith('+27')) s=s.slice(3);
+	s=s.replace(/\D/g,'');
+	if(s.length===9 && !s.startsWith('0')) s='0'+s;
+	if(s.startsWith('27')){ s=s.slice(2); if(!s.startsWith('0')) s='0'+s; }
+	if(/^00/.test(s)) s=s.replace(/^0+/, '0');
+	if(s.length>10) s=s.slice(0,10);
+	if(!/^0\d{9}$/.test(s)) return '';
+	return s;
+}
+function getLocalUsers(){
+	try{ return JSON.parse(localStorage.getItem(LS_KEY))||[]; }catch{ return []; }
+}
+function localLogin(identifier,pwd){
+	return getLocalUsers().some(u=> (u.email===identifier || (identifier && normalizePhone(identifier) && u.phone===normalizePhone(identifier))) && u.password===pwd);
+}
+
+let failedAttempts=0;
+let lastIdentifier='';
+async function fakeLogin(e){
+	e.preventDefault();
+	const statusEl=document.getElementById('login-status');
+	function show(msg,cls=''){ statusEl.textContent=msg; statusEl.className='login-status '+cls; statusEl.style.display='block'; }
+	const identifier=document.getElementById('login-email').value.trim();
+	const pwd=document.getElementById('login-password').value;
+	if(identifier!==lastIdentifier){ failedAttempts=0; lastIdentifier=identifier; }
+	if(!identifier||!pwd){ show('Please fill in both fields.','warn'); return false; }
+
+	let serverTried=false;
+	try{
+		serverTried=true;
+		const res= await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:identifier,password:pwd})});
+		if(res.ok){ failedAttempts=0; show('Login successful. Redirecting...','success'); setTimeout(()=>{ sessionStorage.setItem('currentUserIdentifier', identifier.toLowerCase()); window.location.href='home.html'; },350); return false; }
+	}catch(err){ console.warn('Login server error', err); }
+
+	// Fallback local successful
+	if(serverTried===false || localLogin(identifier,pwd)){
+		failedAttempts=0; show('Offline login (local).','success'); setTimeout(()=>{ sessionStorage.setItem('currentUserIdentifier', identifier.toLowerCase()); window.location.href='home.html'; },350); return false;
+	}
+
+	// Failed login path
+	failedAttempts++;
+	try {
+		const ures=await fetch('/api/user-exists?email='+encodeURIComponent(identifier));
+		const udata=await ures.json();
+		if(!udata.exists){
+			show('Account not found. Create it now.','warn');
+			openRegister();
+			// Pre-fill modal
+			if(identifier.includes('@')){
+				const re=document.getElementById('reg-email2'); if(re){ re.value=identifier; re.dispatchEvent(new Event('input')); }
+			}else{
+				const rp=document.getElementById('reg-phone'); if(rp){ rp.value=identifier; rp.dispatchEvent(new Event('input')); }
+			}
+			return false;
+		} else {
+			// Existing user with wrong password
+			if(failedAttempts>=4){
+				show('Too many attempts. Reset your password.','');
+				openForgot();
+				failedAttempts=0;
+				return false;
+			}
+			show(`Invalid credentials. Attempt ${failedAttempts} of 4.`, '');
+		}
+	} catch(err){
+		show('Login failed. Try again.','');
+	}
+	return false;
+}
+
+function openForgot(){
+	const ov=document.getElementById('forgotOverlay');
+	ov.classList.add('active');
+	ov.removeAttribute('aria-hidden');
+	document.body.style.overflow='hidden';
+	setTimeout(()=>document.getElementById('fp-email').focus(),50);
+}
+function closeForgot(){
+	const ov=document.getElementById('forgotOverlay');
+	ov.classList.remove('active');
+	ov.setAttribute('aria-hidden','true');
+	document.body.style.overflow='';
+}
+function isStrongPassword(p){
+	return /[A-Z]/.test(p)&&/[a-z]/.test(p)&&/\d/.test(p)&&/[^A-Za-z0-9]/.test(p)&&p.length>=8;
+}
+// ----- Inline password reset (two stage) -----
+let fpStage='collect';
+const fpPwdEl = document.getElementById('fp-password');
+const fpPwdEl2 = document.getElementById('fp-password2');
+fpPwdEl.addEventListener('input',()=>{ if(isStrongPassword(fpPwdEl.value)) fpPwdEl.classList.add('strong'); else fpPwdEl.classList.remove('strong'); if(fpPwdEl2.value) validateMatch(); });
+fpPwdEl2.addEventListener('input',()=>{ validateMatch(); });
+function validateMatch(){ if(fpPwdEl2.value && fpPwdEl.value!==fpPwdEl2.value){ fpPwdEl2.classList.add('field-error'); } else { fpPwdEl2.classList.remove('field-error'); } }
+function fpStatus(msg,type){ const el=document.getElementById('fp-status'); el.style.display='block'; el.textContent=msg; el.style.background= type==='error' ? 'var(--brand-red)' : '#fff'; el.style.color= type==='error' ? '#fff' : '#000'; }
+function buildCodeInputs(){
+	const box=document.getElementById('fp-code-box');
+	box.className='code-box';
+	box.innerHTML='';
+	for(let i=0;i<6;i++){
+		const inp=document.createElement('input');
+		inp.type='text';
+		inp.maxLength=1;
+		inp.inputMode='numeric';
+		inp.autocomplete='one-time-code';
+		inp.className='code-digit';
+		inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n) n.focus(); } else { inp.value=''; } });
+		inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p){ p.focus(); p.value=''; } } });
+		box.appendChild(inp);
+	}
+	box.firstChild && box.firstChild.focus();
+}
+function pushToast(html,cls=''){ let stack=document.querySelector('.toast-stack'); if(!stack){ stack=document.createElement('div'); stack.className='toast-stack'; document.body.appendChild(stack);} const t=document.createElement('div'); t.className='toast '+cls; t.innerHTML=html; stack.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .4s, transform .4s'; t.style.opacity='0'; t.style.transform='translate(-50%,-6px)'; setTimeout(()=>t.remove(),420); },12000); }
+async function startResetSimple(){
+	if(fpStage==='collect'){
+		const email=document.getElementById('fp-email').value.trim();
+		const phone=normalizePhone(document.getElementById('fp-phone').value);
+		const newPass=fpPwdEl.value;
+		const newPass2=fpPwdEl2.value;
+		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
+		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
+		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
+		try{
+			const res=await fetch('/api/forgot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+			const data=await res.json();
+			if(!res.ok||!data.ok){ fpStatus(data.message||'Error requesting code','error'); return; }
+			sessionStorage.setItem('pendingResetEmail', email);
+			sessionStorage.setItem('pendingResetNewPass', newPass);
+			sessionStorage.setItem('pendingResetCode', data.code); // demo
+			document.getElementById('fp-stage-collect').style.display='none';
+			document.getElementById('fp-stage-code').style.display='block';
+			document.getElementById('fp-action-btn').textContent='Verify & Save';
+			document.getElementById('fp-desc').textContent='Enter the 6-digit code sent to your email.';
+			document.getElementById('fp-demo-code').textContent='(Demo code: '+data.code+')';
+			buildCodeInputs();
+			fpStage='verify';
+			fpStatus('Code sent. Check inbox (demo shows code).','success');
+		}catch{ fpStatus('Network error requesting code','error'); }
+	} else if(fpStage==='verify'){
+		const email=sessionStorage.getItem('pendingResetEmail');
+		const newPass=sessionStorage.getItem('pendingResetNewPass');
+		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
+		if(codeEntered.length!==6){ fpStatus('Enter all 6 digits.','error'); return; }
+		try{
+			const res=await fetch('/api/forgot/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code:codeEntered,newPassword:newPass})});
+			const data=await res.json();
+			if(!res.ok||!data.ok){ fpStatus(data.message||'Invalid code','error'); return; }
+			fpStatus('Password updated. You can log in now.','success');
+			let remain=10; pushToast('Password updated.<small>Returning to login in <span id="fpCountdown">'+remain+'</span>s</small>','success');
+			fpStatus('Password updated. Redirecting in '+remain+'s...','success');
+			const tmr=setInterval(()=>{ remain--; const c=document.getElementById('fpCountdown'); if(c) c.textContent=remain; fpStatus('Password updated. Redirecting in '+remain+'s...','success'); if(remain<=0){ clearInterval(tmr); closeForgot(); } },1000);
+			fpStage='done';
+		}catch{ fpStatus('Network error verifying code','error'); }
+	}
+}
+
+// Close on backdrop click / ESC
+document.addEventListener('click',e=>{ const ov=document.getElementById('forgotOverlay'); if(e.target===ov) closeForgot(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeForgot(); });
+
+// Toggle filled style on login inputs
+['login-email','login-password'].forEach(id=>{
+	const el=document.getElementById(id);
+	const handler=()=>{ if(el.value.trim().length>0){ el.classList.add('filled'); } else { el.classList.remove('filled'); } };
+	el.addEventListener('input',handler);
+	handler();
+});
+
+// Registration modal logic
+function openRegister(){ const ov=document.getElementById('registerOverlay'); ov.classList.add('active'); ov.removeAttribute('aria-hidden'); document.body.style.overflow='hidden'; setTimeout(()=>document.getElementById('reg-first').focus(),50); }
+function closeRegister(){ const ov=document.getElementById('registerOverlay'); ov.classList.remove('active'); ov.setAttribute('aria-hidden','true'); if(!document.getElementById('forgotOverlay').classList.contains('active')) document.body.style.overflow=''; }
+function toggleFilled(el){ if(el.value.trim()) el.classList.add('filled'); else el.classList.remove('filled'); }
+['reg-first','reg-surname','reg-dob','reg-email2','reg-phone','reg-password','reg-password2'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; ['input','change'].forEach(ev=>el.addEventListener(ev,()=>toggleFilled(el))); toggleFilled(el); });
+// Enhanced submitRegister with field highlighting, toasts & countdown
+async function submitRegister(e){
+	e.preventDefault();
+	['reg-first','reg-surname','reg-dob','reg-email2','reg-phone','reg-password','reg-password2'].forEach(id=>document.getElementById(id).classList.remove('field-error'));
+	const first=document.getElementById('reg-first').value.trim();
+	const sur=document.getElementById('reg-surname').value.trim();
+	const dob=document.getElementById('reg-dob').value;
+	let email=document.getElementById('reg-email2').value.trim();
+	let phoneRaw=document.getElementById('reg-phone').value;
+	const normPhone=normalizePhone(phoneRaw);
+	const p1=document.getElementById('reg-password').value; // don't trim password (allow symbols/spaces)
+	const p2=document.getElementById('reg-password2').value;
+	const statusEl=document.getElementById('reg-status');
+	function showMsg(msg,type){ statusEl.textContent=msg; statusEl.className='status '+type; }
+	if(!first||!sur||!dob||!p1||!p2){ showMsg('Please fill out all required fields.', 'error'); return false; }
+	if(new Date(dob) > new Date()){ showMsg('Date of birth cannot be in future.', 'error'); return false; }
+	if(!email && !phoneRaw){ showMsg('Provide either an email or a phone number.', 'error'); document.getElementById('reg-email2').classList.add('field-error'); document.getElementById('reg-phone').classList.add('field-error'); return false; }
+	if(phoneRaw && !normPhone){ showMsg('Enter a valid South African phone number starting with 0.', 'error'); document.getElementById('reg-phone').classList.add('field-error'); return false; }
+	if(email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ showMsg('Enter a valid email address.', 'error'); document.getElementById('reg-email2').classList.add('field-error'); return false; }
+	if(p1!==p2){ showMsg('Passwords do not match.', 'error'); return false; }
+	if(!isStrongPassword(p1)){ showMsg('Password needs upper, lower, number, symbol & 8+ length.', 'error'); return false; }
+	const btn=document.querySelector('.submit-reg');
+	btn.disabled=true; const originalBtn=btn.textContent; btn.textContent='Creating...';
+	const payload={ email: email||undefined, password: p1, phone: normPhone||undefined, firstName:first, surname:sur, dob };
+	console.log('[register] sending payload', { ...payload, passwordSample: p1? p1[0]+'***('+p1.length+')': '(empty)'});
+	let attemptedRetry=false;
+	async function doPost(){
+		try {
+			const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+			let rawText = await res.text();
+			let data={}; try{ data=JSON.parse(rawText); }catch{ data={}; }
+			if(!res.ok||!data.ok){
+				const msgServer=data.message||'';
+				if(/Password and \(email or phone\) required/i.test(msgServer) && p1.length>0 && !attemptedRetry){
+					console.warn('[register] Server claims missing password but client has one. Retrying once with explicit nulls. Raw response:', rawText);
+					attemptedRetry=true;
+					// Force include explicit keys (JSON.stringify omits undefined) & add debug flag
+					const retryPayload={ email: email||null, phone: normPhone||null, password: p1, firstName:first, surname:sur, dob, _retry:true };
+					console.log('[register] retry payload', { ...retryPayload, passwordSample: p1[0]+'***'});
+					const r2=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(retryPayload)});
+					const t2=await r2.text(); let d2={}; try{ d2=JSON.parse(t2);}catch{}
+					if(r2.ok && d2.ok){ return { res:r2, data:d2 }; }
+					// If still failing, fall through to show original error
+				}
+				if(data && /weak password/i.test(msgServer)){ showMsg('Server says password weak. Include upper, lower, number & symbol.', 'error'); return false; }
+				showMsg(msgServer||`Registration failed (status ${res.status}).`, 'error');
+				if(data.field){ const fieldMap={ email:'reg-email2', phone:'reg-phone', firstName:'reg-first', surname:'reg-surname', dob:'reg-dob' }; const fld=fieldMap[data.field]; if(fld){ const el=document.getElementById(fld); el.classList.add('field-error'); el.focus(); }}
+				return false;
+			}
+			// Success path
+			let remain=10;
+			showMsg('Account created! Redirecting to login in '+remain+'s...','success');
+			pushToast('Account created successfully.<small>Redirecting to login in <span id="regCountdown">'+remain+'</span>s</small>','success');
+			const timer=setInterval(()=>{ remain--; const c=document.getElementById('regCountdown'); if(c) c.textContent=remain; showMsg('Account created! Redirecting to login in '+remain+'s...','success'); if(remain<=0){ clearInterval(timer); closeRegister(); if(email){ document.getElementById('login-email').value=email; document.getElementById('login-email').dispatchEvent(new Event('input')); } else if(normPhone){ document.getElementById('login-email').value=normPhone; document.getElementById('login-email').dispatchEvent(new Event('input')); } } },1000);
+			return true;
+		}catch(err){ showMsg('Network / server error: '+(err.message||'unknown'), 'error'); return false; }
+	}
+	await doPost();
+	btn.disabled=false; btn.textContent=originalBtn;
+	return false;
+}
+// Add helpers for easier optional email handling
+(function(){
+	const emailInput=document.getElementById('reg-email2');
+	const noEmailBtn=document.getElementById('noEmailBtn');
+	if(!emailInput||!noEmailBtn) return;
+	function sanitize(){
+		if(!emailInput.value) return; // skip empty
+		const cur=emailInput.value;
+		// Auto-lowercase & trim spaces
+		let cleaned=cur.trim().toLowerCase().replace(/\s+/g,'');
+		// If user typed common domain without @ (e.g., gmail.com) and has at least one letter before, skip
+		emailInput.value=cleaned;
+	}
+	emailInput.addEventListener('input',sanitize);
+	emailInput.addEventListener('blur',sanitize);
+	let hidden=false;
+	noEmailBtn.addEventListener('click',()=>{
+		hidden=!hidden;
+		if(hidden){
+			emailInput.value='';
+			emailInput.closest('#email-optional-wrap').style.opacity='.4';
+			emailInput.disabled=true;
+			noEmailBtn.textContent='I want to add an email';
+		} else {
+			emailInput.disabled=false;
+			emailInput.closest('#email-optional-wrap').style.opacity='1';
+			emailInput.focus();
+			noEmailBtn.textContent="I don't have / want to use email";
+		}
+	});
+})();
+
+// Close register on backdrop click or ESC if active
+document.addEventListener('click',e=>{ const ov=document.getElementById('registerOverlay'); if(e.target===ov) closeRegister(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(document.getElementById('registerOverlay').classList.contains('active')) closeRegister(); } });
+	</script>
+</body>
+</html>

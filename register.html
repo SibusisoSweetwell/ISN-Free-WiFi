@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ISN Free WiFi - Register</title>
+  <style>
+    :root {
+      --brand-red:#f60000;
+      --translucent-white:rgba(255,255,255,0.73);
+      --text-black:#000;
+      --font-stack:'Segoe UI',system-ui,-apple-system,BlinkMacSystemFont,Roboto,Oxygen,Ubuntu,Cantarell,'Fira Sans','Droid Sans','Helvetica Neue',Arial,sans-serif;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;font-family:var(--font-stack);background:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:28px;color:#000;}
+  body{background:var(--brand-red);} /* unify with login backdrop */
+  .panel{padding:0;margin:0;}
+  .register-overlay{position:fixed;inset:0;background:rgba(255,255,255,0.25);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);display:flex;align-items:flex-start;justify-content:center;padding:70px 40px 60px;z-index:1000;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .3s;}
+  .register-overlay.active{opacity:1;pointer-events:auto;}
+  .register-modal{background:var(--translucent-white);width:100%;max-width:760px;border-radius:14px;box-shadow:0 20px 60px -18px rgba(0,0,0,.45);padding:52px 60px 60px;position:relative;display:flex;flex-direction:column;gap:18px;}
+  h1{margin:0 0 4px;font-size:46px;font-weight:700;color:#000;text-align:center;}
+  .reg-desc{margin:0 0 10px;text-align:center;font-weight:500;font-size:16px;}
+  form{display:flex;flex-direction:column;gap:14px;}
+  label{font-weight:600;font-size:15px;color:#000;text-align:center;}
+  input{width:100%;padding:14px 18px 13px;border:none;border-radius:6px;background:var(--brand-red);font-size:15px;text-align:center;color:#fff;font-family:inherit;box-shadow:0 2px 6px rgba(0,0,0,.3) inset,0 4px 14px -4px rgba(0,0,0,.35);transition:background .25s,color .25s,box-shadow .25s;}
+  input::placeholder{color:#fff;opacity:.9;}
+  input.filled{background:#fff;color:#000;box-shadow:0 2px 6px rgba(0,0,0,.15) inset,0 4px 14px -4px rgba(0,0,0,.35);}
+  input.filled::placeholder{color:#000;opacity:.7;}
+  .submit-btn{margin-top:8px;background:var(--brand-red);color:#fff;border:none;border-radius:10px;padding:16px 42px 17px;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px -4px rgba(0,0,0,.4);}    
+  .submit-btn:hover{background:#ff2626;}
+  a{color:var(--brand-red);font-weight:700;text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .login-link{font-size:13px;text-align:center;color:#000;margin-top:6px;}
+  .close-reg{position:absolute;top:10px;right:14px;background:transparent;border:none;font-size:40px;line-height:1;color:#000;cursor:pointer;font-weight:400;}
+  .close-reg:hover{color:#333;}
+  @media(max-width:900px){.register-modal{padding:48px 40px 54px;}h1{font-size:40px;}}
+  @media(max-width:600px){.register-modal{padding:44px 30px 50px;}h1{font-size:36px;}}
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Register</h1>
+  <form onsubmit="return fakeRegister(event)" autocomplete="on">
+      <label for="reg-email">Email <small>(optional if phone provided)</small></label>
+      <input id="reg-email" type="email" placeholder="Enter your email" />
+  <label for="reg-phone">Phone (South Africa) <small>(optional if email provided)</small></label>
+  <input id="reg-phone" type="tel" placeholder="e.g. 0721233456 or +27 72 123 3456" />
+  <label for="reg-password">Password</label>
+      <input id="reg-password" type="password" required placeholder="Create a password" />
+      <label for="reg-password2">Confirm Password</label>
+      <input id="reg-password2" type="password" required placeholder="Repeat password" />
+      <button type="submit">Create Account</button>
+      <p class="login-link">Already have an account? <a href="login.html">Log In</a></p>
+    </form>
+  </div>
+  <div class="register-overlay active" aria-hidden="false">
+    <div class="register-modal" role="dialog" aria-label="Register">
+      <button class="close-reg" aria-label="Close" onclick="closeRegister()">&times;</button>
+      <h1>Register</h1>
+      <p class="reg-desc">Create your ISN Free WiFi account.</p>
+      <form onsubmit="return fakeRegister(event)" autocomplete="on">
+        <label for="reg-first">First Name</label>
+        <input id="reg-first" type="text" required placeholder="Enter first name" />
+        <label for="reg-surname">Surname</label>
+        <input id="reg-surname" type="text" required placeholder="Enter surname" />
+        <label for="reg-dob">Date of Birth</label>
+        <input id="reg-dob" type="date" required />
+        <label for="reg-email">Email <small>(optional if phone provided)</small></label>
+        <input id="reg-email" type="email" placeholder="Enter your email" />
+        <label for="reg-phone">Phone (South Africa) <small>(optional if email provided)</small></label>
+        <input id="reg-phone" type="tel" placeholder="e.g. 0721233456 or +27 72 123 3456" />
+        <label for="reg-password">Password</label>
+        <input id="reg-password" type="password" required placeholder="Create a password" />
+        <label for="reg-password2">Confirm Password</label>
+        <input id="reg-password2" type="password" required placeholder="Repeat password" />
+        <button type="submit" class="submit-btn">Create Account</button>
+        <p class="login-link">Already have an account? <a href="login.html">Log In</a></p>
+      </form>
+    </div>
+  </div>
+  <script>
+const LS_KEY='isn_users';
+function getLocalUsers(){ try{ return JSON.parse(localStorage.getItem(LS_KEY))||[]; }catch{ return []; } }
+function saveLocalUsers(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); }
+
+  function normalizePhone(raw){
+    if(!raw) return '';
+    let s=(''+raw).trim().replace(/\s+/g,'');
+    if(s.startsWith('+27')) s=s.slice(3);
+    s=s.replace(/\D/g,'');
+    if(s.length===9 && !s.startsWith('0')) s='0'+s;
+    if(s.startsWith('27')){ s=s.slice(2); if(!s.startsWith('0')) s='0'+s; }
+    if(/^00/.test(s)) s=s.replace(/^0+/, '0');
+    if(s.length>10) s=s.slice(0,10);
+    if(!/^0\d{9}$/.test(s)) return '';
+    return s;
+  }
+  async function fakeRegister(e){
+  e.preventDefault();
+  const first=document.getElementById('reg-first').value.trim();
+  const sur=document.getElementById('reg-surname').value.trim();
+  const dob=document.getElementById('reg-dob').value;
+  const email=(document.getElementById('reg-email').value||'').trim().toLowerCase();
+  const phoneRaw=document.getElementById('reg-phone').value.trim();
+  const normPhone= phoneRaw? normalizePhone(phoneRaw) : '';
+  if(!email && !phoneRaw){ alert('Enter either an email or a phone number.'); return false; }
+  if(phoneRaw && !normPhone){ alert('Enter a valid South African phone number (or leave phone blank if using email).'); return false; }
+  if(email && !/^([^@\s]+)@([^@\s]+)\.[^@\s]+$/.test(email)){ alert('Enter a valid email address or leave email blank if using phone.'); return false; }
+  const p1=document.getElementById('reg-password').value;
+  const p2=document.getElementById('reg-password2').value;
+  if(p1!==p2){alert('Passwords do not match');return false;}
+  if(!p1||!first||!sur||!dob){alert('Fill all required fields');return false;}
+  let serverWorked=false;
+  try{
+    const res= await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email: email||null,password:p1,phone: normPhone||null,firstName:first,surname:sur,dob})});
+    if(res.ok){
+      const data= await res.json().catch(()=>({ok:false}));
+      if(data.ok){ serverWorked=true; }
+      else if(data.message){ alert(data.message); return false; }
+    }
+  }catch{}
+  if(!serverWorked){
+    const users=getLocalUsers();
+    if(email && users.some(u=>u.email===email)){ alert('Email already registered'); return false; }
+    // Local fallback only stores email users; could be extended for phone-only local mode
+    users.push({email:email||'', phone: normPhone||'', password:p1, firstName:first, surname:sur, dob});
+    saveLocalUsers(users);
+  }
+  alert('Registered successfully. You can log in now.');
+  window.location.href='login.html';
+  return false;
+}
+  // toggle filled class
+  ['reg-first','reg-surname','reg-dob','reg-email','reg-phone','reg-password','reg-password2'].forEach(id=>{const el=document.getElementById(id);if(!el)return;const h=()=>{if(el.value.trim())el.classList.add('filled');else el.classList.remove('filled');};el.addEventListener('input',h);el.addEventListener('change',h);h();});
+  function closeRegister(){window.location.href='login.html';}
+  </script>
+</body>
+</html>

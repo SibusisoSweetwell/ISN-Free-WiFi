@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Ad Completion</title>
+</head>
+<body>
+    <h1>Test Ad Completion</h1>
+    <button onclick="testAdCompletion()">Simulate Ad Completion</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAdCompletion() {
+            const identifier = 'test@example.com';
+            
+            try {
+                // First register a test user
+                const regResponse = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: identifier,
+                        password: 'Test123!@#',
+                        firstName: 'Test',
+                        surname: 'User',
+                        dob: '1990-01-01'
+                    })
+                });
+                
+                console.log('Registration:', await regResponse.json());
+                
+                // Then simulate ad completion
+                const adResponse = await fetch('/api/ad/event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        adId: 'test_vid',
+                        identifier: identifier,
+                        eventType: 'complete',
+                        watchSeconds: 10,
+                        routerId: 'default-router'
+                    })
+                });
+                
+                const result = await adResponse.json();
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                
+                // Check debug state
+                const debugResponse = await fetch(`/debug/state?identifier=${encodeURIComponent(identifier)}`);
+                const debugState = await debugResponse.json();
+                document.getElementById('result').innerHTML += '<h3>Debug State:</h3><pre>' + JSON.stringify(debugState, null, 2) + '</pre>';
+                
+            } catch (error) {
+                document.getElementById('result').innerHTML = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
