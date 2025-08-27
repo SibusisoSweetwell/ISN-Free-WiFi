@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISN Free WiFi - Admin Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .table-container {
+            overflow-x: auto;
+            max-height: 400px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .status-online { color: #28a745; font-weight: bold; }
+        .status-active { color: #007bff; font-weight: bold; }
+        .status-idle { color: #ffc107; font-weight: bold; }
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .stat-label {
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌐 ISN Free WiFi - Admin Dashboard</h1>
+        <p>Real-time monitoring and user management</p>
+    </div>
+
+    <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+    
+    <div id="loading" class="loading">Loading dashboard data...</div>
+    <div id="error" class="error" style="display: none;"></div>
+
+    <div id="dashboard" style="display: none;">
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>📊 Real-time Summary</h3>
+                <div id="summary"></div>
+            </div>
+            
+            <div class="card">
+                <h3>📡 Router Status</h3>
+                <div class="table-container">
+                    <table id="routersTable">
+                        <thead>
+                            <tr>
+                                <th>Router ID</th>
+                                <th>IP Address</th>
+                                <th>Location</th>
+                                <th>Total Data Served</th>
+                                <th>Connected Users</th>
+                                <th>Status</th>
+                                <th>Down Mbps</th>
+                                <th>Up Mbps</th>
+                                <th>Last Maintenance</th>
+                                <th>Flags</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>👥 User Activity Monitoring</h3>
+            <div class="table-container">
+                <table id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>User ID</th>
+                            <th>IP Address</th>
+                            <th>WiFi Network</th>
+                            <th>Router ID</th>
+                            <th>Down Mbps</th>
+                            <th>Up Mbps</th>
+                            <th>Total Data Used</th>
+                            <th>Remaining Data</th>
+                            <th>Connection Duration</th>
+                            <th>Last Activity</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadDashboard() {
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const dashboardEl = document.getElementById('dashboard');
+            
+            try {
+                loadingEl.style.display = 'block';
+                errorEl.style.display = 'none';
+                dashboardEl.style.display = 'none';
+                
+                // Load real-time usage data
+                const response = await fetch('/api/admin/realtime-usage', {
+                    headers: {
+                        'X-User-Identifier': 'sbusisosweetwell15@gmail.com' // Admin identifier
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (!data.ok) {
+                    throw new Error(data.message || 'Failed to load data');
+                }
+                
+                // Update summary
+                const summaryEl = document.getElementById('summary');
+                summaryEl.innerHTML = `
+                    <div class="stats-row">
+                        <span class="stat-label">Total Users:</span>
+                        <span>${data.summary.totalUsers}</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Active Users:</span>
+                        <span class="status-active">${data.summary.activeUsers}</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Total Routers:</span>
+                        <span>${data.summary.totalRouters}</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Avg Download:</span>
+                        <span>${data.summary.averageDownMbps.toFixed(2)} Mbps</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Avg Upload:</span>
+                        <span>${data.summary.averageUpMbps.toFixed(2)} Mbps</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Total Data Served:</span>
+                        <span>${data.summary.totalDataServed.toFixed(2)} MB</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Last Updated:</span>
+                        <span>${new Date(data.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                `;
+                
+                // Update routers table
+                const routersTableBody = document.querySelector('#routersTable tbody');
+                routersTableBody.innerHTML = data.routers.map(router => `
+                    <tr>
+                        <td>${router.routerId}</td>
+                        <td>${router.ipAddress}</td>
+                        <td>${router.location}</td>
+                        <td>${router.totalDataServed.toFixed(2)} MB</td>
+                        <td>${router.connectedUsers}</td>
+                        <td><span class="status-online">${router.status}</span></td>
+                        <td>${router.downMbps.toFixed(2)}</td>
+                        <td>${router.upMbps.toFixed(2)}</td>
+                        <td>${router.lastMaintenance}</td>
+                        <td>${Array.isArray(router.flags) ? router.flags.join(', ') : router.flags || 'None'}</td>
+                    </tr>
+                `).join('');
+                
+                // Update users table
+                const usersTableBody = document.querySelector('#usersTable tbody');
+                usersTableBody.innerHTML = data.users.map(user => `
+                    <tr>
+                        <td>${user.identifier}</td>
+                        <td>${user.ip}</td>
+                        <td>${user.wifiNetwork}</td>
+                        <td>${user.routerId}</td>
+                        <td>${user.downMbps.toFixed(2)}</td>
+                        <td>${user.upMbps.toFixed(2)}</td>
+                        <td>${user.totalDataMB.toFixed(2)} MB</td>
+                        <td>${user.remainingDataMB.toFixed(2)} MB</td>
+                        <td>${user.connectionDuration} min</td>
+                        <td>${new Date(user.lastActivity).toLocaleTimeString()}</td>
+                        <td><span class="status-${user.isActive ? 'active' : 'idle'}">${user.status}</span></td>
+                    </tr>
+                `).join('');
+                
+                loadingEl.style.display = 'none';
+                dashboardEl.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Dashboard error:', error);
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = `Error loading dashboard: ${error.message}`;
+            }
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+        
+        // Load dashboard on page load
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+    </script>
+</body>
+</html>

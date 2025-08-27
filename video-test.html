@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Ads Test - ISN Free WiFi</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #f60000;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .video-test {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            background: #fafafa;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            border-radius: 8px;
+            background: #000;
+        }
+        .video-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #f60000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #c30000;
+        }
+        .test-results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Video Ads Test Page</h1>
+        
+        <div class="status info">
+            <strong>Test Status:</strong> Ready to test video playback functionality
+        </div>
+
+        <div class="video-test">
+            <h3>Test Video 1: ForBiggerJoyrides</h3>
+            <video id="video1" controls preload="metadata" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='24' text-anchor='middle' dominant-baseline='middle'%3EClick Play to Test%3C/text%3E%3C/svg%3E">
+                <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <div class="video-info">
+                <strong>URL:</strong> https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4<br>
+                <strong>Format:</strong> MP4<br>
+                <strong>Status:</strong> <span id="status1">Not tested</span>
+            </div>
+            <button onclick="testVideo('video1', 'status1')">▶️ Test This Video</button>
+            <button onclick="document.getElementById('video1').play()">▶️ Play</button>
+            <button onclick="document.getElementById('video1').pause()">⏸️ Pause</button>
+        </div>
+
+        <div class="video-test">
+            <h3>Test Video 2: ForBiggerFun</h3>
+            <video id="video2" controls preload="metadata" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='24' text-anchor='middle' dominant-baseline='middle'%3EClick Play to Test%3C/text%3E%3C/svg%3E">
+                <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <div class="video-info">
+                <strong>URL:</strong> https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4<br>
+                <strong>Format:</strong> MP4<br>
+                <strong>Status:</strong> <span id="status2">Not tested</span>
+            </div>
+            <button onclick="testVideo('video2', 'status2')">▶️ Test This Video</button>
+            <button onclick="document.getElementById('video2').play()">▶️ Play</button>
+            <button onclick="document.getElementById('video2').pause()">⏸️ Pause</button>
+        </div>
+
+        <div class="video-test">
+            <h3>Test Video 3: BigBuckBunny</h3>
+            <video id="video3" controls preload="metadata" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='24' text-anchor='middle' dominant-baseline='middle'%3EClick Play to Test%3C/text%3E%3C/svg%3E">
+                <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <div class="video-info">
+                <strong>URL:</strong> https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4<br>
+                <strong>Format:</strong> MP4<br>
+                <strong>Status:</strong> <span id="status3">Not tested</span>
+            </div>
+            <button onclick="testVideo('video3', 'status3')">▶️ Test This Video</button>
+            <button onclick="document.getElementById('video3').play()">▶️ Play</button>
+            <button onclick="document.getElementById('video3').pause()">⏸️ Pause</button>
+        </div>
+
+        <div class="test-results">
+            <h3>🔍 Test Results</h3>
+            <div id="results">
+                <p>Click "Test This Video" buttons above to check video accessibility and playback.</p>
+                <p><strong>Expected Results:</strong></p>
+                <ul>
+                    <li>Videos should load metadata (duration, dimensions)</li>
+                    <li>Videos should play smoothly when clicked</li>
+                    <li>Audio should be audible (if not muted)</li>
+                    <li>Controls should be responsive</li>
+                    <li>No error messages in browser console</li>
+                </ul>
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; text-align: center;">
+            <button onclick="testAllVideos()">🧪 Test All Videos</button>
+            <button onclick="goToPortal()">🌐 Go to Portal</button>
+        </div>
+    </div>
+
+    <script>
+        function testVideo(videoId, statusId) {
+            const video = document.getElementById(videoId);
+            const status = document.getElementById(statusId);
+            
+            status.innerHTML = '🔄 Testing...';
+            status.style.color = '#0c5460';
+            
+            // Clear any previous error handlers
+            video.onerror = null;
+            video.onloadedmetadata = null;
+            video.oncanplay = null;
+            
+            let testsPassed = 0;
+            let totalTests = 3;
+            
+            // Test 1: Can load metadata
+            video.onloadedmetadata = function() {
+                testsPassed++;
+                updateTestStatus();
+            };
+            
+            // Test 2: Can play
+            video.oncanplay = function() {
+                testsPassed++;
+                updateTestStatus();
+            };
+            
+            // Test 3: No errors
+            video.onerror = function(e) {
+                status.innerHTML = '❌ Error loading video';
+                status.style.color = '#721c24';
+                console.error('Video error:', e);
+            };
+            
+            function updateTestStatus() {
+                if (testsPassed >= 2) {
+                    status.innerHTML = '✅ Video loads successfully';
+                    status.style.color = '#155724';
+                    
+                    // Try to play briefly to test playback
+                    video.play().then(() => {
+                        setTimeout(() => {
+                            video.pause();
+                            status.innerHTML = '✅ Video plays and loads correctly';
+                        }, 1000);
+                    }).catch(e => {
+                        status.innerHTML = '⚠️ Video loads but autoplay blocked (normal)';
+                        status.style.color = '#856404';
+                    });
+                }
+            }
+            
+            // Force load
+            video.load();
+            
+            // Timeout after 10 seconds
+            setTimeout(() => {
+                if (testsPassed === 0) {
+                    status.innerHTML = '❌ Timeout - video not accessible';
+                    status.style.color = '#721c24';
+                }
+            }, 10000);
+        }
+        
+        function testAllVideos() {
+            testVideo('video1', 'status1');
+            setTimeout(() => testVideo('video2', 'status2'), 2000);
+            setTimeout(() => testVideo('video3', 'status3'), 4000);
+        }
+        
+        function goToPortal() {
+            window.open('http://10.5.48.94:3150', '_blank');
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            console.log('Video test page loaded');
+            console.log('Testing video accessibility...');
+        };
+    </script>
+</body>
+</html>

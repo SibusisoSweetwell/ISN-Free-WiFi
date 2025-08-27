@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Reset Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .btn { padding: 10px 20px; background: #dc3545; color: white; border: none; cursor: pointer; }
+        .btn:hover { background: #c82333; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Admin Data Reset Tool</h1>
+    <p><strong>Warning:</strong> This will clear ALL user bundles, usage logs, and sessions!</p>
+    <button class="btn" onclick="resetAllData()">RESET ALL USER DATA</button>
+    <div id="result"></div>
+
+    <script>
+        async function resetAllData() {
+            if (!confirm('Are you sure you want to reset ALL user data? This cannot be undone!')) {
+                return;
+            }
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Processing...';
+            
+            try {
+                const response = await fetch('/api/admin/reset-all-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-user-identifier': 'sbusisosweetwell15@gmail.com'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.ok) {
+                    resultDiv.innerHTML = `<div style="color: green;">✅ ${data.message}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div style="color: red;">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div style="color: red;">❌ Error: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
