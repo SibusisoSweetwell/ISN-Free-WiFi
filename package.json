@@ -4,7 +4,8 @@
   "description": "ISN Free WiFi demo auth with Excel storage",
   "main": "server.js",
   "scripts": {
-  "start": "node server.js"
+    "start": "node server.js",
+    "seed-db": "node scripts/seed_logins_db.js"
   },
   "dependencies": {
   "express": "^4.19.2",
