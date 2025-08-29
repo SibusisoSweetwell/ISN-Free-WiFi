@@ -1947,6 +1947,13 @@ app.post('/api/register', (req,res)=>{
     return res.status(status).json({ ...result, debug: debugCtx });
   }
   try { appendAccessEvent({ identifier: (result.identifier|| (email||phone||'')).toLowerCase(), type:'registration', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] }); } catch {}
+  // Also log a signup_success event to SQLite events table when available
+  try {
+    if (sqliteDB) {
+      sqliteDB.appendAccessEvent({ identifier: (result.identifier|| (email||phone||'')).toLowerCase(), type:'signup_success', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'], data: { email: (email||'').toLowerCase() } });
+      console.log('[REGISTRATION] signup_success logged to sqlite events for', (result.identifier|| (email||phone||'')).toLowerCase());
+    }
+  } catch (e) { console.warn('[REG-LOG-SIGNUP-ERR]', e && e.message); }
   res.json({ ok:true, identifier: result.identifier, debug: debugCtx });
 });
 
@@ -5236,13 +5243,41 @@ app.get('/api/me/profile', (req,res)=>{
   const identifier=raw.toLowerCase();
   if(!identifier) return res.status(400).json({ ok:false, message:'Missing identifier'});
   try {
+    let user = null;
+    if (sqliteDB) {
+      user = sqliteDB.findUser(identifier);
+      if(!user) {
+        // Attempt to check the XLSX fallback for any loose matches so client can show helpful guidance
+        let xlsxCount = 0;
+        try {
+          const { data } = getUsers();
+          // count any records with same email local-part or same phone number length as a hint (non-PII)
+          const normPhone = normalizePhone(identifier);
+          xlsxCount = data.filter(u => {
+            try {
+              if(identifier.includes('@')){
+                return (u.email||'').toLowerCase().split('@')[0] === identifier.split('@')[0];
+              }
+              return normPhone && u.phone===normPhone;
+            } catch { return false; }
+          }).length;
+        } catch (e) { /* ignore workbook read errors */ }
+        console.warn('[profile 404] identifier=', identifier, 'sqlite users: none, xlsxPossibleMatches=', xlsxCount);
+        return res.status(404).json({ ok:false, message:'User not found', diagnostics: { checked: ['sqlite','xlsx'], xlsxPossibleMatches: xlsxCount } });
+      }
+      // convert sqlite row to public profile shape
+      const { password_hash, password, ...rest } = user;
+      const pub = Object.assign({}, rest);
+      if(pub.avatarPath){ pub.avatarUrl = '/' + pub.avatarPath.replace(/\\/g,'/'); }
+      return res.json({ ok:true, profile: pub });
+    }
     const { data } = getUsers();
-    const user = findUserRecord(data, identifier);
-    if(!user){
+    const found = findUserRecord(data, identifier);
+    if(!found){
       console.warn('[profile 404] identifier=', identifier, 'available users=', data.map(u=>u.email+':'+u.phone));
       return res.status(404).json({ ok:false, message:'User not found' });
     }
-    const { password, ...pub } = user;
+    const { password, ...pub } = found;
     // For backward compatibility: if legacy avatarData long base64 present but no file path yet, expose as received (client will still show) but prefer avatarPath
     if(pub.avatarPath){
       pub.avatarUrl = '/' + pub.avatarPath.replace(/\\/g,'/');
@@ -5263,10 +5298,22 @@ app.post('/api/me/profile/update', (req,res)=>{
   if(!identifier) return res.status(400).json({ ok:false, message:'Missing identifier'});
   try {
     const id = identifier.trim();
-    const { wb, ws, data } = getUsers();
-    const user = findUserRecord(data, id);
-    if(!user) return res.status(404).json({ ok:false, message:'User not found'});
-  const before = { firstName:user.firstName, surname:user.surname, dob:user.dob };
+    // Prefer sqlite when available
+    let user = null;
+    let before = {};
+    let usingSqlite = false;
+    if (sqliteDB) {
+      const row = sqliteDB.findUser(id);
+      if (!row) return res.status(404).json({ ok:false, message:'User not found'});
+      user = row;
+      before = { firstName: user.firstName, surname: user.surname, dob: user.dob };
+      usingSqlite = true;
+    } else {
+      const { wb, ws, data } = getUsers();
+      user = findUserRecord(data, id);
+      if(!user) return res.status(404).json({ ok:false, message:'User not found'});
+      before = { firstName:user.firstName, surname:user.surname, dob:user.dob };
+    }
     // Basic field validation / assignment
     if(firstName!==undefined){ if(!firstName.trim()) return res.status(400).json({ ok:false, field:'firstName', message:'First name required'}); user.firstName=firstName.trim(); }
     if(surname!==undefined){ if(!surname.trim()) return res.status(400).json({ ok:false, field:'surname', message:'Surname required'}); user.surname=surname.trim(); }
@@ -5344,12 +5391,47 @@ app.post('/api/me/profile/update', (req,res)=>{
       }
     }
 
-    wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
-    XLSX.writeFile(wb, DATA_FILE);
-    const { password, ...pub } = user;
-    if(pub.avatarPath){ pub.avatarUrl = '/' + pub.avatarPath.replace(/\\/g,'/'); }
-  try { const changedFields=[]; ['firstName','surname','dob'].forEach(f=>{ if(before[f]!==user[f]) changedFields.push(f); }); if(changedFields.length){ appendAccessEvent({ identifier: (user.email||user.phone||'').toLowerCase(), type:'profile_change', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'], detailsJSON: JSON.stringify({ changedFields }) }); } } catch {}
-    res.json({ ok:true, profile: pub });
+    // Persist changes to storage
+    if (usingSqlite) {
+      try {
+        // Only allow updating specific fields currently
+        const upd = {};
+        if (user.firstName !== firstName && firstName !== undefined) upd.firstName = user.firstName;
+        // We'll perform a simple UPDATE for changed fields
+        const fieldsToUpdate = [];
+        const values = [];
+        ['firstName','surname','dob','email','phone','avatarPath'].forEach(f=>{
+          if(user[f]!==undefined && user[f]!==null){} // noop
+        });
+        // Because sqliteDB currently exposes only create/find/changePassword, we'll run a direct SQL update via its DB handle
+        const DB = sqliteDB._db();
+        if (DB) {
+          const sets = [];
+          if(firstName!==undefined){ sets.push('firstName=?'); values.push(firstName); }
+          if(surname!==undefined){ sets.push('surname=?'); values.push(surname); }
+          if(dob!==undefined){ sets.push('dob=?'); values.push(dob); }
+          if(user.avatarPath) { /* avatarPath already set on user object above */ }
+          if(sets.length){
+            values.push(user.id);
+            DB.prepare('UPDATE users SET ' + sets.join(', ') + ' WHERE id=?').run(...values);
+            // refresh user
+            user = sqliteDB.findUser(id);
+          }
+        }
+      } catch (e) { console.warn('[PROFILE-UPDATE-SQLITE-ERR]', e && e.message); }
+      const { password, ...pub } = user;
+      if(pub.avatarPath){ pub.avatarUrl = '/' + pub.avatarPath.replace(/\\/g,'/'); }
+      try { const changedFields=[]; ['firstName','surname','dob'].forEach(f=>{ if(before[f]!==user[f]) changedFields.push(f); }); if(changedFields.length){ sqliteDB.appendAccessEvent({ identifier: (user.email||user.phone||'').toLowerCase(), type:'profile_change', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'], data:{ changedFields } }); } } catch {}
+      return res.json({ ok:true, profile: pub });
+    } else {
+      wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
+      XLSX.writeFile(wb, DATA_FILE);
+      const { password, ...pub } = user;
+      if(pub.avatarPath){ pub.avatarUrl = '/' + pub.avatarPath.replace(/\\/g,'/'); }
+      try { const changedFields=[]; ['firstName','surname','dob'].forEach(f=>{ if(before[f]!==user[f]) changedFields.push(f); }); if(changedFields.length){ appendAccessEvent({ identifier: (user.email||user.phone||'').toLowerCase(), type:'profile_change', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'], detailsJSON: JSON.stringify({ changedFields }) }); } } catch {}
+      return res.json({ ok:true, profile: pub });
+    }
+    
   } catch(err){
     console.error('Profile update error', err);
     res.status(500).json({ ok:false, message:'Error updating profile'});
@@ -5361,13 +5443,36 @@ app.post('/api/me/delete', (req,res)=>{
   const { identifier, password } = req.body||{};
   if(!identifier || !password) return res.status(400).json({ ok:false, message:'Missing fields'});
   try {
-    const { wb, ws, data } = getUsers();
     const raw = String(identifier).trim();
-    let user = findUserRecord(data, raw);
+    // Prefer sqlite when available
+    if (sqliteDB) {
+      // Validate password
+      const ok = sqliteDB.validateLogin(raw, password);
+      if (!ok) return res.status(401).json({ ok:false, message:'Password incorrect' });
+      const user = sqliteDB.findUser(raw);
+      if (!user) return res.status(404).json({ ok:false, message:'User not found' });
+      // Remove avatar file if exists
+      if(user.avatarPath){
+        try {
+          const full = path.join(__dirname, user.avatarPath);
+          if(full.startsWith(path.join(__dirname,'avatars')) && fs.existsSync(full)) fs.unlinkSync(full);
+        } catch(err){ console.warn('Avatar delete error', err && err.message); }
+      }
+      try {
+        const DB = sqliteDB._db();
+        if (DB) {
+          DB.prepare('DELETE FROM users WHERE id=?').run(user.id);
+        }
+      } catch (e) { console.warn('[SQLITE-DELETE-ERR]', e && e.message); return res.status(500).json({ ok:false, message:'Error deleting user' }); }
+      return res.json({ ok:true });
+    }
+    const { wb, ws, data } = getUsers();
+    const normRaw = raw;
+    let user = findUserRecord(data, normRaw);
     // Fallback: try matching by email OR phone explicitly if not found
     if(!user){
-      const lower = String(raw).trim().toLowerCase();
-      const normPhone = normalizePhone(raw);
+      const lower = String(normRaw).trim().toLowerCase();
+      const normPhone = normalizePhone(normRaw);
       user = data.find(u=> String(u.email||'').trim().toLowerCase()===lower || u.phone===normPhone);
     }
     if(!user) return res.status(404).json({ ok:false, message:'User not found'});
@@ -5377,7 +5482,7 @@ app.post('/api/me/delete', (req,res)=>{
       try {
         const full = path.join(__dirname, user.avatarPath);
         if(full.startsWith(path.join(__dirname,'avatars')) && fs.existsSync(full)) fs.unlinkSync(full);
-      } catch(err){ console.warn('Avatar delete error', err?.message); }
+      } catch(err){ console.warn('Avatar delete error', err && err.message); }
     }
     const filtered = data.filter(u=>u!==user);
     wb.Sheets['Users'] = XLSX.utils.json_to_sheet(filtered);
