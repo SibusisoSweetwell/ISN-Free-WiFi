@@ -1,17 +1,3 @@
-<<<<<<< HEAD
-# ISN Free WiFi Portal & Captive Proxy
-
-This project provides a lightweight ad‑funded captive portal with data bundle gating powered by a local HTTP(S) proxy. Users:
-1. Connect to the PC / hotspot Wi‑Fi.
-2. Configure their device/browser to use the local proxy (manual or PAC URL).
-3. Visit the portal (home.html), login/register, pick a bundle, watch an ad.
-4. After ad completion a data bundle is granted; browsing is unlocked until quota is exhausted.
-5. When bundle is finished access is re‑gated until another ad sequence is completed.
-
-## Quick Start
-
-Install dependencies:
-```bash
 # ISN Free WiFi Portal & Captive Proxy
 
 Delivering dignified internet access for everyday South Africans since 2025.
