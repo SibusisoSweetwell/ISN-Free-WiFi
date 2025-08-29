@@ -137,6 +137,7 @@
 
         <div class="card">
             <h3>👥 User Activity Monitoring</h3>
+                <div style="margin-top:8px;text-align:right;"><a href="admin-unlocks.html" style="text-decoration:none;">Manage Unlocks →</a></div>
             <div class="table-container">
                 <table id="usersTable">
                     <thead>
@@ -152,6 +153,30 @@
                             <th>Connection Duration</th>
                             <th>Last Activity</th>
                             <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Temporary Unlocks management (under admin My Usage area) -->
+        <div class="card" id="tempUnlocksCard">
+            <h3>🔓 Temporary Unlocks (My Usage)</h3>
+            <div style="margin-bottom:10px">
+                <label for="adminSecret">Admin secret:</label>
+                <input id="adminSecret" type="password" placeholder="Enter admin secret" style="margin-left:8px;padding:6px" />
+                <button class="refresh-btn" onclick="loadTempUnlocks()" style="margin-left:8px;padding:6px 12px">Load Unlocks</button>
+            </div>
+            <div class="table-container">
+                <table id="tempUnlocksTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Identifier</th>
+                            <th>Device ID</th>
+                            <th>Expiry (local)</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -272,6 +297,47 @@
         
         // Load dashboard on page load
         document.addEventListener('DOMContentLoaded', loadDashboard);
+        
+        // --- Temp unlocks management ---
+        async function loadTempUnlocks() {
+            const secret = document.getElementById('adminSecret').value;
+            const tbody = document.querySelector('#tempUnlocksTable tbody');
+            tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading temp unlocks...</td></tr>';
+            try {
+                const res = await fetch('/api/admin/temp-unlocks?secret=' + encodeURIComponent(secret));
+                if (!res.ok) throw new Error('Failed to load');
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.message || 'Failed');
+                const rows = data.unlocks || [];
+                if (!rows.length) {
+                    tbody.innerHTML = '<tr><td colspan="5">No active temp unlocks</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map(r=>`<tr>
+                    <td>${r.id}</td>
+                    <td>${r.identifier}</td>
+                    <td>${r.deviceId}</td>
+                    <td>${new Date(r.expiry).toLocaleString()}</td>
+                    <td><button onclick="revokeTempUnlock(${r.id})">Revoke</button></td>
+                </tr>`).join('');
+            } catch(err) {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Error loading: ' + (err.message||err) + '</td></tr>';
+            }
+        }
+
+        async function revokeTempUnlock(id) {
+            const secret = document.getElementById('adminSecret').value;
+            if (!confirm('Revoke temp unlock id ' + id + '?')) return;
+            try {
+                const res = await fetch('/api/admin/temp-unlocks/revoke', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, secret }) });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.message || 'Failed');
+                alert('Revoked: ' + data.removed);
+                loadTempUnlocks();
+            } catch(err) {
+                alert('Revoke failed: ' + (err.message||err));
+            }
+        }
     </script>
 </body>
 </html>

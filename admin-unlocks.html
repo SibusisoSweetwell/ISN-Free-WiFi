@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Admin — Temporary Unlocks</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:20px;background:#f6f7fb}
+  .panel{background:#fff;border-radius:12px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+  .controls{display:flex;gap:8px;margin-bottom:12px}
+  .btn{background:#667eea;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .danger{background:#c30000}
+  input[type="text"]{padding:8px;border-radius:8px;border:1px solid #ddd}
+</style>
+</head>
+<body>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0">Temporary Unlocks</h2>
+    <a href="admin-dashboard.html">← Back</a>
+  </div>
+  <div class="panel">
+    <div class="controls">
+      <input id="adminSecretPage" type="password" placeholder="Admin secret" />
+      <input id="filterInput" type="text" placeholder="Filter by identifier or deviceId" style="flex:1" />
+      <button class="btn" onclick="reload()">Load</button>
+      <button class="btn danger" onclick="bulkRevokeFiltered()">Revoke Filtered</button>
+    </div>
+    <div style="overflow:auto;max-height:60vh;">
+      <table id="unlocksTable">
+        <thead><tr><th>ID</th><th>Identifier</th><th>Device ID</th><th>Expiry</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+<script>
+async function reload(){
+  const secret=document.getElementById('adminSecretPage').value;
+  try{
+    const r=await fetch('/api/admin/temp-unlocks?secret='+encodeURIComponent(secret));
+    const j=await r.json(); if(!j.ok) throw new Error(j.message||'fail');
+    window.__UNLOCKS=j.unlocks||[]; renderTable(window.__UNLOCKS);
+  }catch(e){ alert('Load failed: '+e.message); }
+}
+function renderTable(rows){
+  const filter=document.getElementById('filterInput').value.toLowerCase().trim();
+  const tbody=document.querySelector('#unlocksTable tbody');
+  const visible=(rows||[]).filter(r=>!filter|| (r.identifier||'').toLowerCase().includes(filter) || (r.deviceId||'').toLowerCase().includes(filter));
+  if(!visible.length) return tbody.innerHTML='<tr><td colspan="5">No rows</td></tr>';
+  tbody.innerHTML=visible.map(r=>`<tr><td>${r.id}</td><td>${r.identifier}</td><td>${r.deviceId}</td><td>${new Date(r.expiry).toLocaleString()}</td><td><button onclick="revoke(${r.id})">Revoke</button></td></tr>`).join('');
+}
+async function revoke(id){
+  if(!confirm('Revoke '+id+'?')) return;
+  const secret=document.getElementById('adminSecretPage').value;
+  const r=await fetch('/api/admin/temp-unlocks/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, secret})});
+  const j=await r.json(); if(!j.ok) return alert('Failed'); alert('Revoked'); reload();
+}
+async function bulkRevokeFiltered(){
+  const secret=document.getElementById('adminSecretPage').value; const filter=document.getElementById('filterInput').value.toLowerCase().trim();
+  const rows=window.__UNLOCKS||[]; const toRevoke=rows.filter(r=> (r.identifier||'').toLowerCase().includes(filter) || (r.deviceId||'').toLowerCase().includes(filter));
+  if(!toRevoke.length) return alert('No matching rows');
+  if(!confirm('Revoke '+toRevoke.length+' rows?')) return;
+  let removed=0;
+  for(const r of toRevoke){ try{ const res=await fetch('/api/admin/temp-unlocks/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:r.id, secret})}); const j=await res.json(); if(j.ok) removed+=j.removed||0; }catch(e){}
+  }
+  alert('Removed '+removed);
+  reload();
+}
+</script>
+</body>
+</html>

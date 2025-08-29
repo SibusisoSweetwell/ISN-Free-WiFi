@@ -21,21 +21,9 @@ if (process.env.USE_SQLITE === 'true') {
     console.warn('[SQLITE] Init failed, falling back to XLSX:', err && err.message);
     sqliteDB = null;
   }
-  // Quota enforcement for CONNECT: if mapped identifier exists but quota exhausted, block tunnel and point to quota page
-  try {
-    if (mappedIdentifier) {
-      const q = computeRemainingUnified(mappedIdentifier, null, req.headers['x-router-id'] || clientIp);
-      if (q && q.exhausted) {
-        const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${q.totalUsedMB||0}&limit=${q.totalBundleMB||0}`;
-        clientSocket.write('HTTP/1.1 302 Found\r\n');
-        clientSocket.write(`Location: ${redirectUrl}\r\n`);
-        clientSocket.write('Content-Type: text/html\r\n\r\n');
-        clientSocket.write(`<html><body><h1>Data bundle exhausted</h1><p>Redirecting to <a href="${redirectUrl}">${redirectUrl}</a></p></body></html>`);
-        clientSocket.end();
-        return;
-      }
-    }
-  } catch (qe) { console.warn('[CONNECT-QUOTA-CHK-ERR]', qe && qe.message); }
+  // NOTE: CONNECT quota checks must run per-connection where request/clientSocket are available.
+  // Removed startup-time check that referenced request-scoped variables (mappedIdentifier, req, clientSocket).
+  // Ensure CONNECT/quota enforcement is performed inside the proxy connection handler instead.
 }
 console.log('[CONFIG] USE_SQLITE=', process.env.USE_SQLITE, 'sqliteDB active=', !!sqliteDB);
 const http = require('http');
@@ -248,6 +236,30 @@ function registerActiveClient(req, identifier, hours = 6) {
     console.error('[DEVICE-REGISTER-ERROR]', err?.message);
     return null;
   }
+  // If sqlite adapter is active, load persisted temporary unlocks into memory
+  try {
+    if (sqliteDB) {
+      const rows = sqliteDB.loadTempUnlocks();
+      let loaded = 0;
+      const now = Date.now();
+      for (const r of rows) {
+        if (!r || !r.expiry) continue;
+        if (Number(r.expiry) > now) {
+          if (r.identifier) tempFullAccess.set((r.identifier||'').toLowerCase(), Number(r.expiry));
+          if (r.deviceId) tempFullAccess.set(r.deviceId, Number(r.expiry));
+          loaded++;
+        }
+      }
+      console.log(`[SQLITE] Loaded ${loaded} active temp unlock(s) from DB`);
+      // cleanup any expired rows
+      const removed = sqliteDB.removeExpiredTempUnlocks(now);
+      if (removed) console.log(`[SQLITE] Removed ${removed} expired temp unlock rows`);
+      // Periodically purge expired rows every 10 minutes
+      setInterval(() => {
+        try { sqliteDB.removeExpiredTempUnlocks(Date.now()); } catch(e){}
+      }, 10 * 60 * 1000);
+    }
+  } catch(e){ console.warn('[SQLITE-LOAD-TEMP-UNLOCKS-ERR]', e && e.message); }
 }
 
 function normalizeIp(ip){ if(!ip) return ''; return ip.replace(/^::ffff:/,''); }
@@ -523,7 +535,7 @@ function seedDefaultAds(){
         changed=true;
       }
     });
-    if(changed){ wb.Sheets[SHEET_ADS] = XLSX.utils.json_to_sheet(rows); XLSX.writeFile(wb, DATA_FILE); }
+  if(changed){ wb.Sheets[SHEET_ADS] = XLSX.utils.json_to_sheet(rows); if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE); }
   } catch(err){ console.warn('seedDefaultAds failed', err?.message); }
 }
 
@@ -565,7 +577,7 @@ function listSessions(){
 }
 function writeSheet(wb, sheetName, rows){
   wb.Sheets[sheetName] = XLSX.utils.json_to_sheet(rows);
-  XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
 }
 
 // Append a router usage metric (bytes transferred) per sampling second
@@ -917,7 +929,7 @@ function getVideosWatched(identifier, deviceId) {
       // Create sheet if it doesn't exist
       const ws = XLSX.utils.json_to_sheet([]);
       XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
-      XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       return [];
     }
     
@@ -941,7 +953,7 @@ function getVideosWatchedForUser(identifier) {
       // Create sheet if it doesn't exist
       const ws = XLSX.utils.json_to_sheet([]);
       XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
-      XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       return [];
     }
     
@@ -1150,6 +1162,10 @@ function markDeviceUnlocked(deviceId, identifier, bundleMB = 100, durationHours 
         // Store both by deviceId and identifier to improve recognition in proxy
         tempFullAccess.set(identifier.toLowerCase(), expiry);
         tempFullAccess.set(deviceId, expiry);
+        // Persist to sqlite if available
+        try {
+          if (sqliteDB && sqliteDB.saveTempUnlock) sqliteDB.saveTempUnlock((identifier||'').toLowerCase(), deviceId, expiry);
+        } catch(pe) { console.warn('[SAVE-TEMP-UNLOCK-ERR]', pe && pe.message); }
         console.log(`[DEVICE-UNLOCKED] Device ${deviceId.slice(0,8)}... earned ${bundleMB}MB and temp access until ${new Date(expiry).toISOString()}`);
       } catch(e) { console.warn('[TEMP-ACCESS-SET-ERROR]', e?.message); }
 
@@ -1388,7 +1404,7 @@ function buildAdminOverview(){
     wbCache.Sheets[SHEET_ROUTERS_TABLE_CACHE] = XLSX.utils.json_to_sheet(routersTable);
     wbCache.Sheets[SHEET_REGLOG_TABLE_CACHE] = XLSX.utils.json_to_sheet(regLoginTable);
     wbCache.Sheets[SHEET_ADS_TABLE_CACHE] = XLSX.utils.json_to_sheet(adsTable);
-    XLSX.writeFile(wbCache, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wbCache, DATA_FILE);
   } catch(cacheErr){ console.warn('Cache write skipped:', cacheErr?.message); }
   return { usersCount: users.length, activeUsersCount, routers, usersSummary, usersTable, routersTable, regLoginTable, adsTable };
 }
@@ -1649,7 +1665,7 @@ function loadWorkbook(){
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet([]);
       XLSX.utils.book_append_sheet(wb, ws, 'Users');
-      XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       return wb;
     }
     // Read existing workbook with error handling
@@ -1668,7 +1684,7 @@ function loadWorkbook(){
       wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet([]);
       XLSX.utils.book_append_sheet(wb, ws, 'Users');
-      XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       return wb;
     }
     
@@ -1791,7 +1807,7 @@ function saveUser(email, password, phone, firstName, surname, dob){
     wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizedData);
     
     try {
-      XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       try {
         const maskPwd = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
         console.log('[REGISTRATION] xlsx user created:', { identifier: (origEmail || normPhone), password_mask: maskPwd(password) });
@@ -3280,6 +3296,24 @@ ${isManualProxy
     return clientSocket.end();
   }
   
+  // Per-connection CONNECT quota enforcement: if mappedIdentifier exists check quota and block tunnel when exhausted
+  try {
+    if (mappedIdentifier) {
+      const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceFingerprint = crypto.createHash('md5').update((req.headers['user-agent']||'') + routerId).digest('hex').slice(0,16);
+      const q = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+      if (q && q.exhausted) {
+        const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${q.totalUsedMB||0}&limit=${q.totalBundleMB||0}`;
+        clientSocket.write('HTTP/1.1 302 Found\r\n');
+        clientSocket.write(`Location: ${redirectUrl}\r\n`);
+        clientSocket.write('Content-Type: text/html\r\n\r\n');
+        clientSocket.write(`<html><body><h1>Data bundle exhausted</h1><p>Redirecting to <a href="${redirectUrl}">${redirectUrl}</a></p></body></html>`);
+        clientSocket.end();
+        return;
+      }
+    }
+  } catch (qe) { console.warn('[CONNECT-QUOTA-CHK-ERR]', qe && qe.message); }
+  
   // ENHANCED PROXY ACCESS CONTROL - STRICT VIDEO-BASED INTERNET UNLOCKING
   if (mappedIdentifier && isAutoProxy && !isPortalHost) {
     const userAgent = req.headers['user-agent'] || '';
@@ -3729,7 +3763,19 @@ ${isManualProxy
     serverSocket.on('error',()=>{ try{ clientSocket.end(); }catch{} });
   });
   const host = process.env.HOST || '0.0.0.0';
-  proxy.listen(PROXY_PORT, host, ()=> console.log(`Captive proxy listening on http://${host}:${PROXY_PORT}`));
+  try {
+    proxy.listen(PROXY_PORT, host, ()=> {
+      console.log(`Captive proxy listening on http://${host}:${PROXY_PORT}`);
+      process.env.PROXY_STARTED = 'true';
+    });
+  } catch (err) {
+    if (err && err.code === 'EADDRINUSE') {
+      console.warn('[PROXY-PORT-IN-USE] Could not bind proxy port', PROXY_PORT, 'continuing without proxy');
+      process.env.PROXY_STARTED = 'false';
+    } else {
+      console.warn('[PROXY-LISTEN-ERR]', err && err.message);
+    }
+  }
 }
 
 console.log('[proxy] ENABLE_PROXY=', process.env.ENABLE_PROXY);
@@ -3981,7 +4027,7 @@ function upsertRouterMeta(meta){
   const existing = rows.find(r=>r.routerId===meta.routerId);
   if(existing) Object.assign(existing, meta); else rows.push(meta);
   wb.Sheets[SHEET_ROUTERS] = XLSX.utils.json_to_sheet(rows);
-  XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
 }
 function upsertAd(def){
   if(!def.adId) return;
@@ -3990,7 +4036,7 @@ function upsertAd(def){
   const existing = rows.find(a=>a.adId===def.adId);
   if(existing) Object.assign(existing, def); else rows.push(def);
   wb.Sheets[SHEET_ADS] = XLSX.utils.json_to_sheet(rows);
-  XLSX.writeFile(wb, DATA_FILE);
+  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
 }
 function recordAdEvent(ev){
   const wb = loadWorkbookWithTracking();
@@ -4439,6 +4485,67 @@ app.post('/api/admin/device-unblock', (req, res) => {
   } catch (error) {
     console.error('[EMERGENCY-UNBLOCK-ERROR]', error.message);
     res.status(500).json({ ok: false, message: 'Emergency unblock failed' });
+  }
+});
+
+// Admin: list active temp unlocks
+app.get('/api/admin/temp-unlocks', (req, res) => {
+  try {
+    const token = req.headers['x-portal-secret'] || req.query.secret;
+    if (token !== PORTAL_SECRET) return res.status(403).json({ ok: false, message: 'Forbidden' });
+    if (!sqliteDB || !sqliteDB.loadTempUnlocks) return res.json({ ok: true, unlocks: [] });
+    const rows = sqliteDB.loadTempUnlocks();
+    // Normalize for display
+    const active = (rows || []).filter(r => Number(r.expiry) > Date.now()).map(r => ({ id: r.id, identifier: (r.identifier||'').toLowerCase(), deviceId: r.deviceId, expiry: Number(r.expiry) }));
+    res.json({ ok: true, unlocks: active });
+  } catch (err) {
+    console.error('[ADMIN-TEMP-UNLOCKS-ERR]', err && err.message);
+    res.status(500).json({ ok: false, message: 'Failed' });
+  }
+});
+
+// Admin: revoke a temp unlock by id or by identifier+deviceId
+app.post('/api/admin/temp-unlocks/revoke', (req, res) => {
+  try {
+    const token = req.headers['x-portal-secret'] || req.body.secret;
+    if (token !== PORTAL_SECRET) return res.status(403).json({ ok: false, message: 'Forbidden' });
+    const { id, identifier, deviceId } = req.body || {};
+    if (!sqliteDB) return res.status(500).json({ ok: false, message: 'Sqlite not enabled' });
+
+    let removed = 0;
+    if (id) {
+      const ok = sqliteDB.deleteTempUnlockById(id);
+      if (ok) removed = 1;
+    } else if (identifier && deviceId) {
+      removed = sqliteDB.deleteTempUnlock((identifier||'').toLowerCase(), deviceId);
+    } else {
+      return res.status(400).json({ ok: false, message: 'Missing id or identifier+deviceId' });
+    }
+
+    // Remove from in-memory map as well
+    try {
+      if (identifier) tempFullAccess.delete((identifier||'').toLowerCase());
+      if (deviceId) tempFullAccess.delete(deviceId);
+    } catch(e) {}
+
+    // Audit: record admin revoke action into SQLite events (if enabled)
+    try {
+      if (sqliteDB && sqliteDB.appendAccessEvent) {
+        sqliteDB.appendAccessEvent({
+          identifier: (identifier||null),
+          type: 'admin_revoke_temp_unlock',
+          tsISO: new Date().toISOString(),
+          ip: req.ip || null,
+          ua: req.headers['user-agent'] || null,
+          data: { id: id || null, identifier: identifier || null, deviceId: deviceId || null, removed }
+        });
+      }
+    } catch(e) { console.warn('[ADMIN-REVOKE-AUDIT-ERR]', e && e.message); }
+
+    res.json({ ok: true, removed });
+  } catch (err) {
+    console.error('[ADMIN-REVOKE-TEMP-UNLOCK-ERR]', err && err.message);
+    res.status(500).json({ ok: false, message: 'Failed' });
   }
 });
 

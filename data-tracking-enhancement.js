@@ -6,6 +6,10 @@
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
+let sqliteDB = null;
+if (process.env.USE_SQLITE === 'true') {
+    try { sqliteDB = require('./sqlite-db'); } catch(e) { sqliteDB = null; }
+}
 
 // Real-time usage cache to prevent frequent file reads
 const usageCache = new Map();
@@ -46,10 +50,12 @@ class DataTracker {
             
             // Get purchases data
             let totalBundleMB = 0;
-            if (workbook.SheetNames.includes('Purchases')) {
+            if (sqliteDB) {
+                const purchases = sqliteDB.getPurchasesByPhone(phoneNumber || '');
+                totalBundleMB = (purchases || []).reduce((s,p)=> s + (Number(p.dataAmount||0)), 0);
+            } else if (workbook.SheetNames.includes('Purchases')) {
                 const purchasesSheet = workbook.Sheets['Purchases'];
                 const purchases = XLSX.utils.sheet_to_json(purchasesSheet);
-                
                 totalBundleMB = purchases
                     .filter(p => p.phone_number === phoneNumber)
                     .reduce((sum, p) => sum + (parseFloat(p.data_amount) || 0), 0);
@@ -57,10 +63,12 @@ class DataTracker {
 
             // Get usage data
             let totalUsedMB = 0;
-            if (workbook.SheetNames.includes('Usage')) {
+            if (sqliteDB) {
+                const usage = sqliteDB.getUsageByPhone(phoneNumber || '');
+                totalUsedMB = (usage || []).reduce((s,u)=> s + (Number(u.dataUsed||0)), 0);
+            } else if (workbook.SheetNames.includes('Usage')) {
                 const usageSheet = workbook.Sheets['Usage'];
                 const usageData = XLSX.utils.sheet_to_json(usageSheet);
-                
                 totalUsedMB = usageData
                     .filter(u => u.phone_number === phoneNumber)
                     .reduce((sum, u) => sum + (parseFloat(u.data_used) || 0), 0);
@@ -92,6 +100,13 @@ class DataTracker {
      */
     addDataUsage(phoneNumber, dataMB, description = 'Internet browsing') {
         try {
+            if (sqliteDB) {
+                const ok = sqliteDB.addUsageRecord(phoneNumber, Math.round(dataMB * 100) / 100, description, this.getSessionId(phoneNumber));
+                usageCache.delete(phoneNumber);
+                if (ok) console.log(`[DATA-TRACKER] (sqlite) Added ${dataMB}MB usage for ${phoneNumber}`);
+                return ok;
+            }
+
             if (!fs.existsSync(this.dataFile)) {
                 console.error('[DATA-TRACKER] Cannot add usage - file not found');
                 return false;
@@ -126,7 +141,7 @@ class DataTracker {
                 workbook.SheetNames.push('Usage');
             }
 
-            XLSX.writeFile(workbook, this.dataFile);
+            if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(workbook, this.dataFile);
 
             // Clear cache for this user
             usageCache.delete(phoneNumber);
@@ -145,13 +160,20 @@ class DataTracker {
      */
     createBundleIfNotExists(phoneNumber, videoCount, bundleMB, bundleType) {
         try {
+            if (sqliteDB) {
+                const ok = sqliteDB.createPurchaseIfNotExists(phoneNumber, videoCount, bundleMB, bundleType);
+                if (ok) usageCache.delete(phoneNumber);
+                if (ok) console.log(`[DATA-TRACKER] (sqlite) Created ${bundleMB}MB bundle for ${phoneNumber} (${videoCount} videos)`);
+                return ok;
+            }
+
             if (!fs.existsSync(this.dataFile)) {
                 console.error('[DATA-TRACKER] Cannot create bundle - file not found');
                 return false;
             }
 
             const workbook = XLSX.readFile(this.dataFile);
-            
+
             // Get existing purchases
             let purchases = [];
             if (workbook.SheetNames.includes('Purchases')) {
@@ -190,7 +212,7 @@ class DataTracker {
                 workbook.SheetNames.push('Purchases');
             }
 
-            XLSX.writeFile(workbook, this.dataFile);
+            if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(workbook, this.dataFile);
 
             // Clear cache
             usageCache.delete(phoneNumber);

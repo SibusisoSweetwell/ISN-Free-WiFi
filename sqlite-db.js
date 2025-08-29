@@ -38,6 +38,40 @@ function init(dbPath) {
       data TEXT
     )`).run();
 
+      // Call temp_unlocks table creation to ensure table exists at startup
+      createTempUnlocksTable();
+
+    function createTempUnlocksTable() {
+      DB.prepare(`CREATE TABLE IF NOT EXISTS temp_unlocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identifier TEXT,
+        deviceId TEXT,
+        expiry INTEGER
+      )`).run();
+      // Indexes to speed up lookups and expiry cleanup
+      DB.prepare('CREATE INDEX IF NOT EXISTS idx_temp_unlocks_expiry ON temp_unlocks(expiry)').run();
+      DB.prepare('CREATE INDEX IF NOT EXISTS idx_temp_unlocks_ident_dev ON temp_unlocks(identifier, deviceId)').run();
+    }
+    // Purchases and Usage tables for data tracking
+    DB.prepare(`CREATE TABLE IF NOT EXISTS purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone_number TEXT,
+      data_amount REAL,
+      bundle_type TEXT,
+      video_count INTEGER,
+      timestamp TEXT,
+      purchase_type TEXT
+    )`).run();
+    DB.prepare(`CREATE TABLE IF NOT EXISTS usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone_number TEXT,
+      data_used REAL,
+      description TEXT,
+      timestamp TEXT,
+      session_id TEXT
+    )`).run();
+    DB.prepare('CREATE INDEX IF NOT EXISTS idx_purchases_phone ON purchases(phone_number)').run();
+    DB.prepare('CREATE INDEX IF NOT EXISTS idx_usage_phone ON usage(phone_number)').run();
     return true;
   } catch (err) {
     console.error('[SQLITE-INIT-ERROR]', err && err.message);
@@ -128,6 +162,103 @@ function appendAccessEvent(evt) {
   }
 }
 
+function saveTempUnlock(identifier, deviceId, expiry) {
+  if (!DB) return false;
+  try {
+    // Upsert by identifier+deviceId
+    const existing = DB.prepare('SELECT id FROM temp_unlocks WHERE identifier=? AND deviceId=?').get(identifier||null, deviceId||null);
+    if (existing) {
+      DB.prepare('UPDATE temp_unlocks SET expiry=? WHERE id=?').run(expiry, existing.id);
+    } else {
+      DB.prepare('INSERT INTO temp_unlocks (identifier,deviceId,expiry) VALUES (?, ?, ?)').run(identifier||null, deviceId||null, expiry);
+    }
+    return true;
+  } catch (err) {
+    console.warn('[SQLITE-SAVE-TEMP-UNLOCK-ERR]', err && err.message);
+    return false;
+  }
+}
+
+function loadTempUnlocks() {
+  if (!DB) return [];
+  try {
+    // Return id as well for administrative operations
+    const rows = DB.prepare('SELECT id, identifier, deviceId, expiry FROM temp_unlocks').all();
+    return rows || [];
+  } catch (err) {
+    console.warn('[SQLITE-LOAD-TEMP-UNLOCKS-ERR]', err && err.message);
+    return [];
+  }
+}
+
+function deleteTempUnlockById(id) {
+  if (!DB) return false;
+  try {
+    const res = DB.prepare('DELETE FROM temp_unlocks WHERE id=?').run(id);
+    return (res.changes || 0) > 0;
+  } catch (err) {
+    console.warn('[SQLITE-DELETE-TEMP-UNLOCK-ERR]', err && err.message);
+    return false;
+  }
+}
+
+function deleteTempUnlock(identifier, deviceId) {
+  if (!DB) return 0;
+  try {
+    const res = DB.prepare('DELETE FROM temp_unlocks WHERE identifier=? AND deviceId=?').run(identifier||null, deviceId||null);
+    return res.changes || 0;
+  } catch (err) {
+    console.warn('[SQLITE-DELETE-TEMP-UNLOCKS-ERR]', err && err.message);
+    return 0;
+  }
+}
+
+function removeExpiredTempUnlocks(now) {
+  if (!DB) return 0;
+  try {
+    const res = DB.prepare('DELETE FROM temp_unlocks WHERE expiry<?').run(now || Date.now());
+    return res.changes || 0;
+  } catch (err) {
+    console.warn('[SQLITE-REMOVE-EXPIRED-TEMP-UNLOCKS-ERR]', err && err.message);
+    return 0;
+  }
+}
+
+// Data-tracking helpers
+function getPurchasesByPhone(phoneNumber) {
+  if (!DB) return [];
+  try {
+    return DB.prepare('SELECT id, phone_number as phoneNumber, data_amount as dataAmount, bundle_type as bundleType, video_count as videoCount, timestamp, purchase_type as purchaseType FROM purchases WHERE phone_number=? ORDER BY id DESC').all(phoneNumber||null);
+  } catch (err) { console.warn('[SQLITE-GET-PURCHASES-ERR]', err && err.message); return []; }
+}
+
+function getUsageByPhone(phoneNumber) {
+  if (!DB) return [];
+  try {
+    return DB.prepare('SELECT id, phone_number as phoneNumber, data_used as dataUsed, description, timestamp, session_id as sessionId FROM usage WHERE phone_number=? ORDER BY id DESC').all(phoneNumber||null);
+  } catch (err) { console.warn('[SQLITE-GET-USAGE-ERR]', err && err.message); return []; }
+}
+
+function addUsageRecord(phoneNumber, dataUsed, description, sessionId) {
+  if (!DB) return false;
+  try {
+    DB.prepare('INSERT INTO usage (phone_number, data_used, description, timestamp, session_id) VALUES (?, ?, ?, ?, ?)')
+      .run(phoneNumber||null, Number(dataUsed)||0, description||'', new Date().toISOString(), sessionId||null);
+    return true;
+  } catch (err) { console.warn('[SQLITE-ADD-USAGE-ERR]', err && err.message); return false; }
+}
+
+function createPurchaseIfNotExists(phoneNumber, videoCount, bundleMB, bundleType) {
+  if (!DB) return false;
+  try {
+    const exists = DB.prepare('SELECT id FROM purchases WHERE phone_number=? AND bundle_type=? AND video_count=?').get(phoneNumber||null, bundleType||null, Number(videoCount)||0);
+    if (exists) return false;
+    DB.prepare('INSERT INTO purchases (phone_number, data_amount, bundle_type, video_count, timestamp, purchase_type) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(phoneNumber||null, Number(bundleMB)||0, bundleType||null, Number(videoCount)||0, new Date().toISOString(), 'video_reward');
+    return true;
+  } catch (err) { console.warn('[SQLITE-CREATE-PURCHASE-ERR]', err && err.message); return false; }
+}
+
 module.exports = {
   init,
   validateLogin,
@@ -135,6 +266,15 @@ module.exports = {
   changePassword,
   createUser,
   appendAccessEvent,
+  saveTempUnlock,
+  loadTempUnlocks,
+  removeExpiredTempUnlocks,
+  deleteTempUnlockById,
+  deleteTempUnlock,
+  getPurchasesByPhone,
+  getUsageByPhone,
+  addUsageRecord,
+  createPurchaseIfNotExists,
   _db: () => DB
 };
 
