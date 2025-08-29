@@ -1077,9 +1077,19 @@ function computeRemainingUnified(identifier, deviceFingerprint, routerId){
     const basicQuota = computeRemaining(idLower, deviceFingerprint, routerId);
     
     // If user has active bundles OR purchased data remaining, skip device validation
-    if ((basicQuota.totalBundleMB > 0 && !basicQuota.exhausted) || basicQuota.remainingMB > 0) {
+    // Use sqlite-backed usageData (calculated above) to avoid stale XLSX reads and ensure
+    // recently-created bundles are immediately visible to quota checks.
+    const basicQuotaFromTracker = {
+      totalBundleMB: usageData.totalBundleMB || 0,
+      remainingMB: usageData.remainingMB || 0,
+      totalUsedMB: usageData.totalUsedMB || 0,
+      exhausted: usageData.exhausted || false
+    };
+
+    if ((basicQuotaFromTracker.totalBundleMB > 0 && !basicQuotaFromTracker.exhausted) || basicQuotaFromTracker.remainingMB > 0) {
       console.log(`[DEVICE-ACCESS-BYPASS] User ${idLower} has ${basicQuota.totalBundleMB}MB bundles + ${basicQuota.remainingMB}MB remaining - bypassing device isolation`);
-      return basicQuota;
+      // Return the tracker-derived quota so later checks use sqlite-backed numbers
+      return basicQuotaFromTracker;
     }
     
     // If no bundles, check if device has specific access token
@@ -3818,19 +3828,33 @@ app.get('/api/me/usage', (req,res)=>{
     
     // Get all bundles for this user (especially for phone users)
     let myPurchases = [];
-    
     try {
-      const wb = loadWorkbookWithTracking();
-      if (wb.Sheets['Purchases']) {
-        const purchases = XLSX.utils.sheet_to_json(wb.Sheets['Purchases']);
-        
-        // For phone users, show all bundles regardless of device
-        if (idLower.match(/^\d{10}$/)) {
-          myPurchases = purchases.filter(p => p.phone_number === idLower || p.identifier === idLower)
-            .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
-        } else {
-          myPurchases = purchases.filter(p => p.identifier === idLower)
-            .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
+      if (sqliteDB) {
+        // Use sqlite purchases (normalize field names to match expected client shape)
+        const rows = sqliteDB.getPurchasesByPhone(idLower || '');
+        if (Array.isArray(rows)) {
+          myPurchases = rows.map(r => ({
+            bundleMB: Number(r.dataAmount)||0,
+            usedMB: 0,
+            routerId: r.routerId || 'router',
+            grantedAtISO: r.timestamp || new Date().toISOString(),
+            bundleType: r.bundleType || r.purchaseType || 'video_reward'
+          }));
+          // Sort newest first
+          myPurchases.sort((a,b) => new Date(b.grantedAtISO) - new Date(a.grantedAtISO));
+        }
+      } else {
+        const wb = loadWorkbookWithTracking();
+        if (wb.Sheets['Purchases']) {
+          const purchases = XLSX.utils.sheet_to_json(wb.Sheets['Purchases']);
+          // For phone users, show all bundles regardless of device
+          if (idLower.match(/^\d{10}$/)) {
+            myPurchases = purchases.filter(p => p.phone_number === idLower || p.identifier === idLower)
+              .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
+          } else {
+            myPurchases = purchases.filter(p => p.identifier === idLower)
+              .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
+          }
         }
       }
     } catch (error) {
