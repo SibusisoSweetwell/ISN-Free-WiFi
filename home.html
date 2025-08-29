@@ -2623,7 +2623,26 @@ async function loadProfile(){
 		let data; try{ data=JSON.parse(raw); }catch{ data=null; }
 		if(!res.ok){
 			console.error('[profile] http error', status, raw);
-			throw new Error('HTTP '+status+' '+(data&&data.message?data.message:'') );
+			// If server returned diagnostic info, show that to the user instead of a generic error
+			try{
+				const ps=document.getElementById('profileStatus');
+				if(ps && data){
+					if(data.diagnostics){
+						let diagMsg = 'User not found. Checked: ' + (data.diagnostics.checked||[]).join(', ');
+						if(data.diagnostics.xlsxPossibleMatches && data.diagnostics.xlsxPossibleMatches>0){
+							diagMsg += '. Legacy store possible matches: ' + data.diagnostics.xlsxPossibleMatches + '. Try password reset or contact admin.';
+						}
+						ps.textContent = diagMsg;
+						ps.style.color = '#c30000';
+						return;
+					}
+					// Fallback: show server-provided message if available
+					ps.textContent = (data && data.message) ? data.message : ('HTTP ' + status);
+					ps.style.color = '#c30000';
+					return;
+				}
+			}catch(e){ /* ignore UI update errors */ }
+			throw new Error('HTTP '+status+' '+(data&&data.message?data.message:'' ) );
 		}
 		if(!data || !data.ok){
 			console.error('[profile] bad payload', raw);

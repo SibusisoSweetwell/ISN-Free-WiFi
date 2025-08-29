@@ -612,11 +612,14 @@ async function submitRegister(e){
 				if(data.field){ const fieldMap={ email:'reg-email2', phone:'reg-phone', firstName:'reg-first', surname:'reg-surname', dob:'reg-dob' }; const fld=fieldMap[data.field]; if(fld){ const el=document.getElementById(fld); el.classList.add('field-error'); el.focus(); }}
 				return false;
 			}
-			// Success path
-			let remain=10;
-			showMsg('Account created! Redirecting to login in '+remain+'s...','success');
-			pushToast('Account created successfully.<small>Redirecting to login in <span id="regCountdown">'+remain+'</span>s</small>','success');
-			const timer=setInterval(()=>{ remain--; const c=document.getElementById('regCountdown'); if(c) c.textContent=remain; showMsg('Account created! Redirecting to login in '+remain+'s...','success'); if(remain<=0){ clearInterval(timer); closeRegister(); if(email){ document.getElementById('login-email').value=email; document.getElementById('login-email').dispatchEvent(new Event('input')); } else if(normPhone){ document.getElementById('login-email').value=normPhone; document.getElementById('login-email').dispatchEvent(new Event('input')); } } },1000);
+			// Success path: auto-login and redirect to My Account (home.html)
+			let remain=6;
+			showMsg('Account created! Signing you in and opening your account in '+remain+'s...','success');
+			pushToast('Account created successfully.<small>Opening your account in <span id="regCountdown">'+remain+'</span>s</small>','success');
+			const timer=setInterval(()=>{ remain--; const c=document.getElementById('regCountdown'); if(c) c.textContent=remain; showMsg('Account created! Signing you in and opening your account in '+remain+'s...','success'); if(remain<=0){ clearInterval(timer); closeRegister(); // set session identifier so home.html can load the profile
+				const ident = (email && email.length)? email.toLowerCase() : (normPhone||'');
+				try{ if(ident) sessionStorage.setItem('currentUserIdentifier', ident); }catch{}
+				window.location.href='home.html'; } },1000);
 			return true;
 		}catch(err){ showMsg('Network / server error: '+(err.message||'unknown'), 'error'); return false; }
 	}
