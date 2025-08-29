@@ -12,15 +12,19 @@ let sqliteDB = null;
 if (process.env.USE_SQLITE === 'true') {
   try {
     sqliteDB = require('./sqlite-db');
-    const ok = sqliteDB.init(process.env.SQLITE_PATH || path.join(__dirname, 'data.sqlite'));
+    // Use a stable DB filename for cloud environments
+    const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'logins.db');
+    const ok = sqliteDB.init(dbPath);
     if (!ok) sqliteDB = null;
-    else console.log('[SQLITE] Initialized');
+    else console.log('[SQLITE] Initialized at', dbPath);
   } catch (err) {
     console.warn('[SQLITE] Init failed, falling back to XLSX:', err && err.message);
     sqliteDB = null;
   }
 }
+console.log('[CONFIG] USE_SQLITE=', process.env.USE_SQLITE, 'sqliteDB active=', !!sqliteDB);
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const url = require('url');
 const crypto = require('crypto');
@@ -49,9 +53,10 @@ function sanitizeDataForExcel(data) {
 
 console.log('Booting portal server...');
 const app = express();
-// Force specific ports to ensure consistency
-let PORT = 3150; // Fixed port for portal
+// Use environment PORT when provided (Render sets this) otherwise default to 3150
+let PORT = Number(process.env.PORT) || 3150; // Portal port (configurable via env)
 const PROXY_PORT = 8082; // Fixed port for proxy
+const RENDER_HOST = (process.env.RENDER_HOST || 'isn-free-wifi.onrender.com').toLowerCase();
 const PORTAL_SECRET = process.env.PORTAL_SECRET || 'isn_portal_secret_dev';
 const DATA_FILE = path.join(__dirname, 'logins.xlsx');
 const ADMIN_EMAIL = 'sbusisosweetwell15@gmail.com';
@@ -559,7 +564,7 @@ function recordPurchase(identifier, bundleMB, deviceId, routerId, ua, source) {
   const wb = loadWorkbookWithTracking();
   const { rows } = listPurchases();
   const { data: users } = getUsers();
-  const user = users.find(u=>u.email===idLower || u.phone===normalizePhone(idLower));
+  const user = users.find(u=> String(u.email||'').trim().toLowerCase()===idLower || u.phone===normalizePhone(idLower));
   
   // Ensure device ID is provided
   if (!deviceId) {
@@ -1005,7 +1010,7 @@ function computeRemainingUnified(identifier, deviceFingerprint, routerId){
   const usageData = dataTracker.getFreshUsageData(idLower);
   
   const { data: users } = getUsers();
-  const user = users.find(u=> (u.email||'').toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
+  const user = users.find(u=> String(u.email||'').trim().toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
   
   if(!user) {
     // For non-registered users, use basic computation
@@ -1315,7 +1320,7 @@ function buildAdminOverview(){
   function canonicalIdentifier(id){
     if(!id) return '';
     const lower=id.toLowerCase();
-    const u = users.find(u=> (u.email||'').toLowerCase()===lower || (u.phone && u.phone===normalizePhone(lower)) );
+  const u = users.find(u=> String(u.email||'').trim().toLowerCase()===lower || (u.phone && u.phone===normalizePhone(lower)) );
     if(u){ return (u.email?u.email.toLowerCase(): (u.phone||'').toLowerCase()); }
     return lower;
   }
@@ -1343,6 +1348,8 @@ function buildAdminOverview(){
 }
 
 app.use(express.json());
+// Support HTML form submissions
+app.use(express.urlencoded({ extended: false }));
 
 // Add CORS headers to help with video loading and API requests
 app.use((req, res, next) => {
@@ -1358,11 +1365,69 @@ app.use((req, res, next) => {
   }
 });
 
-app.use(express.static(__dirname));
+// NOTE: serve static files after application routes so API endpoints (like /admin/*) are not
+// accidentally overridden by files like login.html. We'll mount static later, after admin routes.
 
 // Explicit route for home.html to ensure it's served
 app.get('/home.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'home.html'));
+});
+
+// --- Admin auth middleware ---
+function requireAdminToken(req, res, next) {
+  // Use shared validator so behavior matches the early middleware bypass
+  try {
+    if (!isValidAdminToken(req)) {
+      // Log masked token info for failed attempts to aid debugging without leaking secrets
+      try {
+        const incoming = (req.headers['x-admin-token'] || '').toString().trim();
+        const serverSecret = (process.env.PORTAL_SECRET || 'isn_portal_secret_dev').toString().trim();
+        const mask = s => { if (!s) return '<empty>'; if (s.length<=8) return s.slice(0,2)+'...'+s.slice(-2); return s.slice(0,4)+'...'+s.slice(-4); };
+        console.warn('[ADMIN-AUTH-FAIL] path=%s got=%s server=%s len_in=%d len_srv=%d', req.path, mask(incoming), mask(serverSecret), (incoming||'').length, serverSecret.length);
+      } catch (e) { /* best effort logging */ }
+      return res.status(401).json({ ok: false, message: 'Unauthorized' });
+    }
+    return next();
+  } catch (err) {
+    console.warn('[ADMIN-AUTH-ERR]', err && err.message);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+}
+
+// Shared admin token validator used by middleware and endpoints
+function isValidAdminToken(req) {
+  const incoming = (req.headers['x-admin-token'] || '').toString().trim();
+  const serverSecret = (process.env.PORTAL_SECRET || 'isn_portal_secret_dev').toString().trim();
+  const mask = s => {
+    if (!s) return '<empty>';
+    if (s.length <= 8) return s.slice(0,2) + '...' + s.slice(-2);
+    return s.slice(0,4) + '...' + s.slice(-4);
+  };
+  const valid = incoming && incoming === serverSecret;
+  // Log masked values for diagnostics (no full secret leaked)
+  console.log('[ADMIN-TOKEN-CHK] got=%s server=%s valid=%s len_in=%d len_srv=%d path=%s', mask(incoming), mask(serverSecret), valid, (incoming||'').length, serverSecret.length, req.path);
+  return Boolean(valid);
+}
+
+// POST form login (handles browser form POSTs from login.html)
+app.post('/login', (req, res)=>{
+  // Accept either form fields or JSON
+  const identifier = (req.body.email || req.body.username || '').trim();
+  const password = req.body.password || '';
+  if (!identifier || !password) {
+    // For form submissions, redirect back with message
+    return res.status(302).redirect('/login.html?message=missing_fields');
+  }
+  const ok = validateLogin(identifier, password);
+  if (ok) {
+    // For form login, set a cookie token (simple random token) and redirect to home
+    const token = crypto.randomBytes(24).toString('hex');
+    res.cookie('portal_token', token, { httpOnly: true });
+    // Optionally append access event
+    try { if (sqliteDB) sqliteDB.appendAccessEvent({ identifier: identifier.toLowerCase(), type:'login', tsISO: new Date().toISOString(), ip: req.ip, ua: req.headers['user-agent'] }); } catch {}
+    return res.redirect('/home.html');
+  }
+  return res.status(302).redirect('/login.html?message=invalid_credentials');
 });
 
 // Root shortcut -> redirect to portal page with enhanced device authentication check
@@ -1435,6 +1500,17 @@ app.get('/success.txt', (req, res) => {
 
 // Catch-all middleware to force ALL unauthenticated traffic to portal with enhanced device tracking
 app.use((req, res, next) => {
+  // Early admin-token bypass: if request targets an admin path and provides a valid X-Admin-Token,
+  // skip the captive-portal redirect logic immediately so admin/debug tools work even when portal
+  // forcing is active.
+  const isAdminPathEarly = req.path.startsWith('/admin') || req.path.startsWith('/api/admin');
+  // Show masked token and whether bypass will be applied
+  const incomingRaw = (req.headers['x-admin-token'] || '').toString().trim();
+  const mask = s => { if (!s) return '<empty>'; if (s.length<=8) return s.slice(0,2)+'...'+s.slice(-2); return s.slice(0,4)+'...'+s.slice(-4); };
+  const isAdminValid = isAdminPathEarly && isValidAdminToken(req);
+  console.log('[ADMIN-BYPASS] path=%s token=%s bypass=%s', req.path, mask(incomingRaw), isAdminValid);
+  if (isAdminValid) return next();
+
   const clientIp = (req.headers['x-forwarded-for']||'').split(',')[0].trim() || req.socket.remoteAddress || '';
   const clientInfo = resolveActiveClient(clientIp, req);
   const isApiRequest = req.path.startsWith('/api/');
@@ -1490,6 +1566,18 @@ app.use((req, res, next) => {
     return res.status(302).redirect('/login.html?message=device_needs_unlock');
   }
   
+  // Quota enforcement: if user exists and is exhausted, redirect to quota page
+  try {
+    if (clientInfo && clientInfo.identifier) {
+      const routerId = req.headers['x-router-id'] || req.ip || 'unknown';
+      const quota = computeRemainingUnified(clientInfo.identifier, clientInfo.deviceId, routerId);
+      if (quota && quota.exhausted) {
+        console.log('[QUOTA-ENFORCE] Redirecting exhausted device to quota page:', { identifier: clientInfo.identifier, deviceId: clientInfo.deviceId });
+        return res.status(302).redirect('/quota.html');
+      }
+    }
+  } catch (e) { console.warn('[QUOTA-ENFORCE-ERR]', e && e.message); }
+
   next();
 });
 // Serve avatars folder if created
@@ -1660,7 +1748,8 @@ function validateLogin(identifier, password){
   const data = XLSX.utils.sheet_to_json(ws);
   let user;
   if(identifier.includes('@')){
-    user = data.find(u=>u.email===identifier && u.password===password);
+    const idEmail = String(identifier).trim().toLowerCase();
+    user = data.find(u=> (String(u.email||'').trim().toLowerCase()===idEmail) && u.password===password);
   } else {
     const norm = normalizePhone(identifier);
     user = data.find(u=>u.phone===norm && u.password===password);
@@ -1712,7 +1801,8 @@ app.post('/api/forgot/start', (req,res)=>{
   const { email } = req.body;
   if(!email) return res.status(400).json({ ok:false, message:'Email required' });
   const { data } = getUsers();
-  if(!data.find(u=>u.email===email)) return res.status(404).json({ ok:false, message:'Email not found' });
+  const emailLower = String(email).trim().toLowerCase();
+  if(!data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower)) return res.status(404).json({ ok:false, message:'Email not found' });
   const code = Math.floor(100000 + Math.random()*900000).toString();
   resetCodes.set(email, { code, expires: Date.now()+10*60*1000 });
   // For demo we return the code (normally you'd email/SMS it)
@@ -1728,7 +1818,7 @@ app.post('/api/forgot/verify', (req,res)=>{
   }
   // update password in sheet
   const { wb, ws, data } = getUsers();
-  const user = data.find(u=>u.email===email);
+  const user = data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower);
   if(!user) return res.status(404).json({ ok:false, message:'User not found' });
   user.password = newPassword;
   const newWs = XLSX.utils.json_to_sheet(data);
@@ -2062,6 +2152,20 @@ function startProxy(){
     const hostHeader = rawHostHeader.split(':')[0].toLowerCase();
     const clientIp = (clientReq.socket && clientReq.socket.remoteAddress) || '';
     let mappedIdentifier = resolveActiveClient(clientIp);
+    // Early redirect: if client is trying to reach the old server IP's login page
+    // while using the proxy, redirect them to the Render-hosted portal instead.
+    try {
+      const parsedEarly = url.parse(clientReq.url || '');
+      const earlyPath = parsedEarly.path || clientReq.url || '/';
+      if (hostHeader === '10.5.48.94' && (earlyPath === '/' || earlyPath.startsWith('/login'))) {
+        const targetUrl = `https://${RENDER_HOST}/login.html`;
+        clientRes.writeHead(302, { Location: targetUrl, 'Content-Type': 'text/html' });
+        clientRes.end(`<html><body>Redirecting to <a href="${targetUrl}">${targetUrl}</a></body></html>`);
+        return;
+      }
+    } catch (e) {
+      // swallow and continue
+    }
     
     const localIps = localIPv4s();
     const hotspotFallback = '192.168.137.1';
@@ -2100,9 +2204,10 @@ function startProxy(){
       host: hostHeader
     });
     
-    // Portal host detection - FIXED to always include server IP
+    // Portal host detection - include server IP and external render host
     const portalHostCandidates = new Set([ 
       (process.env.PORTAL_HOST||'').toLowerCase(), 
+      RENDER_HOST,
       'localhost', 
       '10.5.48.94',  // Always include server IP
       hotspotFallback, 
@@ -2116,9 +2221,58 @@ function startProxy(){
     if (isPortalHost || isVideoAdHost) {
       console.log('[PROXY-WHITELIST] Allowing portal or video-ad host without blocking', { host: hostHeader, ip: clientIp, isPortalHost, isVideoAdHost });
 
-      // If this is the portal host, forward directly to the local portal server and return
+      // Redirect legacy direct-access to local server IP for login page to the Render-hosted portal
+      // e.g. clients trying to reach http://10.5.48.94:3150/login.html via the manual proxy
+      // should be redirected to https://isn-free-wifi.onrender.com/login.html
+      try {
+        const parsedLegacy = url.parse(clientReq.url);
+        const legacyPath = parsedLegacy.path || clientReq.url || '/';
+        if (hostHeader === '10.5.48.94' && legacyPath && (legacyPath.startsWith('/login') || legacyPath === '/')) {
+          const target = `https://${RENDER_HOST}/login.html`;
+          clientRes.writeHead(302, { Location: target, 'Content-Type': 'text/html' });
+          clientRes.end(`<html><body>Redirecting to <a href="${target}">${target}</a></body></html>`);
+          return;
+        }
+      } catch (redirErr) {
+        console.warn('[PROXY-REDIRECT-ERROR]', redirErr && redirErr.message);
+      }
+
+      // If this is the portal host, forward directly to the portal server.
+      // If the portal host is the remote Render host, forward via HTTPS to the remote host.
       if (isPortalHost) {
         const parsed = url.parse(clientReq.url);
+        // If the request was intended for the Render-hosted portal, proxy to that remote host over HTTPS
+        if (hostHeader === RENDER_HOST) {
+          const options = {
+            hostname: RENDER_HOST,
+            port: 443,
+            path: parsed.path || clientReq.url,
+            method: clientReq.method,
+            headers: {
+              ...clientReq.headers,
+              host: RENDER_HOST,
+              'x-forwarded-for': clientIp,
+              'x-proxy-type': isManualProxy ? 'manual' : 'auto'
+            }
+          };
+
+          const upstream = https.request(options, upRes => {
+            clientRes.writeHead(upRes.statusCode, upRes.headers);
+            upRes.on('data', chunk => clientRes.write(chunk));
+            upRes.on('end', () => clientRes.end());
+          });
+
+          upstream.on('error', err => {
+            console.error('[PORTAL-REMOTE-FORWARD-ERROR]', err.message);
+            clientRes.writeHead(502, { 'Content-Type': 'text/html' });
+            clientRes.end('<html><body><h1>Portal Proxy Error</h1><p>Could not connect to remote portal.</p></body></html>');
+          });
+
+          clientReq.pipe(upstream);
+          return;
+        }
+
+        // Otherwise forward to local portal server (existing behavior)
         const options = {
           hostname: 'localhost',
           port: PORT,  // Forward to portal server port (3150)
@@ -2336,7 +2490,8 @@ function startProxy(){
     // Always allow portal host + loopbacks + LAN IPs + essential ad/media CDNs (video bucket & yt thumbnails) unless STRICT_WALLED=true
     const baseGarden = new Set([
       'localhost','127.0.0.1','::1', hotspotFallback, ...localIps,
-      (process.env.PORTAL_HOST||'').toLowerCase(),
+  (process.env.PORTAL_HOST||'').toLowerCase(),
+  RENDER_HOST,
       'storage.googleapis.com','commondatastorage.googleapis.com','i.ytimg.com','i9.ytimg.com','yt3.ggpht.com',
       'dash.akamaized.net','cdn.jsdelivr.net','learningcontainer.com','sample-videos.com',
       // Video Ad CDNs - Allow video ads to play even when user has no data
@@ -2372,7 +2527,7 @@ function startProxy(){
       const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
       const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
       const quota = computeRemainingUnified(effectiveIdentifier, deviceFingerprint, routerId);
-      const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', hotspotFallback, ...localIps ]);
+  const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), RENDER_HOST, 'localhost', '10.5.48.94', hotspotFallback, ...localIps ]);
       const isPortalHost = portalHostCandidates.has(hostHeader);
       const isPortalByPort = reqPortNum && reqPortNum === PORT;
       const isPortal = isPortalHost || isPortalByPort;
@@ -2485,7 +2640,7 @@ function startProxy(){
           });
           
           clientRes.writeHead(302, { 
-            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_quota=true&used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`,
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`,
             'Content-Type': 'text/html' 
           });
           
@@ -2527,7 +2682,7 @@ function startProxy(){
     </ol>
   </div>
   
-  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="action-btn">🎬 Watch More Videos</a>
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/quota.html" class="action-btn">🎬 Watch More Videos</a>
   <p><small>Portal access is always free • Videos unlock internet data</small></p>
 </div>
 </body></html>`);
@@ -2839,7 +2994,7 @@ function startProxy(){
   // STRICT HTTPS BLOCKING - Check proxy type and enforce restrictions
   const hostOnly = req.url.split(':')[0].toLowerCase();
   const localIps = localIPv4s();
-  const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', ...localIps ]);
+  const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), RENDER_HOST, 'localhost', '10.5.48.94', ...localIps ]);
   const isPortalHost = portalHostCandidates.has(hostOnly);
   
   // ENHANCED PROXY TYPE DETECTION FOR HTTPS
@@ -2912,8 +3067,25 @@ function startProxy(){
     console.log('[CONNECT-WHITELIST] Allowing CONNECT to portal or video-ad host without blocking', { host: hostOnly, ip: clientIp, isPortalHost, isVideoAdHost });
     // If portal host, accept CONNECT and forward to local portal or respond with a simple 200 for CONNECT
     if (isPortalHost) {
+      // If the portal host is the remote Render host, open a TCP connection to remote:443 and pipe
+      if (hostOnly === RENDER_HOST) {
+        const remotePort = 443;
+        const remoteSocket = net.connect(remotePort, RENDER_HOST, () => {
+          clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          // Pipe data both ways
+          remoteSocket.write(head);
+          clientSocket.pipe(remoteSocket);
+          remoteSocket.pipe(clientSocket);
+        });
+        remoteSocket.on('error', err => {
+          console.error('[CONNECT-REMOTE-ERROR]', err.message);
+          clientSocket.end();
+        });
+        return;
+      }
+      // Otherwise accept CONNECT and let client open tunnel to local portal or pass through
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      return; // allow the client to open the tunnel (portal uses HTTP, usually no CONNECT needed but be permissive)
+      return; // allow the client to open the tunnel
     }
     // If video ad host, allow through by continuing; downstream logic will treat it as ad traffic
   }
@@ -3156,9 +3328,9 @@ ${isManualProxy
         try { activeClients.delete(normalizeIp(clientIp)); } catch {}
         console.warn('[QUOTA-BLOCK-CONNECT] exhausted identifier=', effectiveIdentifier, 'host=', hostOnly, 'ip=', clientIp, 'remaining=', quota.remainingMB);
         clientSocket.write('HTTP/1.1 302 Found\r\n');
-        clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=data_exhausted\r\n`);
-        clientSocket.write('Content-Type: text/html\r\n\r\n');
-        clientSocket.write(`<html><head><title>Data Exhausted</title></head><body><h1>Data Bundle Exhausted</h1><p>Watch more videos to unlock internet access.</p><p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html">Watch Videos</a></p></body></html>`);
+  clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/quota.html?message=data_exhausted\r\n`);
+  clientSocket.write('Content-Type: text/html\r\n\r\n');
+  clientSocket.write(`<html><head><title>Data Exhausted</title></head><body><h1>Data Bundle Exhausted</h1><p>Watch more videos to unlock internet access.</p><p><a href="http://${localIps[0] || 'localhost'}:${PORT}/quota.html">Watch Videos</a></p></body></html>`);
         return clientSocket.end();
       }
       
@@ -3253,7 +3425,7 @@ ${isManualProxy
           remaining: quota.remainingMB
         });
         
-        const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_quota=true&used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`;
+  const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`;
         
         clientSocket.write('HTTP/1.1 302 Found\r\n');
         clientSocket.write(`Location: ${redirectUrl}\r\n`);
@@ -3263,7 +3435,7 @@ ${isManualProxy
         const htmlContent = `<!DOCTYPE html>
 <html><head>
 <title>HTTPS Data Limit Exceeded</title>
-<meta http-equiv="refresh" content="5;url=${redirectUrl}">
+  <meta http-equiv="refresh" content="5;url=${redirectUrl}">
 <style>
   body{font-family:Arial;text-align:center;margin:50px;color:#333;}
   .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #dc3545;border-radius:10px;background:#f8f9fa;}
@@ -3445,7 +3617,7 @@ app.get('/api/me/usage', (req,res)=>{
     
     // Get video tracking data
     const { data: users } = getUsers();
-    const user = users.find(u=> (u.email||'').toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
+  const user = users.find(u=> String(u.email||'').trim().toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
     
     let videosWatched, videoEarnedMB;
     if (user) {
@@ -4721,6 +4893,158 @@ app.post('/api/login', (req,res)=>{
   res.status(401).json({ ok:false, message:'Invalid credentials' });
 });
 
+// Health endpoint: returns SQLite user count, DB path, and current render host
+app.get('/health', (req, res) => {
+  try {
+    const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'logins.db');
+    let users = 0;
+    if (sqliteDB && typeof sqliteDB._db === 'function' && sqliteDB._db()) {
+      try {
+        const db = sqliteDB._db();
+        const row = db.prepare('SELECT COUNT(*) as c FROM users').get();
+        users = row && (row.c || row['COUNT(*)'] || Object.values(row)[0]) ? Number(row.c || row['COUNT(*)'] || Object.values(row)[0]) : 0;
+      } catch (err) {
+        console.warn('[/health] count error', err && err.message);
+        users = 0;
+      }
+    }
+    return res.json({ status: 'ok', users, db: dbPath, host: RENDER_HOST });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err && err.message });
+  }
+});
+
+// Admin users list (no auth for now) - returns [{ email, phone }, ...]
+app.get('/admin/users', requireAdminToken, (req, res) => {
+  try {
+    if (!sqliteDB || typeof sqliteDB._db !== 'function' || !sqliteDB._db()) {
+      return res.json([]);
+    }
+    const db = sqliteDB._db();
+    const rows = db.prepare('SELECT email, phone FROM users').all();
+    const users = (rows || []).map(r => ({ email: r.email || null, phone: r.phone || null }));
+    return res.json(users);
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err && err.message });
+  }
+});
+
+// Admin dump users (no auth) - returns email, phone, masked password_hash (first 6 chars)
+app.get('/admin/dump-users', requireAdminToken, (req, res) => {
+  try {
+  // Auth handled by requireAdminToken
+    if (!sqliteDB || typeof sqliteDB._db !== 'function' || !sqliteDB._db()) return res.json([]);
+    const db = sqliteDB._db();
+    const rows = db.prepare('SELECT email, phone, password_hash FROM users').all();
+    const users = (rows || []).map(r => ({
+      email: r.email || null,
+      phone: r.phone || null,
+      password_hash: r.password_hash ? String(r.password_hash).slice(0,6) : null
+    }));
+    return res.json(users);
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err && err.message });
+  }
+});
+
+// Admin metrics: total users, login attempts, quota usage summary, ad unlocks
+app.get('/admin/metrics', requireAdminToken, (req, res) => {
+  try {
+    const metrics = { totalUsers: 0, loginAttempts: 0, quota: { totalExhausted: 0, totalActive: 0 }, adUnlocks: 0 };
+    if (sqliteDB && typeof sqliteDB._db === 'function' && sqliteDB._db()) {
+      const db = sqliteDB._db();
+      const urow = db.prepare('SELECT COUNT(*) as c FROM users').get();
+      metrics.totalUsers = Number(urow && (urow.c || Object.values(urow)[0]) || 0);
+      // login attempts = events where type = 'login' or 'login_attempt'
+      const lrow = db.prepare("SELECT COUNT(*) as c FROM events WHERE type LIKE 'login%'").get();
+      metrics.loginAttempts = Number(lrow && (lrow.c || Object.values(lrow)[0]) || 0);
+  // ad unlocks = events of type 'video_completed' or 'video_unlock'
+  const arow = db.prepare("SELECT COUNT(*) as c FROM events WHERE type IN ('video_completed','video_unlock')").get();
+  metrics.adUnlocks = Number(arow && (arow.c || Object.values(arow)[0]) || 0);
+  // proxy bypasses - any event that mentions bypass in its type
+  const prow = db.prepare("SELECT COUNT(*) as c FROM events WHERE lower(type) LIKE '%bypass%'").get();
+  metrics.proxyBypasses = Number(prow && (prow.c || Object.values(prow)[0]) || 0);
+    }
+
+    // Quota summary using dataTracker
+    try {
+      const allUsersUsage = dataTracker.getAllActiveUsers ? dataTracker.getAllActiveUsers() : [];
+      let exhausted = 0, active = 0;
+      for (const u of allUsersUsage) {
+        if (u.exhausted) exhausted++; else active++;
+      }
+      metrics.quota.totalExhausted = exhausted;
+      metrics.quota.totalActive = active;
+    } catch (e) {
+      console.warn('[METRICS-TRACKER-ERR]', e && e.message);
+    }
+
+    return res.json(metrics);
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err && err.message });
+  }
+});
+
+// API to unlock quota for a device (admin or via server-side flow)
+app.post('/api/unlock', requireAdminToken, (req, res) => {
+  try {
+    const identifier = (req.body.identifier || '').toString().trim().toLowerCase();
+    const deviceId = (req.body.deviceId || '').toString().trim();
+    const amount = Number(req.body.amount || 100);
+    if (!identifier || !deviceId) return res.status(400).json({ ok: false, message: 'identifier and deviceId required' });
+
+    const ok = markDeviceUnlocked(deviceId, identifier, amount);
+    if (ok) {
+      // record event in sqlite
+      try { if (sqliteDB) sqliteDB.appendAccessEvent({ identifier, type: 'video_unlock', tsISO: new Date().toISOString(), ip: req.ip, ua: req.headers['user-agent'] }); } catch {}
+      return res.json({ ok: true, message: 'device unlocked', deviceId, identifier, amount });
+    }
+    return res.status(500).json({ ok: false, message: 'unlock failed' });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err && err.message });
+  }
+});
+
+// Admin debug: check remote TCP/TLS connectivity from this server to a host:port
+app.get('/admin/check-remote', requireAdminToken, async (req, res) => {
+  const host = (req.query.host || '').toString();
+  const port = Number(req.query.port || 443);
+  const useTls = req.query.tls !== '0';
+  if (!host) return res.status(400).json({ ok: false, message: 'missing host query param' });
+
+  try {
+    const result = { host, port, useTls, ok: false, error: null, timeMs: null };
+    const start = Date.now();
+    await new Promise((resolve, reject) => {
+      const socket = net.connect({ host, port, timeout: 5000 }, () => {
+        if (!useTls) {
+          socket.end();
+          return resolve();
+        }
+        // If TLS requested, initiate a simple TLS handshake
+        try {
+          const tls = require('tls');
+          const tlsSock = tls.connect({ socket, servername: host, rejectUnauthorized: false }, () => {
+            tlsSock.end();
+            return resolve();
+          });
+          tlsSock.on('error', e => { try{ tlsSock.destroy(); }catch{}; reject(e); });
+        } catch (e) {
+          try { socket.destroy(); } catch {};
+          reject(e);
+        }
+      });
+      socket.on('error', err => reject(err));
+      socket.on('timeout', () => { socket.destroy(); reject(new Error('connect timeout')); });
+    });
+    result.ok = true;
+    result.timeMs = Date.now() - start;
+    return res.json(result);
+  } catch (err) {
+    return res.json({ ok: false, host, port, error: err && err.message });
+  }
+});
+
 // Change password (logged-in user supplies identifier + old & new password)
 app.post('/api/change-password', (req,res)=>{
   const { identifier, oldPassword, newPassword } = req.body;
@@ -4772,6 +5096,9 @@ app.get('/api/me/profile', (req,res)=>{
   }
 });
 
+// Serve static files (mounted after API routes so routes are not overridden by files)
+app.use(express.static(__dirname));
+
 // Update own profile (only firstName, surname, dob, avatarData) — phone/email locked
 app.post('/api/me/profile/update', (req,res)=>{
   const { identifier, firstName, surname, dob, avatarData, removeAvatar, email: newEmail, phone: newPhone } = req.body||{}; // allow adding email/phone if previously empty
@@ -4798,7 +5125,7 @@ app.post('/api/me/profile/update', (req,res)=>{
           // validate format
           if(!/^([^@\s]+)@([^@\s]+)\.[^@\s]+$/.test(trimmed)) return res.status(400).json({ ok:false, field:'email', message:'Invalid email' });
           // uniqueness
-          if(data.find(u=> (u.email||'').toLowerCase()===trimmed)) return res.status(409).json({ ok:false, field:'email', message:'Email already in use' });
+          if(data.find(u=> String(u.email||'').trim().toLowerCase()===trimmed)) return res.status(409).json({ ok:false, field:'email', message:'Email already in use' });
           user.email=trimmed;
         }
       }
@@ -4881,9 +5208,9 @@ app.post('/api/me/delete', (req,res)=>{
     let user = findUserRecord(data, raw);
     // Fallback: try matching by email OR phone explicitly if not found
     if(!user){
-      const lower = raw.toLowerCase();
+      const lower = String(raw).trim().toLowerCase();
       const normPhone = normalizePhone(raw);
-      user = data.find(u=> (u.email||'').toLowerCase()===lower || u.phone===normPhone);
+      user = data.find(u=> String(u.email||'').trim().toLowerCase()===lower || u.phone===normPhone);
     }
     if(!user) return res.status(404).json({ ok:false, message:'User not found'});
     if(user.password !== password) return res.status(401).json({ ok:false, message:'Password incorrect'});
@@ -4909,8 +5236,12 @@ app.get('/api/user-exists', (req,res)=>{
   if(!identifier) return res.json({ exists:false });
   const { data } = getUsers();
   let exists;
-  if(identifier.includes('@')) exists = data.some(u=>u.email===identifier);
-  else exists = data.some(u=>u.phone===normalizePhone(identifier));
+  if(identifier.includes('@')){
+    const q = String(identifier).trim().toLowerCase();
+    exists = data.some(u=> String(u.email||'').trim().toLowerCase()===q);
+  } else {
+    exists = data.some(u=>u.phone===normalizePhone(identifier));
+  }
   res.json({ exists });
 });
 
