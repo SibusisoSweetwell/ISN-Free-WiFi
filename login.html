@@ -412,8 +412,17 @@ async function fakeLogin(e){
 	let serverTried=false;
 	try{
 		serverTried=true;
-		const res= await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:identifier,password:pwd})});
-		if(res.ok){ failedAttempts=0; show('Login successful. Redirecting...','success'); setTimeout(()=>{ sessionStorage.setItem('currentUserIdentifier', identifier.toLowerCase()); window.location.href='home.html'; },350); return false; }
+			const res= await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:identifier,password:pwd})});
+			let resData={};
+			try{ resData = await res.json(); } catch(e){ /* ignore parse errors */ }
+			if(res.ok){
+				failedAttempts=0; show('Login successful. Redirecting...','success'); setTimeout(()=>{ sessionStorage.setItem('currentUserIdentifier', identifier.toLowerCase()); window.location.href='home.html'; },350); return false; 
+			} else {
+				// Show server-provided message when available
+				const msg = (resData && resData.message) ? resData.message : (`Login failed (status ${res.status}).`);
+				show(msg,'');
+				return false; // stop further fallback to avoid confusing messages
+			}
 	}catch(err){ console.warn('Login server error', err); }
 
 	// Fallback local successful

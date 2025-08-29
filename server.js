@@ -7,23 +7,59 @@ const os = require('os');
 console.log('Basic modules loaded');
 const XLSX = require('xlsx');
 console.log('XLSX loaded');
+// Optional SQLite adapter (use USE_SQLITE=true in Render environment)
+let sqliteDB = null;
+if (process.env.USE_SQLITE === 'true') {
+  try {
+    sqliteDB = require('./sqlite-db');
+    const ok = sqliteDB.init(process.env.SQLITE_PATH || path.join(__dirname, 'data.sqlite'));
+    if (!ok) sqliteDB = null;
+    else console.log('[SQLITE] Initialized');
+  } catch (err) {
+    console.warn('[SQLITE] Init failed, falling back to XLSX:', err && err.message);
+    sqliteDB = null;
+  }
+}
 const http = require('http');
 const net = require('net');
 const url = require('url');
 const crypto = require('crypto');
 console.log('All modules loaded successfully');
 
+// Data sanitization to prevent Excel 32,767 character cell limit errors
+function sanitizeDataForExcel(data) {
+  if (Array.isArray(data)) {
+    return data.map(row => sanitizeDataForExcel(row));
+  } else if (typeof data === 'object' && data !== null) {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(data)) {
+      sanitized[key] = sanitizeDataForExcel(value);
+    }
+    return sanitized;
+  } else if (typeof data === 'string') {
+    // Limit string length to 32,000 characters (safe margin under 32,767)
+    if (data.length > 32000) {
+      console.warn(`[XLSX-SANITIZE] Truncating long string from ${data.length} to 32000 characters`);
+      return data.substring(0, 32000) + '...[TRUNCATED]';
+    }
+    return data;
+  }
+  return data;
+}
+
 console.log('Booting portal server...');
 const app = express();
-// Default portal port 3100 (auto-fallback if busy)
-let PORT = parseInt(process.env.PORT,10) || 3150;
-const PROXY_PORT = process.env.PROXY_PORT || 8082; // Changed to 8082 to avoid conflicts
+// Force specific ports to ensure consistency
+let PORT = 3150; // Fixed port for portal
+const PROXY_PORT = 8082; // Fixed port for proxy
 const PORTAL_SECRET = process.env.PORTAL_SECRET || 'isn_portal_secret_dev';
 const DATA_FILE = path.join(__dirname, 'logins.xlsx');
 const ADMIN_EMAIL = 'sbusisosweetwell15@gmail.com';
 
 // Enhanced per-device access control with MAC address tracking
 // Prevents one device from unlocking access for all other devices
+const deviceIsolation = require('./device-isolation-enhancement');
+const dataTracker = require('./data-tracking-enhancement');
 const activeClients = new Map(); // MAC/deviceId -> { identifier, ip, lastSeen, expires, deviceFingerprint, sessionToken }
 const deviceSessions = new Map(); // deviceId -> { sessionToken, voucher, unlockTimestamp, revalidationRequired }
 const macAddressCache = new Map(); // ip -> { mac, lastUpdated }
@@ -34,30 +70,56 @@ const realtimeUsage = new Map(); // identifier -> { downMbps: number, upMbps: nu
 const routerStats = new Map(); // routerId -> { connectedUsers: Set, totalDataServed: number, downMbps: number, upMbps: number, status: string, lastMaintenance: string, flags: string[], peakDownMbps: number, peakUpMbps: number }
 const bandwidthHistory = new Map(); // identifier -> Array of {timestamp, downMbps, upMbps} for live tracking
 
-// Enhanced device fingerprinting with MAC address support
+// Enhanced device fingerprinting with STRICT MAC address enforcement
 function generateDeviceFingerprint(req, includeMAC = true) {
   const userAgent = req.headers['user-agent'] || '';
   const accept = req.headers['accept'] || '';
   const acceptLanguage = req.headers['accept-language'] || '';
   const acceptEncoding = req.headers['accept-encoding'] || '';
   const ip = normalizeIp((req.headers['x-forwarded-for']||'').split(',')[0].trim() || req.socket.remoteAddress || '');
+  const routerId = req.headers['x-router-id'] || detectRouterId(req) || 'default-router';
   
-  // Try to get MAC address from ARP cache or DHCP logs
+  // CRITICAL: Get MAC address for device isolation
   let macAddress = '';
   if (includeMAC) {
-    macAddress = getMACAddress(ip) || '';
+    macAddress = deviceIsolation.getMACAddressEnhanced(ip, routerId) || '';
+    
+    // Fallback: Try system ARP directly
+    if (!macAddress) {
+      try {
+        const { execSync } = require('child_process');
+        const arpOutput = execSync(`arp -a ${ip}`, { encoding: 'utf8', timeout: 2000 }).toString();
+        const macMatch = arpOutput.match(/([0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i);
+        if (macMatch) {
+          macAddress = macMatch[0].toLowerCase().replace(/[:-]/g, '');
+          console.log(`[MAC-FALLBACK-SUCCESS] IP ${ip} -> MAC ${macAddress}`);
+        }
+      } catch (err) {
+        console.warn(`[MAC-FALLBACK-FAILED] ${ip}: ${err.message}`);
+      }
+    }
   }
   
-  // Create comprehensive device fingerprint
-  const fingerprint = crypto.createHash('sha256')
-    .update(userAgent + accept + acceptLanguage + acceptEncoding + macAddress + ip)
-    .digest('hex').slice(0,32);
+  // STRICT DEVICE ID: Use MAC as primary identifier if available
+  let deviceId;
+  if (macAddress) {
+    deviceId = crypto.createHash('sha256').update('MAC:' + macAddress).digest('hex').slice(0,32);
+    console.log(`[STRICT-DEVICE-ID] MAC-based: ${deviceId} from MAC ${macAddress}`);
+  } else {
+    // Fallback to enhanced fingerprint (but mark as unverified)
+    deviceId = crypto.createHash('sha256')
+      .update(userAgent + accept + acceptLanguage + acceptEncoding + ip + routerId)
+      .digest('hex').slice(0,32);
+    console.warn(`[WEAK-DEVICE-ID] No MAC available for ${ip}, using fingerprint: ${deviceId}`);
+  }
     
   return {
-    deviceId: fingerprint,
+    deviceId: deviceId,
     mac: macAddress,
     ip: ip,
-    userAgent: userAgent.slice(0, 200)
+    userAgent: userAgent.slice(0, 200),
+    routerId: routerId,
+    macVerified: !!macAddress
   };
 }
 
@@ -159,83 +221,131 @@ function registerActiveClient(req, identifier, hours = 6) {
 
 function normalizeIp(ip){ if(!ip) return ''; return ip.replace(/^::ffff:/,''); }
 
-// Function to update real-time usage data
+// Enhanced function to update real-time usage data with data tracker sync
 function updateRealtimeUsage(identifier, bytesSent, bytesReceived, additionalInfo = {}) {
   try {
-    const usage = realtimeUsage.get(identifier);
-    if (!usage) return;
+    let usage = realtimeUsage.get(identifier);
+    if (!usage) {
+      // Initialize new usage tracking
+      usage = {
+        downMbps: 0, upMbps: 0, totalDataMB: 0, lastUpdateTime: Date.now(), connectionStart: Date.now(),
+        bytesDownLoaded: 0, bytesUploaded: 0, peakDownMbps: 0, peakUpMbps: 0,
+        ip: additionalInfo.ip || 'unknown',
+        routerId: additionalInfo.routerId || 'router-1',
+        wifiNetwork: additionalInfo.wifiNetwork || 'ISN Free WiFi'
+      };
+      realtimeUsage.set(identifier, usage);
+    }
     
     const now = Date.now();
-    const timeDiffSeconds = (now - usage.lastUpdateTime) / 1000;
+    const timeDiffSeconds = Math.max((now - usage.lastUpdateTime) / 1000, 0.1);
     
     // Update additional info if provided
     if (additionalInfo.ip) usage.ip = additionalInfo.ip;
     if (additionalInfo.routerId) usage.routerId = additionalInfo.routerId;
     if (additionalInfo.wifiNetwork) usage.wifiNetwork = additionalInfo.wifiNetwork;
     
+    // Calculate data usage in MB
+    const dataMB = (bytesSent + bytesReceived) / (1024 * 1024);
+    
+    // Update usage data
+    usage.bytesUploaded += bytesSent;
+    usage.bytesDownLoaded += bytesReceived;
+    usage.totalDataMB += dataMB;
+    
+    // Calculate real-time speeds (Mbps)
     if (timeDiffSeconds > 0) {
-      // Calculate Mbps (Megabits per second)
       const downMbps = (bytesReceived * 8) / (1024 * 1024 * timeDiffSeconds);
       const upMbps = (bytesSent * 8) / (1024 * 1024 * timeDiffSeconds);
       
-      // Update usage data
-      usage.downMbps = Math.round(downMbps * 100) / 100; // Round to 2 decimal places
+      usage.downMbps = Math.round(downMbps * 100) / 100;
       usage.upMbps = Math.round(upMbps * 100) / 100;
-      usage.totalDataMB += (bytesSent + bytesReceived) / (1024 * 1024);
-      usage.lastUpdateTime = now;
       
       // Track peak speeds
       if (usage.downMbps > usage.peakDownMbps) usage.peakDownMbps = usage.downMbps;
       if (usage.upMbps > usage.peakUpMbps) usage.peakUpMbps = usage.upMbps;
+    }
+    
+    usage.lastUpdateTime = now;
+    
+    // CRITICAL: Sync with data tracker for consistent data
+    if (dataMB > 0.001) { // Only sync if meaningful data (> 1KB)
+      try {
+        dataTracker.addSessionUsage(identifier, dataMB);
+      } catch (error) {
+        console.warn('[REALTIME-SYNC-ERROR]', error.message);
+      }
+    }
+    
+    // Update router stats
+    const routerId = usage.routerId || additionalInfo.routerId || 'router-1';
+    let router = routerStats.get(routerId);
+    if (!router) {
+      // Determine proper router IP based on client IP range
+      let routerIP = '192.168.137.1'; // Default hotspot IP
+      let routerLocation = 'PC Hotspot (Windows)';
       
-      // Update router stats
-      const routerId = usage.routerId || additionalInfo.routerId || 'default-router';
-      let router = routerStats.get(routerId);
-      if (!router) {
-        router = {
-          ipAddress: additionalInfo.ip || 'Unknown',
-          location: 'Auto-detected',
-          connectedUsers: new Set(),
-          totalDataServed: 0,
-          downMbps: 0,
-          upMbps: 0,
-          status: 'Active',
-          lastMaintenance: new Date().toISOString(),
-          flags: ['live-tracking'],
-          peakDownMbps: 0,
-          peakUpMbps: 0
-        };
-        routerStats.set(routerId, router);
+      if (additionalInfo.ip) {
+        if (additionalInfo.ip.startsWith('192.168.137.')) {
+          routerIP = '192.168.137.1'; // Windows hotspot
+          routerLocation = 'PC Hotspot (Windows)';
+        } else if (additionalInfo.ip.startsWith('10.5.48.')) {
+          routerIP = '10.5.48.94'; // Current WiFi adapter
+          routerLocation = 'WiFi Network';
+        } else if (additionalInfo.ip.startsWith('192.168.1.')) {
+          routerIP = '192.168.1.1';
+          routerLocation = 'Home Router';
+        } else {
+          routerIP = '192.168.137.1'; // Default to hotspot
+          routerLocation = 'Auto-detected Router';
+        }
       }
       
-      // Add user to router's connected users
-      router.connectedUsers.add(identifier);
-      router.totalDataServed += (bytesSent + bytesReceived) / (1024 * 1024);
-      
-      // Calculate average speeds for all users on this router
-      const routerUsers = Array.from(router.connectedUsers);
-      let totalDown = 0, totalUp = 0, activeUsers = 0;
-      
-      routerUsers.forEach(userId => {
-        const userUsage = realtimeUsage.get(userId);
-        if (userUsage && (now - userUsage.lastUpdateTime) < 30000) { // Active in last 30 seconds
-          totalDown += userUsage.downMbps;
-          totalUp += userUsage.upMbps;
-          activeUsers++;
-        }
-      });
-      
-      router.downMbps = Math.round((totalDown / Math.max(activeUsers, 1)) * 100) / 100;
-      router.upMbps = Math.round((totalUp / Math.max(activeUsers, 1)) * 100) / 100;
-      
-      // Track router peak speeds
-      if (router.downMbps > router.peakDownMbps) router.peakDownMbps = router.downMbps;
-      if (router.upMbps > router.peakUpMbps) router.peakUpMbps = router.upMbps;
+      router = {
+        ipAddress: routerIP,
+        location: routerLocation,
+        connectedUsers: new Set(),
+        totalDataServed: 0,
+        downMbps: 0,
+        upMbps: 0,
+        status: 'Active',
+        lastMaintenance: new Date().toISOString(),
+        flags: ['live-tracking'],
+        peakDownMbps: 0,
+        peakUpMbps: 0
+      };
+      routerStats.set(routerId, router);
     }
+    
+    // Add user to router's connected users and update router totals
+    router.connectedUsers.add(identifier);
+    router.totalDataServed += dataMB;
+    
+    // Calculate average speeds for all users on this router
+    const routerUsers = Array.from(router.connectedUsers);
+    let totalDown = 0, totalUp = 0, activeUsers = 0;
+    
+    routerUsers.forEach(userId => {
+      const userUsage = realtimeUsage.get(userId);
+      if (userUsage && (now - userUsage.lastUpdateTime) < 30000) { // Active in last 30 seconds
+        totalDown += userUsage.downMbps;
+        totalUp += userUsage.upMbps;
+        activeUsers++;
+      }
+    });
+    
+    router.downMbps = Math.round((totalDown / Math.max(activeUsers, 1)) * 100) / 100;
+    router.upMbps = Math.round((totalUp / Math.max(activeUsers, 1)) * 100) / 100;
+    
+    // Track router peak speeds
+    if (router.downMbps > router.peakDownMbps) router.peakDownMbps = router.downMbps;
+    if (router.upMbps > router.peakUpMbps) router.peakUpMbps = router.upMbps;
+    
   } catch (err) {
     console.error('[UPDATE-REALTIME-USAGE-ERROR]', err);
   }
 }
+
 // Router-level device tracking for strict access control
 const routerDeviceActivity = new Map(); // routerId -> { activeDevice: deviceFingerprint, lastActivityTime: timestamp, blockOthers: boolean }
 
@@ -487,7 +597,7 @@ function recordPurchase(identifier, bundleMB, deviceId, routerId, ua, source) {
   return entry;
 }
 
-// Increment usage with strict device-specific tracking
+// Increment usage with enhanced data tracking
 function addUsage(identifier, usedDeltaMB, deviceId, routerId) {
   const idLower = (identifier||'').trim().toLowerCase();
   
@@ -496,37 +606,28 @@ function addUsage(identifier, usedDeltaMB, deviceId, routerId) {
     return false;
   }
   
-  const wb = loadWorkbookWithTracking();
-  const purchases = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_PURCHASES]);
+  // Use enhanced data tracker for accurate usage recording
+  const success = dataTracker.addDataUsage(idLower, usedDeltaMB, `Internet browsing via device ${deviceId.slice(0,8)}...`);
   
-  // Apply to most recent unexhausted purchase for THIS SPECIFIC DEVICE
-  const target = purchases.slice().reverse().find(p=> 
-    (p.identifier === idLower) && 
-    (p.deviceId === deviceId) && // Device-specific matching
-    (Number(p.usedMB) < Number(p.bundleMB))
-  );
-  
-  if (!target) {
-    console.log(`[DEVICE-USAGE] No valid bundle found for device ${deviceId.slice(0,8)}... of user ${idLower}`);
+  if (success) {
+    // Update device quota tracking
+    let deviceQuota = deviceQuotas.get(deviceId) || { bundleMB: 0, usedMB: 0, unlockEarned: false };
+    deviceQuota.usedMB += usedDeltaMB;
+    deviceQuotas.set(deviceId, deviceQuota);
+    
+    // Track session usage for real-time monitoring
+    dataTracker.addSessionUsage(idLower, usedDeltaMB);
+    
+    console.log(`[ENHANCED-USAGE] Device ${deviceId.slice(0,8)}...: Used ${usedDeltaMB}MB for user ${idLower}`);
+    
+    // Update real-time bandwidth tracking
+    updateLiveBandwidthTracking(idLower, usedDeltaMB, routerId);
+    
+    return true;
+  } else {
+    console.log(`[USAGE-FAIL] Failed to record ${usedDeltaMB}MB usage for device ${deviceId.slice(0,8)}... of user ${idLower}`);
     return false;
   }
-  
-  const beforeUsage = Number(target.usedMB||0);
-  target.usedMB = Math.min(Number(target.bundleMB), beforeUsage + Number(usedDeltaMB||0));
-  const actualUsed = target.usedMB - beforeUsage;
-  
-  // Update device quota tracking
-  let deviceQuota = deviceQuotas.get(deviceId) || { bundleMB: 0, usedMB: 0, unlockEarned: false };
-  deviceQuota.usedMB += actualUsed;
-  deviceQuotas.set(deviceId, deviceQuota);
-  
-  console.log(`[DEVICE-USAGE] Device ${deviceId.slice(0,8)}...: Used ${actualUsed}MB (${beforeUsage}MB -> ${target.usedMB}MB of ${target.bundleMB}MB)`);
-  
-  // Update real-time bandwidth tracking
-  updateLiveBandwidthTracking(idLower, actualUsed, routerId);
-  
-  writeSheet(wb, SHEET_PURCHASES, purchases);
-  return true;
 }
 
 // Live bandwidth tracking function like sports scores
@@ -676,120 +777,311 @@ function trackRealUserBandwidthUsage() {
 
 // Compute remaining bundle stats with device-specific tracking
 function computeRemaining(identifier, deviceFingerprint, routerId){
-  const idLower = (identifier && typeof identifier === 'string' ? identifier : '').trim().toLowerCase();
-  if(!idLower) return { remainingMB:0, totalBundleMB:0, totalUsedMB:0, activeBundleMB:0, activeBundleUsedMB:0 };
+  const idLower = String(identifier || '').trim().toLowerCase();
+  if(!idLower) return { remainingMB:0, totalBundleMB:0, totalUsedMB:0, activeBundleMB:0, activeBundleUsedMB:0, exhausted: true };
   
   const wb = loadWorkbookWithTracking();
-  const purchases = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_PURCHASES]);
+  const purchases = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_PURCHASES] || { '!ref': 'A1' });
   
   // Create device ID for strict tracking
   const deviceId = deviceFingerprint || crypto.createHash('md5').update(routerId || 'default').digest('hex').slice(0,16);
   
-  // Filter for THIS SPECIFIC DEVICE only
-  const my = purchases.filter(p=> 
-    p.identifier===idLower && 
-    (p.deviceId===deviceId || !p.strictMode) // Include legacy non-strict bundles for compatibility
-  ).sort((a,b)=> new Date(a.grantedAtISO)-new Date(b.grantedAtISO));
+  // Check video-earned data bundles - with special handling for phone users
+  let videosWatched, videoEarnedMB;
   
-  let totalBundle=0,totalUsed=0; 
+  // CRITICAL FIX: Phone users should see video progress across all devices
+  if (idLower.match(/^\d{10}$/)) {
+    // Phone user (10 digits) - get videos from all devices
+    videosWatched = getVideosWatchedForUser(idLower);
+    videoEarnedMB = calculateVideoEarnedData(videosWatched);
+  } else {
+    // Email user - device specific
+    videosWatched = getVideosWatched(idLower, deviceId);
+    videoEarnedMB = calculateVideoEarnedData(videosWatched);
+  }
+  
+  // Check if user needs to watch a video to unlock basic access
+  const needsVideoUnlock = videosWatched.length === 0;
+  
+  // Filter for purchased bundles - with special handling for phone users
+  let my;
+  
+  // CRITICAL FIX: Phone users should see ALL their bundles regardless of device fingerprint  
+  if (idLower.match(/^\d{10}$/)) {
+    // Phone user (10 digits) - get all bundles for this phone number
+    my = purchases.filter(p=> p.identifier===idLower)
+      .sort((a,b)=> new Date(a.grantedAtISO)-new Date(b.grantedAtISO));
+  } else {
+    // Email user - strict device matching
+    my = purchases.filter(p=> 
+      p.identifier===idLower && 
+      (p.deviceId===deviceId || !p.strictMode) // Include legacy non-strict bundles for compatibility
+    ).sort((a,b)=> new Date(a.grantedAtISO)-new Date(b.grantedAtISO));
+  }
+  
+  let totalPurchasedBundle = 0, totalUsed = 0; 
   my.forEach(p=>{ 
-    totalBundle+=Number(p.bundleMB)||0; 
-    totalUsed+=Number(p.usedMB)||0; 
+    totalPurchasedBundle += Number(p.bundleMB)||0; 
+    totalUsed += Number(p.usedMB)||0; 
   });
   
-  console.log(`[STRICT-REMAINING] Device ${deviceId} for user ${idLower}: ${totalBundle-totalUsed}MB remaining of ${totalBundle}MB total`);
+  // Total available data = purchased bundles + video-earned data
+  const totalBundle = totalPurchasedBundle + videoEarnedMB;
+  const remaining = Math.max(0, totalBundle - totalUsed);
+  
+  console.log(`[QUOTA-CHECK] ${needsVideoUnlock ? 'No' : 'Has'} purchases found for device ${deviceId.slice(0,8)}... of user ${idLower}`);
+  console.log(`[DATA-SUMMARY] User ${idLower}: Videos: ${videosWatched.length}, Earned: ${videoEarnedMB}MB, Purchased: ${totalPurchasedBundle}MB, Used: ${totalUsed}MB, Remaining: ${remaining}MB`);
+  
+  // EMERGENCY FIX: Grant 100MB for bongilindiwe844@gmail.com with REAL USAGE TRACKING
+  if (idLower === 'bongilindiwe844@gmail.com') {
+    console.log(`[EMERGENCY-QUOTA-FIX] Checking real usage for ${idLower}`);
+    
+    // Get actual current usage from real-time tracking
+    const currentUsage = realtimeUsage.get(idLower) || { totalDataMB: 0 };
+    const realUsedMB = currentUsage.totalDataMB || 0;
+    const emergencyLimitMB = 100;
+    const realRemainingMB = Math.max(0, emergencyLimitMB - realUsedMB);
+    
+    console.log(`[EMERGENCY-USAGE-CHECK] ${idLower}: Used ${realUsedMB.toFixed(2)}MB of ${emergencyLimitMB}MB emergency limit, ${realRemainingMB.toFixed(2)}MB remaining`);
+    
+    return {
+      remainingMB: realRemainingMB,
+      totalBundleMB: emergencyLimitMB,
+      totalUsedMB: realUsedMB,
+      activeBundleMB: emergencyLimitMB,
+      activeBundleUsedMB: realUsedMB,
+      exhausted: realRemainingMB <= 0,
+      needsVideoUnlock: false,
+      videosWatched: 5,
+      videoEarnedMB: emergencyLimitMB,
+      emergencyAccess: true,
+      realTimeEnforcement: true
+    };
+  }
   
   const active = [...my].reverse().find(p=> (Number(p.usedMB)||0) < (Number(p.bundleMB)||0));
+  
+  // CRITICAL FIX: Don't mark as exhausted if user has purchased bundles with remaining data
+  // Video unlock requirement should only apply to users with NO purchased data
+  const hasRemainingPurchasedData = totalPurchasedBundle > 0 && remaining > 0;
+  
   return {
-    remainingMB: Math.max(0,totalBundle-totalUsed),
+    remainingMB: remaining,
     totalBundleMB: totalBundle,
     totalUsedMB: totalUsed,
-    activeBundleMB: active?Number(active.bundleMB)||0:0,
-    activeBundleUsedMB: active?Number(active.usedMB)||0:0,
-    exhausted: (totalBundle-totalUsed)<=0
+    activeBundleMB: active ? Number(active.bundleMB)||0 : videoEarnedMB,
+    activeBundleUsedMB: active ? Number(active.usedMB)||0 : totalUsed,
+    exhausted: remaining <= 0 && !hasRemainingPurchasedData,
+    needsVideoUnlock: needsVideoUnlock && !hasRemainingPurchasedData,
+    videosWatched: videosWatched.length,
+    videoEarnedMB: videoEarnedMB
   };
 }
 
-// Unified (email + phone) quota for a user (if they have both identifiers)
+// Video-based data earning system
+function getVideosWatched(identifier, deviceId) {
+  try {
+    const wb = loadWorkbookWithTracking();
+    if (!wb.Sheets[SHEET_ADEVENTS]) {
+      // Create sheet if it doesn't exist
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
+      XLSX.writeFile(wb, DATA_FILE);
+      return [];
+    }
+    
+    const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
+    return videoViews.filter(v => 
+      v.identifier === identifier && 
+      v.deviceId === deviceId && 
+      (v.event === 'video_completed' || v.completedAt) // Accept either field
+    );
+  } catch (error) {
+    console.error('[VIDEO-TRACKING-ERROR]', error.message);
+    return [];
+  }
+}
+
+// Get videos watched across ALL devices for a user (unified account)
+function getVideosWatchedForUser(identifier) {
+  try {
+    const wb = loadWorkbookWithTracking();
+    if (!wb.Sheets[SHEET_ADEVENTS]) {
+      // Create sheet if it doesn't exist
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
+      XLSX.writeFile(wb, DATA_FILE);
+      return [];
+    }
+    
+    const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
+    return videoViews.filter(v => 
+      v.identifier === identifier && 
+      v.completedAt // Any completed video regardless of device
+    );
+  } catch (error) {
+    console.error('[VIDEO-TRACKING-ERROR]', error.message);
+    return [];
+  }
+}
+
+function calculateVideoEarnedData(videosWatched) {
+  const count = videosWatched.length;
+  
+  // Video milestone system:
+  // 5 videos = 100MB
+  // 10 videos = 250MB  
+  // 15 videos = 500MB
+  
+  if (count >= 15) return 500;       // 500MB for 15+ videos
+  if (count >= 10) return 250;       // 250MB for 10+ videos
+  if (count >= 5) return 100;        // 100MB for 5+ videos
+  return 0;                          // No data until 5 videos watched
+}
+
+function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
+  try {
+    const wb = loadWorkbookWithTracking();
+    if (!wb.Sheets[SHEET_ADEVENTS]) {
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
+    }
+    
+    const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
+    
+    const newView = {
+      id: guid(),
+      identifier: identifier,
+      deviceId: deviceId,
+      event: duration >= 30 ? 'video_completed' : 'video_partial',
+      videoUrl: videoUrl,
+      duration: duration,
+      earnedMB: duration >= 30 ? 20 : 0, // 20MB per completed video
+      routerId: routerId || 'default-router',
+      timestampISO: new Date().toISOString(),
+      timestampLocal: new Date().toLocaleString(),
+      ip: '', // Will be filled by caller
+      userAgent: ''
+    };
+    
+    videoViews.push(newView);
+    wb.Sheets[SHEET_ADEVENTS] = XLSX.utils.json_to_sheet(videoViews);
+    XLSX.writeFile(wb, DATA_FILE);
+    
+    // Check for milestone rewards and prevent duplicates
+    const totalVideos = videoViews.filter(v => 
+      v.identifier === identifier && 
+      v.event === 'video_completed'
+    ).length;
+    
+    let bundleCreated = false;
+    
+    // Create bundles only at specific milestones (prevent duplicates)
+    if (totalVideos === 5) {
+      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 5, 100, '5_video_bundle');
+    } else if (totalVideos === 10) {
+      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 10, 250, '10_video_bundle');
+    } else if (totalVideos === 15) {
+      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 15, 500, '15_video_bundle');
+    }
+    
+    if (bundleCreated) {
+      console.log(`[MILESTONE-REWARD] ${identifier} reached ${totalVideos} videos - bundle created!`);
+    }
+    
+    console.log(`[VIDEO-EARNED] ${identifier} earned ${newView.earnedMB}MB by watching video (${duration}s) - Total videos: ${totalVideos}`);
+    return newView.earnedMB;
+  } catch (error) {
+    console.error('[VIDEO-RECORD-ERROR]', error.message);
+    return 0;
+  }
+}
+
+// Unified (email + phone) quota for a user with enhanced data tracking
 function computeRemainingUnified(identifier, deviceFingerprint, routerId){
-  const idLower=(identifier||'').trim().toLowerCase();
+  const idLower = String(identifier || '').trim().toLowerCase();
+  
+  // Use enhanced data tracker for accurate real-time data
+  const usageData = dataTracker.getFreshUsageData(idLower);
+  
   const { data: users } = getUsers();
   const user = users.find(u=> (u.email||'').toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
-  if(!user) return computeRemaining(idLower, deviceFingerprint, routerId);
   
-  // Create device ID for strict tracking across unified accounts
+  if(!user) {
+    // For non-registered users, use basic computation
+    return computeRemaining(idLower, deviceFingerprint, routerId);
+  }
+  
+  // ENHANCED DEVICE ACCESS CHECK: Create proper device info object
   const deviceId = deviceFingerprint || crypto.createHash('md5').update((routerId || 'default')).digest('hex').slice(0,16);
   
-  const ids = new Set();
-  if(user.email) ids.add(user.email.toLowerCase());
-  if(user.phone) ids.add(user.phone);
-  const wb = loadWorkbookWithTracking();
-  const purchases = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_PURCHASES]);
-  let totalBundle=0,totalUsed=0; const relevant=[];
-  
-  // Filter for THIS DEVICE across all unified identifiers
-  purchases.forEach(p=>{ 
-    if(ids.has(p.identifier) && (p.deviceId===deviceId || !p.strictMode)){ 
-      totalBundle+=Number(p.bundleMB)||0; 
-      totalUsed+=Number(p.usedMB)||0; 
-      relevant.push(p); 
-    } 
-  });
-  
-  console.log(`[STRICT-UNIFIED] Device ${deviceId} unified for user ${idLower}: ${totalBundle-totalUsed}MB remaining`);
-  
-  const active=[...relevant].reverse().find(p=> (Number(p.usedMB)||0)<(Number(p.bundleMB)||0));
-  return {
-    remainingMB: Math.max(0,totalBundle-totalUsed),
-    totalBundleMB: totalBundle,
-    totalUsedMB: totalUsed,
-    activeBundleMB: active?Number(active.bundleMB)||0:0,
-    activeBundleUsedMB: active?Number(active.usedMB)||0:0,
-    exhausted: (totalBundle-totalUsed)<=0
-  };
-}
-
-// Enhanced per-device quota computation
-function computeRemainingUnified(identifier, deviceId, routerId) {
-  if (!identifier || !deviceId) {
-    return { remainingMB: 0, exhausted: true, reason: 'missing_device_info' };
+  // Skip device isolation check if user has video bundles, video access, OR purchased data remaining
+  // (This prevents blocking users who have earned access through videos or purchased data)
+  try {
+    const basicQuota = computeRemaining(idLower, deviceFingerprint, routerId);
+    
+    // If user has active bundles OR purchased data remaining, skip device validation
+    if ((basicQuota.totalBundleMB > 0 && !basicQuota.exhausted) || basicQuota.remainingMB > 0) {
+      console.log(`[DEVICE-ACCESS-BYPASS] User ${idLower} has ${basicQuota.totalBundleMB}MB bundles + ${basicQuota.remainingMB}MB remaining - bypassing device isolation`);
+      return basicQuota;
+    }
+    
+    // If no bundles, check if device has specific access token
+    const deviceInfo = { 
+      deviceId: deviceId, 
+      mac: '', // Will be resolved in validation if needed
+      ip: '', // Not available at this level
+      userAgent: '',
+      identifier: idLower
+    };
+    
+    const deviceAccess = deviceIsolation.validateDeviceAccess(deviceInfo, routerId);
+    
+    if (!deviceAccess.valid) {
+      console.log(`[DEVICE-BLOCKED] Device ${deviceId.slice(0,8)}... blocked for user ${idLower}: ${deviceAccess.reason}`);
+      return {
+        remainingMB: 0,
+        totalBundleMB: 0,
+        totalUsedMB: 0,
+        activeBundleMB: 0,
+      activeBundleUsedMB: 0,
+      exhausted: true,
+      videoEarnedMB: 0,
+      videosWatched: 0,
+      deviceBlocked: true,
+      blockReason: deviceAccess.reason
+    };
   }
   
-  const idLower = identifier.toLowerCase();
-  const wb = loadWorkbookWithTracking();
-  const purchases = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_PURCHASES]);
+  // Device has valid access token - proceed with normal quota calculation
+  return computeRemaining(idLower, deviceFingerprint, routerId);
   
-  // Get all purchases for THIS SPECIFIC DEVICE
-  const devicePurchases = purchases.filter(p => 
-    p.identifier === idLower && 
-    p.deviceId === deviceId
-  );
-  
-  if (devicePurchases.length === 0) {
-    console.log(`[QUOTA-CHECK] No purchases found for device ${deviceId.slice(0,8)}... of user ${idLower}`);
-    return { remainingMB: 0, exhausted: true, reason: 'no_device_purchases' };
+  } catch (error) {
+    console.error(`[DEVICE-ACCESS-CHECK-ERROR] ${error.message}`);
+    // Fallback to basic computation on error
+    return computeRemaining(idLower, deviceFingerprint, routerId);
   }
   
-  // Calculate total and used for this device
-  const totalMB = devicePurchases.reduce((sum, p) => sum + (Number(p.bundleMB) || 0), 0);
-  const usedMB = devicePurchases.reduce((sum, p) => sum + (Number(p.usedMB) || 0), 0);
-  const remainingMB = Math.max(0, totalMB - usedMB);
+  // Get video data earned from this specific device only
+  const videosWatched = getVideosWatchedForUser(idLower);
+  const videoEarnedMB = calculateVideoEarnedData(videosWatched);
   
-  // Check device quota cache
-  const deviceQuota = deviceQuotas.get(deviceId);
-  const unlockEarned = deviceQuota ? deviceQuota.unlockEarned : false;
-  
+  // Enhanced tracking with actual numbers instead of undefined
   const result = {
-    remainingMB,
-    totalMB,
-    usedMB,
-    exhausted: remainingMB <= 0,
-    unlockEarned,
-    deviceId: deviceId.slice(0,8) + '...',
-    reason: remainingMB <= 0 ? 'quota_exhausted' : 'quota_available'
+    remainingMB: usageData.remainingMB || 0,
+    totalBundleMB: usageData.totalBundleMB || 0,
+    totalUsedMB: usageData.totalUsedMB || 0,
+    activeBundleMB: usageData.totalBundleMB || 0,
+    activeBundleUsedMB: usageData.totalUsedMB || 0,
+    exhausted: usageData.exhausted || false,
+    videoEarnedMB: videoEarnedMB || 0,
+    videosWatched: videosWatched.length || 0,
+    deviceId: deviceId,
+    deviceBlocked: false
   };
   
-  console.log(`[DEVICE-QUOTA] Device ${deviceId.slice(0,8)}... has ${remainingMB}MB remaining (used ${usedMB}MB of ${totalMB}MB, earned: ${unlockEarned})`);
+  console.log(`[DATA-SUMMARY-ENHANCED] User ${idLower}: Device ${deviceId.slice(0,8)}... Videos: ${result.videosWatched}, Earned: ${result.videoEarnedMB}MB, Total: ${result.totalBundleMB}MB, Used: ${result.totalUsedMB}MB, Remaining: ${result.remainingMB}MB`);
+  
   return result;
 }
 
@@ -919,18 +1211,19 @@ function buildAdminOverview(){
   const lastLoginById = {}; accessEvents.filter(e=>e.type==='login').forEach(e=>{ lastLoginById[e.identifier]=e.tsISO; });
   const lastProfileUpdateById = {}; accessEvents.filter(e=>e.type==='profile_change').forEach(e=>{ lastProfileUpdateById[e.identifier]=e.tsISO; });
   const activeSessionsById = {}; sessions.filter(s=>s.active).forEach(s=>{ activeSessionsById[s.identifier]=(activeSessionsById[s.identifier]||0)+1; });
-  // Filter to show ONLY users who are currently active (logged in and using the system)
-  const realActiveUsers = users.filter(u => {
+  // Filter to show users who have purchased data or are currently active (not just currently active)
+  const usersWithData = users.filter(u => {
     const identifier = (u.email || u.phone || '').toLowerCase();
+    const hasDataActivity = purchaseByUser[identifier] && purchaseByUser[identifier].bundleMB > 0;
     const isCurrentlyActive = (activeSessionsById[identifier] || 0) > 0;
     
-    // Only show users who are actually active right now
-    return isCurrentlyActive;
+    // Show users who have data bundles OR are currently active
+    return hasDataActivity || isCurrentlyActive;
   });
   
-  console.log(`[ADMIN-DASHBOARD] Showing ${realActiveUsers.length} real active users (hiding inactive/demo users)`);
+  console.log(`[ADMIN-DASHBOARD] Showing ${usersWithData.length} users with data activity or currently active`);
   
-  const usersTable = realActiveUsers.map(u=>{
+  const usersTable = usersWithData.map(u=>{
     const identifier=(u.email||u.phone||'').toLowerCase();
     const summary = purchaseByUser[identifier]||{ routers:new Set(), bundleMB:0, usedMB:0 };
     const missingInfo=[];
@@ -970,10 +1263,13 @@ function buildAdminOverview(){
   usageRows.forEach(r=>{ const id=r.routerId||'default-router'; if(!usageByRouter[id]) usageByRouter[id]={down:0,up:0,samples:[]}; usageByRouter[id].down+=Number(r.bytesDown)||0; usageByRouter[id].up+=Number(r.bytesUp)||0; usageByRouter[id].samples.push(r); });
   const nowMs=Date.now();
   const routersTable=(routerMeta.length?routerMeta:[{routerId:'default-router'}]).map(meta=>{ const agg=usageByRouter[meta.routerId]||{down:0,up:0,samples:[]}; const recent=agg.samples.slice(-60); let rDown=0,rUp=0; recent.forEach(s=>{ rDown+=Number(s.bytesDown)||0; rUp+=Number(s.bytesUp)||0; }); const mbpsDown=recent.length?(rDown*8/recent.length/1e6):0; const mbpsUp=recent.length?(rUp*8/recent.length/1e6):0; const lastSample=agg.samples[agg.samples.length-1]; const status= lastSample && (nowMs-Date.parse(lastSample.tsISO)<120000)?'Online':'Offline'; const connectedUsers = sessions.filter(s=>s.active && s.routerId===meta.routerId).reduce((set,s)=>{ set.add(s.identifier); return set; }, new Set()); const flags=[]; if(status==='Offline') flags.push('offline'); if(connectedUsers.size>30) flags.push('overloaded'); if(connectedUsers.size===0 && status==='Online') flags.push('underused'); return { routerId: meta.routerId, ipAddress: meta.ipAddress||null, location: meta.location||null, totalDataServedMB: (agg.down+agg.up)/1e6, connectedUsers: connectedUsers.size, status, mbpsDown: Number(mbpsDown.toFixed(3)), mbpsUp: Number(mbpsUp.toFixed(3)), lastMaintenance: meta.lastMaintenanceISO||null, flags }; });
-  // Registrations & Logins table - ONLY show real active users (no demo data)
-  const regLoginTable = realActiveUsers.map(u=>{ 
+  // Registrations & Logins table - Show ALL users who have registered (not just those with login activity)
+  const allRegisteredUsers = users; // Show all users regardless of login activity
+  
+  const regLoginTable = allRegisteredUsers.map(u=>{ 
     const identifier=(u.email||u.phone||'').toLowerCase(); 
     const ev=accessEvents.filter(e=>e.identifier===identifier); 
+    const registrations=ev.filter(e=>e.type==='registration').sort((a,b)=> new Date(b.tsISO)-new Date(a.tsISO)); 
     const logins=ev.filter(e=>e.type==='login').sort((a,b)=> new Date(b.tsISO)-new Date(a.tsISO)); 
     const profileChanges=ev.filter(e=>e.type==='profile_change').sort((a,b)=> new Date(b.tsISO)-new Date(a.tsISO)); 
     const pwResets=ev.filter(e=>e.type==='password_reset').sort((a,b)=> new Date(b.tsISO)-new Date(a.tsISO)); 
@@ -1143,7 +1439,7 @@ app.use((req, res, next) => {
   const clientInfo = resolveActiveClient(clientIp, req);
   const isApiRequest = req.path.startsWith('/api/');
   const isStaticFile = req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/i);
-  const isPortalPage = ['/login.html', '/register.html', '/reset.html', '/home.html', '/admin-reset.html'].includes(req.path);
+  const isPortalPage = ['/login.html', '/register.html', '/reset.html', '/home.html', '/admin-reset.html', '/diagnostic.html'].includes(req.path);
   const isPACFile = req.path === '/proxy.pac';
   
   // Don't redirect API calls, static files, portal pages, or PAC file
@@ -1204,23 +1500,59 @@ if(!fs.existsSync(avatarsDirPath)){
 app.use('/avatars', express.static(avatarsDirPath, { maxAge: '7d', immutable: false }));
 
 function loadWorkbook(){
-  // Create workbook if it doesn't exist
-  if(!fs.existsSync(DATA_FILE)){
+  try {
+    // Create workbook if it doesn't exist
+    if(!fs.existsSync(DATA_FILE)){
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Users');
+      XLSX.writeFile(wb, DATA_FILE);
+      return wb;
+    }
+    // Read existing workbook with error handling
+    let wb;
+    try {
+      wb = XLSX.readFile(DATA_FILE);
+    } catch (readError) {
+      console.error('[XLSX-READ-ERROR] Corrupted Excel file detected, creating fresh backup:', readError.message);
+      // Backup corrupted file
+      const backupFile = DATA_FILE.replace('.xlsx', `_corrupted_${Date.now()}.xlsx`);
+      if(fs.existsSync(DATA_FILE)) {
+        fs.copyFileSync(DATA_FILE, backupFile);
+        console.log('[XLSX-BACKUP] Corrupted file backed up to:', backupFile);
+      }
+      // Create fresh workbook
+      wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Users');
+      XLSX.writeFile(wb, DATA_FILE);
+      return wb;
+    }
+    
+    // Ensure required 'Users' sheet exists
+    if(!wb.Sheets['Users']){
+      const ws = XLSX.utils.json_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Users');
+      try {
+        XLSX.writeFile(wb, DATA_FILE);
+      } catch (writeError) {
+        console.error('[XLSX-WRITE-ERROR] Failed to write Users sheet:', writeError.message);
+        // Create new clean file if write fails
+        wb = XLSX.utils.book_new();
+        const cleanWs = XLSX.utils.json_to_sheet([]);
+        XLSX.utils.book_append_sheet(wb, cleanWs, 'Users');
+        XLSX.writeFile(wb, DATA_FILE);
+      }
+    }
+    return wb;
+  } catch (error) {
+    console.error('[XLSX-CRITICAL-ERROR] Failed to load/create workbook:', error.message);
+    // Last resort: create minimal workbook
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet([]);
     XLSX.utils.book_append_sheet(wb, ws, 'Users');
-    XLSX.writeFile(wb, DATA_FILE);
     return wb;
   }
-  // Read existing workbook
-  const wb = XLSX.readFile(DATA_FILE);
-  // Ensure required 'Users' sheet exists (it might be missing if file was created manually)
-  if(!wb.Sheets['Users']){
-    const ws = XLSX.utils.json_to_sheet([]);
-    XLSX.utils.book_append_sheet(wb, ws, 'Users');
-    XLSX.writeFile(wb, DATA_FILE);
-  }
-  return wb;
 }
 
 function normalizePhone(raw){
@@ -1283,8 +1615,33 @@ function saveUser(email, password, phone, firstName, surname, dob){
       dateCreatedISO: createdISO,
       dateCreatedLocal: createdLocal
     });
-    wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
-    XLSX.writeFile(wb, DATA_FILE);
+    
+    // Sanitize data before writing to Excel to prevent character limit errors
+    const sanitizedData = sanitizeDataForExcel(data);
+    wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizedData);
+    
+    try {
+      XLSX.writeFile(wb, DATA_FILE);
+    } catch (writeError) {
+      console.error('[XLSX-WRITE-ERROR] Failed to write user data:', writeError.message);
+      if (writeError.message.includes('32767')) {
+        console.log('[XLSX-RECOVERY] Attempting data cleanup and retry...');
+        // Create cleaner version with essential data only
+        const essentialData = data.map(user => ({
+          identifier: (user.identifier || '').substring(0, 100),
+          email: (user.email || '').substring(0, 100),
+          phone: (user.phone || '').substring(0, 20),
+          password: (user.password || '').substring(0, 100),
+          firstName: (user.firstName || '').substring(0, 50),
+          surname: (user.surname || '').substring(0, 50),
+          dob: (user.dob || '').substring(0, 10),
+          dateCreatedISO: (user.dateCreatedISO || '').substring(0, 30),
+          dateCreatedLocal: (user.dateCreatedLocal || '').substring(0, 30)
+        }));
+        wb.Sheets['Users'] = XLSX.utils.json_to_sheet(essentialData);
+        XLSX.writeFile(wb, DATA_FILE);
+      }
+    }
     return { ok:true, identifier: (origEmail || normPhone).toLowerCase() };
   } catch (err){
     console.error('Registration error:', err);
@@ -1296,6 +1653,8 @@ function saveUser(email, password, phone, firstName, surname, dob){
 }
 
 function validateLogin(identifier, password){
+  // Prefer sqlite when available
+  if (sqliteDB) return sqliteDB.validateLogin(identifier, password);
   const wb = loadWorkbook();
   const ws = wb.Sheets['Users'];
   const data = XLSX.utils.sheet_to_json(ws);
@@ -1741,29 +2100,112 @@ function startProxy(){
       host: hostHeader
     });
     
-    // Portal host detection
+    // Portal host detection - FIXED to always include server IP
     const portalHostCandidates = new Set([ 
       (process.env.PORTAL_HOST||'').toLowerCase(), 
       'localhost', 
+      '10.5.48.94',  // Always include server IP
       hotspotFallback, 
       ...localIps 
     ]);
     const isPortalHost = portalHostCandidates.has(hostHeader);
-    
-    // ALLOW PORTAL ACCESS for video watching (but still track proxy type)
-    if (isPortalHost) {
-      console.log('[PORTAL-ACCESS-ALLOWED]', { 
-        host: hostHeader, 
-        ip: clientIp,
-        type: isManualProxy ? 'MANUAL' : 'AUTO',
-        authenticated: !!mappedIdentifier
-      });
-      // Continue processing - allow portal access for video watching
+
+    // EARLY WHITELIST: allow portal and video-ad hosts unconditionally (never block)
+    // Compute video-ad host flag early so we can bypass any blocking logic below
+    let isVideoAdHost = isVideoAdCDN(hostHeader);
+    if (isPortalHost || isVideoAdHost) {
+      console.log('[PROXY-WHITELIST] Allowing portal or video-ad host without blocking', { host: hostHeader, ip: clientIp, isPortalHost, isVideoAdHost });
+
+      // If this is the portal host, forward directly to the local portal server and return
+      if (isPortalHost) {
+        const parsed = url.parse(clientReq.url);
+        const options = {
+          hostname: 'localhost',
+          port: PORT,  // Forward to portal server port (3150)
+          path: parsed.path,
+          method: clientReq.method,
+          headers: {
+            ...clientReq.headers,
+            'x-forwarded-for': clientIp,
+            'x-proxy-type': isManualProxy ? 'manual' : 'auto'
+          }
+        };
+
+        const upstream = http.request(options, upRes => {
+          clientRes.writeHead(upRes.statusCode, upRes.headers);
+          upRes.on('data', chunk => clientRes.write(chunk));
+          upRes.on('end', () => clientRes.end());
+        });
+
+        upstream.on('error', err => {
+          console.error('[PORTAL-FORWARD-ERROR]', err.message);
+          clientRes.writeHead(500, { 'Content-Type': 'text/html' });
+          clientRes.end('<html><body><h1>Portal Access Error</h1><p>Could not connect to portal server.</p></body></html>');
+        });
+
+        clientReq.pipe(upstream);
+        return;
+      }
+
+      // If it's a video ad CDN host, mark the request and continue processing.
+      // Downstream logic already skips counting and blocking for video ad hosts,
+      // but setting this header helps ensure downstream handlers treat it as ad traffic.
+      clientReq.headers['x-proxy-video-ad'] = '1';
+      // Continue processing - do not trigger manual/auto blocking for ad hosts
     }
     
-    // ALLOW VIDEO AD CDNs for unauthenticated users (needed for video ads to load)
-    const isVideoAdHost = isVideoAdCDN(hostHeader);
-    if (isVideoAdHost && !mappedIdentifier) {
+    // AUTO-AUTHENTICATION: Check if unauthenticated user has earned data bundles
+    if (!mappedIdentifier && !isPortalHost) {
+      // Try to find user by device fingerprint who has earned data bundles
+      const userAgent = clientReq.headers['user-agent'] || '';
+      const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+      
+      // Check if this device fingerprint has earned data bundles
+      const videosWatched = getVideosWatchedForUser(null, deviceFingerprint, routerId);
+      if (videosWatched >= 5) { // User has watched enough videos to earn data
+        // Find the identifier from ad events
+        try {
+          const XLSX = require('xlsx');
+          const wb = XLSX.readFile('logins.xlsx');
+          if (wb.SheetNames.includes('AdEvents')) {
+            const ws = wb.Sheets['AdEvents'];
+            const data = XLSX.utils.sheet_to_json(ws, {header: 1});
+            
+            // Find identifier for this device fingerprint
+            let foundIdentifier = null;
+            for (const row of data) {
+              if (row[3] === deviceFingerprint && row[2]) { // deviceId in column 3, identifier in column 2
+                foundIdentifier = String(row[2]).trim();
+                break;
+              }
+            }
+            
+            if (foundIdentifier) {
+              console.log('[AUTO-AUTH] Auto-authenticating user with data bundles:', { 
+                identifier: foundIdentifier,
+                deviceFingerprint,
+                videosWatched,
+                ip: clientIp,
+                host: hostHeader
+              });
+              
+              // Register as active client for 24 hours
+              registerActiveClient(clientReq, foundIdentifier, 24);
+              mappedIdentifier = resolveActiveClient(clientIp, clientReq);
+              
+              console.log('[AUTO-AUTH-SUCCESS] User authenticated:', foundIdentifier);
+            }
+          }
+        } catch (err) {
+          console.warn('[AUTO-AUTH-ERROR]', err.message);
+        }
+      }
+    }
+
+  // ALLOW VIDEO AD CDNs for unauthenticated users (needed for video ads to load)
+  // (isVideoAdHost computed earlier in whitelist section)
+  if (isVideoAdHost && !mappedIdentifier) {
       console.log('[VIDEO-AD-ALLOWED]', { 
         host: hostHeader, 
         ip: clientIp,
@@ -1773,7 +2215,7 @@ function startProxy(){
       // Continue processing - allow video ad access for video watching
     }
     // MANUAL PROXY: Block everything except portal and video ads until user logs in
-    else if (isManualProxy && !mappedIdentifier) {
+    else if (isManualProxy && !mappedIdentifier && !isPortalHost) {
       console.log('[MANUAL-PROXY-BLOCKED] Manual proxy user must login first:', { 
         host: hostHeader, 
         ip: clientIp
@@ -1826,7 +2268,7 @@ function startProxy(){
 <h3>📊 Bundle System:</h3>
 <ul style="list-style:none;padding:0;">
 <li>🎥 <strong>5 videos = 100MB</strong> bundle</li>
-<li>🎥 <strong>8 videos = 250MB</strong> bundle</li>
+<li>🎥 <strong>10 videos = 250MB</strong> bundle</li>
 <li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
 </ul>
 </div>
@@ -1840,8 +2282,8 @@ function startProxy(){
     
     // AUTO PROXY WITH AUTHENTICATION: Must have valid data bundles (no free access)
     else if (isAutoProxy && mappedIdentifier) {
-      const userAgent = req.headers['user-agent'] || '';
-      const routerId = req.headers['x-router-id'] || req.ip || 'unknown';
+      const userAgent = clientReq.headers['user-agent'] || '';
+      const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
       const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
       const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
       
@@ -1876,7 +2318,7 @@ function startProxy(){
 <h3>📊 Earn More Data:</h3>
 <ul style="list-style:none;padding:0;">
 <li>🎥 <strong>5 videos = 100MB</strong> bundle</li>
-<li>🎥 <strong>8 videos = 250MB</strong> bundle</li>
+<li>🎥 <strong>10 videos = 250MB</strong> bundle</li>
 <li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
 </ul>
 </div>
@@ -1921,12 +2363,16 @@ function startProxy(){
         return;
       }
     }
-    const effectiveIdentifier = mappedIdentifier || (parsedToken && parsedToken.identifier);
+    const effectiveIdentifier = (mappedIdentifier && mappedIdentifier.identifier) || (parsedToken && parsedToken.identifier);
     if(effectiveIdentifier){
       const parsedFull = url.parse(clientReq.url || '');
       const reqPortNum = Number(parsedFull.port || (parsedFull.protocol==='https:'?443:(parsedFull.protocol==='http:'?80:0)));
-      const quota = computeRemaining(effectiveIdentifier);
-      const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', hotspotFallback, ...localIps ]);
+      // CRITICAL FIX: Use unified quota calculation with proper device fingerprinting
+      const userAgent = clientReq.headers['user-agent'] || '';
+      const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+      const quota = computeRemainingUnified(effectiveIdentifier, deviceFingerprint, routerId);
+      const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', hotspotFallback, ...localIps ]);
       const isPortalHost = portalHostCandidates.has(hostHeader);
       const isPortalByPort = reqPortNum && reqPortNum === PORT;
       const isPortal = isPortalHost || isPortalByPort;
@@ -1947,53 +2393,352 @@ function startProxy(){
         console.log('[proxy-debug-http]', { rawHostHeader, hostHeader, reqPortNum, PORT, isPortalHost, isPortalByPort, isPortal, remaining:quota.remainingMB, exhausted:quota.exhausted, tempUnlocked, full: hasFullAccess });
       }
       
-    // STRICT QUOTA ENFORCEMENT: Block access when data is exhausted (except for temp unlock and portal)
-    if(!isPortal && !tempUnlocked && quota.exhausted){
-        try { activeClients.delete(normalizeIp(clientIp)); } catch {}
-        console.warn('[QUOTA-BLOCK-HTTP] exhausted identifier=', effectiveIdentifier, 'host=', hostHeader, 'ip=', clientIp, 'remaining=', quota.remainingMB);
-        clientRes.writeHead(302, { 
-          'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=data_exhausted`,
-          'Content-Type': 'text/html' 
-        });
-        clientRes.end(`<!DOCTYPE html>
-<html><head><title>Data Bundle Exhausted</title><style>body{font-family:Arial;text-align:center;margin-top:50px;}</style></head>
-<body><h1>Data Bundle Exhausted</h1>
-<p>You have used all your allocated data (${quota.totalBundleMB}MB).</p>
-<p>Watch more videos to earn additional data bundles!</p>
-<p><strong>Bundle Rewards:</strong></p>
-<ul style="display:inline-block;text-align:left;">
-<li>5 videos = 100MB bundle</li>
-<li>8 videos = 250MB bundle</li>
-<li>15 videos = 500MB bundle</li>
-</ul>
-<p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#007bff;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Watch Videos Now</a></p>
+      // STRICT MAC-BASED DEVICE ACCESS: Each device must earn its own access
+      let hasVideoAccess = false;
+      let videoAccessMB = 0;
+      
+      if (effectiveIdentifier && !isPortal) {
+        try {
+          const deviceInfo = generateDeviceFingerprint(clientReq);
+          
+          // CRITICAL: Strict device verification - check if THIS device earned access
+          if (deviceInfo.macVerified) {
+            // MAC-verified device: Check device-specific access tokens
+            const deviceAccessToken = deviceIsolation.getDeviceAccessToken(deviceInfo.deviceId, deviceInfo.mac);
+            
+            if (deviceAccessToken && deviceAccessToken.identifier === effectiveIdentifier) {
+              hasVideoAccess = true;
+              videoAccessMB = deviceAccessToken.bundlesMB || 0;
+              console.log(`[MAC-DEVICE-ACCESS-GRANTED] ${effectiveIdentifier} MAC:${deviceInfo.mac.slice(0,6)}... has ${videoAccessMB}MB access`);
+            } else {
+              console.log(`[MAC-DEVICE-ACCESS-DENIED] ${effectiveIdentifier} MAC:${deviceInfo.mac.slice(0,6)}... has no device-specific access`);
+            }
+          } else {
+            // Fallback for devices without MAC: Check bundle access with strict validation
+            const quota = computeRemainingUnified(effectiveIdentifier, deviceInfo.deviceId, routerId);
+            
+            if (quota.totalBundleMB > 0 && !quota.exhausted) {
+              // Additional verification: Check if this device actually earned the bundles
+              const deviceVideos = getVideosWatched(effectiveIdentifier, deviceInfo.deviceId);
+              const deviceVideoCount = deviceVideos.length;
+              
+              if (deviceVideoCount >= 5) {
+                hasVideoAccess = true;
+                videoAccessMB = quota.totalBundleMB;
+                console.log(`[DEVICE-BUNDLE-ACCESS-GRANTED] ${effectiveIdentifier} device ${deviceInfo.deviceId.slice(0,8)}... verified ${deviceVideoCount} videos = ${videoAccessMB}MB`);
+              } else {
+                console.log(`[DEVICE-BUNDLE-ACCESS-DENIED] ${effectiveIdentifier} device ${deviceInfo.deviceId.slice(0,8)}... only ${deviceVideoCount} videos (needs 5+)`);
+              }
+            } else {
+              // Final fallback: Check video count for temporary access
+              const videosWatched = getVideosWatchedForUser ? getVideosWatchedForUser(effectiveIdentifier) : [];
+              const videoCount = videosWatched.length;
+              
+              // Grant access based on milestone system: 5 videos = 100MB, 10 videos = 250MB, 15 videos = 500MB
+              if (videoCount >= 15) {
+                videoAccessMB = 500; // 500MB for 15+ videos
+                hasVideoAccess = true;
+              } else if (videoCount >= 10) {
+                videoAccessMB = 250; // 250MB for 10+ videos  
+                hasVideoAccess = true;
+              } else if (videoCount >= 5) {
+                videoAccessMB = 100; // 100MB for 5+ videos
+                hasVideoAccess = true;
+              }
+              
+              // Check session usage for temporary access
+              if (hasVideoAccess) {
+                const videoUsage = realtimeUsage.get(effectiveIdentifier);
+                const sessionUsedMB = videoUsage ? videoUsage.totalDataMB : 0;
+                
+                if (sessionUsedMB >= videoAccessMB) {
+                  hasVideoAccess = false; // Used up video access allowance
+                  console.log(`[TEMP-VIDEO-ACCESS-EXHAUSTED] ${effectiveIdentifier}: Used ${sessionUsedMB.toFixed(2)}MB of ${videoAccessMB}MB video allowance`);
+                } else {
+                  console.log(`[TEMP-VIDEO-ACCESS-GRANTED] ${effectiveIdentifier}: ${videoCount} videos = ${videoAccessMB}MB access, used ${sessionUsedMB.toFixed(2)}MB`);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[STRICT-DEVICE-ACCESS-CHECK-ERROR]', error.message);
+        }
+      }
+
+      // ENHANCED HTTP ACCESS CONTROL - Block until videos watched and notification received
+      if (!isPortal && effectiveIdentifier && !tempUnlocked) {
+        // CRITICAL: Real-time quota enforcement BEFORE allowing any data transfer
+        const currentUsage = realtimeUsage.get(effectiveIdentifier) || { totalDataMB: 0 };
+        const totalUsedMB = currentUsage.totalDataMB || 0;
+        
+        // Check current quota vs usage
+        if (quota.remainingMB <= 0 && quota.totalBundleMB > 0) {
+          const blockedReason = `Data limit exceeded: Used ${totalUsedMB.toFixed(1)}MB of ${quota.totalBundleMB}MB`;
+          
+          console.warn('[HTTP-BLOCKED-QUOTA-EXCEEDED]', { 
+            host: hostHeader, 
+            ip: clientIp,
+            identifier: effectiveIdentifier,
+            totalUsed: totalUsedMB,
+            limit: quota.totalBundleMB,
+            remaining: quota.remainingMB
+          });
+          
+          clientRes.writeHead(302, { 
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_quota=true&used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`,
+            'Content-Type': 'text/html' 
+          });
+          
+          clientRes.end(`<!DOCTYPE html>
+<html><head>
+<title>Data Limit Exceeded</title>
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #dc3545;border-radius:10px;background:#f8f9fa;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#dc3545;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+  .usage-bar{background:#e9ecef;height:20px;border-radius:10px;margin:20px 0;overflow:hidden;}
+  .usage-fill{background:#dc3545;height:100%;transition:width 0.3s;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">🚫</div>
+  <h1>Data Limit Exceeded</h1>
+  <p><strong>Trying to access:</strong> ${hostHeader}</p>
+  
+  <div style="background:#fff3cd;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #ffc107;">
+    <h3>📊 Data Usage Summary:</h3>
+    <p><strong>Used:</strong> ${totalUsedMB.toFixed(1)} MB</p>
+    <p><strong>Limit:</strong> ${quota.totalBundleMB} MB</p>
+    <p><strong>Exceeded by:</strong> ${(totalUsedMB - quota.totalBundleMB).toFixed(1)} MB</p>
+    <div class="usage-bar">
+      <div class="usage-fill" style="width: 100%;"></div>
+    </div>
+  </div>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎬 How to Get More Data:</h3>
+    <ol style="text-align:left;">
+      <li>📱 Return to the WiFi portal</li>
+      <li>🎬 Watch video advertisements</li>
+      <li>📊 Each video earns 20MB of data</li>
+      <li>🌐 Internet access restored!</li>
+    </ol>
+  </div>
+  
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="action-btn">🎬 Watch More Videos</a>
+  <p><small>Portal access is always free • Videos unlock internet data</small></p>
+</div>
 </body></html>`);
-        return;
+          return;
+        }
+        
+        let hasInternetAccess = false;
+        let videoAccessMB = 0;
+        let notificationReceived = false;
+        
+        // Check if user has received video completion notification
+        const deviceSession = deviceSessions.get(deviceFingerprint) || deviceSessions.get(effectiveIdentifier);
+        if (deviceSession && deviceSession.videoNotificationReceived) {
+          notificationReceived = true;
+        }
+        
+        // Priority 1: Check for active data bundles
+        if (quota.totalBundleMB > 0 && !quota.exhausted) {
+          hasInternetAccess = true;
+          videoAccessMB = quota.totalBundleMB;
+          notificationReceived = true; // Bundles imply notification received
+          console.log(`[HTTP-INTERNET-ACCESS-GRANTED] ${effectiveIdentifier}: ${quota.totalBundleMB}MB bundle active`);
+        } else if (notificationReceived) {
+          // Priority 2: Video-based access (only if notification received)
+          const videosWatched = getVideosWatchedForUser ? getVideosWatchedForUser(effectiveIdentifier) : [];
+          const videoCount = videosWatched.length;
+          
+          if (videoCount >= 15) {
+            videoAccessMB = 500;
+            hasInternetAccess = true;
+          } else if (videoCount >= 10) {
+            videoAccessMB = 250;
+            hasInternetAccess = true;
+          } else if (videoCount >= 5) {
+            videoAccessMB = 100;
+            hasInternetAccess = true;
+          } else if (videoCount >= 1) {
+            videoAccessMB = 20;
+            hasInternetAccess = true;
+          }
+          
+          // Check session usage
+          if (hasInternetAccess && quota.totalBundleMB === 0) {
+            const videoUsage = realtimeUsage.get(effectiveIdentifier);
+            const sessionUsedMB = videoUsage ? videoUsage.totalDataMB : 0;
+            
+            if (sessionUsedMB >= videoAccessMB) {
+              hasInternetAccess = false;
+              console.log(`[HTTP-ACCESS-EXHAUSTED] ${effectiveIdentifier}: Used ${sessionUsedMB.toFixed(2)}MB of ${videoAccessMB}MB allowance`);
+            }
+          }
+        }
+        
+        // Block access if no internet access earned AND it's not a video ad domain
+        const isVideoAdDomain = isVideoAdCDN(hostHeader);
+        if (!hasInternetAccess && !isVideoAdDomain) {
+          const blockedReason = !notificationReceived ? 'Videos must be watched first' : 'Data allowance exhausted';
+          const actionText = !notificationReceived ? '🎬 Watch Videos to Unlock Internet' : '🔄 Watch More Videos for Data';
+          
+          console.warn('[HTTP-BLOCKED-NO-VIDEO-ACCESS]', { 
+            host: hostHeader, 
+            ip: clientIp,
+            identifier: effectiveIdentifier,
+            notificationReceived,
+            reason: blockedReason
+          });
+          
+          clientRes.writeHead(302, { 
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_http=${encodeURIComponent(hostHeader)}&reason=${encodeURIComponent(blockedReason)}`,
+            'Content-Type': 'text/html' 
+          });
+          
+          clientRes.end(`<!DOCTYPE html>
+<html><head>
+<title>Internet Access Blocked - Watch Videos First</title>
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #ff6b35;border-radius:10px;background:#fff5f0;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#ff6b35;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">🌐</div>
+  <h1>Internet Access Blocked</h1>
+  <p><strong>Trying to access:</strong> ${hostHeader}</p>
+  <p><strong>Reason:</strong> ${blockedReason}</p>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎯 How to Unlock Internet:</h3>
+    <ol style="text-align:left;">
+      <li>📱 Enter the WiFi portal</li>
+      <li>🎬 Watch video advertisements</li>
+      <li>📢 Wait for completion notification</li>
+      <li>🌐 Internet access unlocked!</li>
+    </ol>
+  </div>
+  
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="action-btn">${actionText}</a>
+  <p><small>Proxy: ISN Free WiFi • Videos unlock everything</small></p>
+</div>
+</body></html>`);
+          return;
+        }
       }
       
-  // Gate social hosts until an ad completion happened (only if they don't have social access)
-    if(!isPortal && !tempUnlocked && isGatedSocialHost(hostHeader) && !hasSocialAccess){
-        console.log('[SOCIAL-BLOCK]', { identifier: effectiveIdentifier, host: hostHeader });
-        clientRes.writeHead(302, { 
-          'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=social_blocked&app=${encodeURIComponent(hostHeader)}`,
-          'Content-Type': 'text/html' 
-        });
-        clientRes.end(`<!DOCTYPE html>
-<html><head><title>App Access Locked</title><style>body{font-family:Arial;text-align:center;margin-top:50px;}</style></head>
-<body><h1>WhatsApp/Facebook Access Locked</h1>
-<p>Access to <strong>${hostHeader}</strong> is locked until you watch videos.</p>
-<p>This includes WhatsApp APK, Facebook APK, and all related apps.</p>
-<p><strong>How to unlock:</strong></p>
-<ul style="display:inline-block;text-align:left;">
-<li>Watch your first video to unlock social apps</li>
-<li>Continue watching to earn data bundles</li>
-<li>5 videos = 100MB, 8 videos = 250MB, 15 videos = 500MB</li>
-</ul>
-<p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#25d366;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Watch Videos to Unlock</a></p>
+      // Enhanced social media access control with notification requirement
+      if(!isPortal && !tempUnlocked && isGatedSocialHost(hostHeader)) {
+        let hasSocialAccess = socialUnlocked.has(effectiveIdentifier);
+        let notificationReceived = false;
+        
+        const deviceSession = deviceSessions.get(effectiveIdentifier) || deviceSessions.get(deviceFingerprint);
+        if (deviceSession && deviceSession.videoNotificationReceived) {
+          notificationReceived = true;
+          // Auto-unlock social media after video notification
+          if (!hasSocialAccess) {
+            socialUnlocked.add(effectiveIdentifier);
+            hasSocialAccess = true;
+            console.log(`[HTTP-SOCIAL-AUTO-UNLOCK] ${effectiveIdentifier} social media unlocked after video notification`);
+          }
+        }
+        
+        if (!hasSocialAccess) {
+          const actionText = notificationReceived ? 'Watch more videos for continued access' : 'Watch videos to unlock social media';
+          
+          console.log('[SOCIAL-BLOCK]', { identifier: effectiveIdentifier, host: hostHeader, notificationReceived });
+          clientRes.writeHead(302, { 
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=social_blocked&app=${encodeURIComponent(hostHeader)}&reason=video_required`,
+            'Content-Type': 'text/html' 
+          });
+          
+          clientRes.end(`<!DOCTYPE html>
+<html><head>
+<title>Social Media Blocked - Watch Videos First</title>
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:500px;margin:0 auto;padding:20px;border:2px solid #ff6b35;border-radius:10px;background:#fff5f0;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#ff6b35;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">📱</div>
+  <h1>${hostHeader.includes('whatsapp') ? 'WhatsApp' : hostHeader.includes('facebook') ? 'Facebook' : 'Social Media'} Blocked</h1>
+  <p><strong>App:</strong> ${hostHeader}</p>
+  <p><strong>Status:</strong> ${actionText}</p>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎯 How to Unlock:</h3>
+    <ol style="text-align:left;">
+      <li>📱 Enter WiFi portal</li>
+      <li>🎬 Watch video ads</li>
+      <li>📢 Get completion notification</li>
+      <li>📱 Social media unlocked!</li>
+    </ol>
+  </div>
+  
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="action-btn">🎬 Watch Videos Now</a>
+  <p><small>Each device must watch videos individually</small></p>
+</div>
 </body></html>`);
-        return;
+          return;
+        }
       }
     }
+    
+    // SPECIAL HANDLING FOR PORTAL REQUESTS - Forward to local portal server
+    if (isPortalHost) {
+      const parsed = url.parse(clientReq.url);
+      const options = {
+        hostname: 'localhost',
+        port: PORT,  // Forward to portal server port (3150)
+        path: parsed.path,
+        method: clientReq.method,
+        headers: {
+          ...clientReq.headers,
+          'x-forwarded-for': clientIp,
+          'x-proxy-type': isManualProxy ? 'manual' : 'auto'
+        }
+      };
+      
+      console.log('[PORTAL-FORWARD]', { 
+        from: `${hostHeader}:${parsed.port || 80}${parsed.path}`,
+        to: `localhost:${PORT}${parsed.path}`,
+        ip: clientIp,
+        type: isManualProxy ? 'MANUAL' : 'AUTO'
+      });
+      
+      const upstream = http.request(options, upRes => {
+        clientRes.writeHead(upRes.statusCode, upRes.headers);
+        upRes.on('data', chunk => clientRes.write(chunk));
+        upRes.on('end', () => clientRes.end());
+      });
+      
+      upstream.on('error', err => {
+        console.error('[PORTAL-FORWARD-ERROR]', err.message);
+        clientRes.writeHead(500, { 'Content-Type': 'text/html' });
+        clientRes.end(`<!DOCTYPE html>
+<html><head><title>Portal Access Error</title></head>
+<body><h1>Portal Access Error</h1>
+<p>Could not connect to portal server. Please try again.</p>
+<p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html">Retry Portal Access</a></p>
+</body></html>`);
+      });
+      
+      clientReq.pipe(upstream);
+      return;
+    }
+    
     // Forward request (HTTP only) – we won't MITM HTTPS here
     const parsed = url.parse(clientReq.url);
     const options = {
@@ -2006,9 +2751,43 @@ function startProxy(){
     const upstream = http.request(options, upRes=>{
       let bytes=0;
       clientRes.writeHead(upRes.statusCode, upRes.headers);
+      
+      // Real-time quota enforcement during data transfer
       upRes.on('data',chunk=>{ 
-        bytes += chunk.length; 
-        clientRes.write(chunk); 
+        bytes += chunk.length;
+        
+        // Check quota in real-time for non-ad traffic
+        if (effectiveIdentifier && !isVideoAdCDN(hostHeader)) {
+          const currentUsage = realtimeUsage.get(effectiveIdentifier) || { totalDataMB: 0 };
+          const chunkMB = chunk.length / 1024 / 1024;
+          const projectedUsageMB = currentUsage.totalDataMB + chunkMB;
+          
+          // Get current quota
+          const userAgent = clientReq.headers['user-agent'] || '';
+          const routerId = parsedToken?.routerId || detectRouterId(clientReq) || 'router-1';
+          const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+          const quota = computeRemainingUnified(effectiveIdentifier, deviceFingerprint, routerId);
+          
+          // Block if this chunk would exceed quota
+          if (quota.totalBundleMB > 0 && projectedUsageMB > quota.totalBundleMB) {
+            console.warn(`[HTTP-REAL-TIME-BLOCK] ${effectiveIdentifier}: Would exceed limit ${projectedUsageMB.toFixed(2)}MB > ${quota.totalBundleMB}MB`);
+            
+            // Send quota exceeded message instead of data
+            clientRes.end(`<!DOCTYPE html>
+<html><head><title>Data Limit Exceeded</title></head>
+<body style="font-family:Arial;text-align:center;margin:50px;">
+<h1>🚫 Data Limit Exceeded</h1>
+<p><strong>Host:</strong> ${hostHeader}</p>
+<p><strong>Used:</strong> ${currentUsage.totalDataMB.toFixed(1)} MB</p>
+<p><strong>Limit:</strong> ${quota.totalBundleMB} MB</p>
+<p><strong>Would exceed by:</strong> ${(projectedUsageMB - quota.totalBundleMB).toFixed(2)} MB</p>
+<p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">🎬 Watch Videos for More Data</a></p>
+</body></html>`);
+            return;
+          }
+        }
+        
+        clientRes.write(chunk);
       });
       upRes.on('end',()=>{ 
         clientRes.end(); 
@@ -2019,8 +2798,17 @@ function startProxy(){
             const usedMB = bytes/1024/1024;
             
             if (!isAdTraffic) {
-              const success = addUsage(effectiveIdentifier, usedMB);
-              console.log('[USAGE-TRACKED]', { identifier: effectiveIdentifier, host: hostHeader, bytes, usedMB: usedMB.toFixed(3), success });
+              // Enhanced usage tracking with device and router info
+              const routerId = parsedToken?.routerId || detectRouterId(clientReq) || 'router-1';
+              const deviceId = parsedToken?.deviceId || generateDeviceFingerprint(clientReq).deviceId;
+              
+              const success = addUsage(effectiveIdentifier, usedMB, deviceId, routerId);
+              console.log('[USAGE-TRACKED]', { identifier: effectiveIdentifier, device: deviceId?.slice(0,8)+'...', host: hostHeader, bytes, usedMB: usedMB.toFixed(3), success });
+              
+              // Update real-time session usage for live tracking
+              if (success) {
+                dataTracker.addSessionUsage(effectiveIdentifier, usedMB);
+              }
             } else {
               console.log('[VIDEO-AD-FREE]', { identifier: effectiveIdentifier, host: hostHeader, bytes, usedMB: usedMB.toFixed(3), message: 'Video ad traffic not counted' });
             }
@@ -2051,7 +2839,7 @@ function startProxy(){
   // STRICT HTTPS BLOCKING - Check proxy type and enforce restrictions
   const hostOnly = req.url.split(':')[0].toLowerCase();
   const localIps = localIPv4s();
-  const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', ...localIps ]);
+  const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', ...localIps ]);
   const isPortalHost = portalHostCandidates.has(hostOnly);
   
   // ENHANCED PROXY TYPE DETECTION FOR HTTPS
@@ -2069,8 +2857,67 @@ function startProxy(){
     isPortalHost
   });
   
-  // BLOCK UNAUTHENTICATED HTTPS TRAFFIC (except portal and video ads)
+  // AUTO-AUTHENTICATION FOR HTTPS: Check if unauthenticated user has earned data bundles
+  if (!mappedIdentifier && !isPortalHost) {
+    // Try to find user by device fingerprint who has earned data bundles
+    const userAgent = req.headers['user-agent'] || '';
+    const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+    const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+    
+    // Check if this device fingerprint has earned data bundles
+    const videosWatched = getVideosWatchedForUser(null, deviceFingerprint, routerId);
+    if (videosWatched >= 5) { // User has watched enough videos to earn data
+      // Find the identifier from ad events
+      try {
+        const XLSX = require('xlsx');
+        const wb = XLSX.readFile('logins.xlsx');
+        if (wb.SheetNames.includes('AdEvents')) {
+          const ws = wb.Sheets['AdEvents'];
+          const data = XLSX.utils.sheet_to_json(ws, {header: 1});
+          
+          // Find identifier for this device fingerprint
+          let foundIdentifier = null;
+          for (const row of data) {
+            if (row[3] === deviceFingerprint && row[2]) { // deviceId in column 3, identifier in column 2
+              foundIdentifier = String(row[2]).trim();
+              break;
+            }
+          }
+          
+          if (foundIdentifier) {
+            console.log('[HTTPS-AUTO-AUTH] Auto-authenticating user with data bundles:', { 
+              identifier: foundIdentifier,
+              deviceFingerprint,
+              videosWatched,
+              ip: clientIp,
+              host: hostOnly
+            });
+            
+            // Register as active client for 24 hours
+            registerActiveClient(req, foundIdentifier, 24);
+            mappedIdentifier = resolveActiveClient(clientIp, req);
+            
+            console.log('[HTTPS-AUTO-AUTH-SUCCESS] User authenticated:', foundIdentifier);
+          }
+        }
+      } catch (err) {
+        console.warn('[HTTPS-AUTO-AUTH-ERROR]', err.message);
+      }
+    }
+  }
+  
+  // EARLY WHITELIST: allow portal and video-ad hosts for CONNECT requests (never block)
   const isVideoAdHost = isVideoAdCDN(hostOnly);
+  if (isPortalHost || isVideoAdHost) {
+    console.log('[CONNECT-WHITELIST] Allowing CONNECT to portal or video-ad host without blocking', { host: hostOnly, ip: clientIp, isPortalHost, isVideoAdHost });
+    // If portal host, accept CONNECT and forward to local portal or respond with a simple 200 for CONNECT
+    if (isPortalHost) {
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      return; // allow the client to open the tunnel (portal uses HTTP, usually no CONNECT needed but be permissive)
+    }
+    // If video ad host, allow through by continuing; downstream logic will treat it as ad traffic
+  }
+  // BLOCK UNAUTHENTICATED HTTPS TRAFFIC (except portal and video ads)
   if (!mappedIdentifier && !isPortalHost && !isVideoAdHost) {
     const blockMessage = isManualProxy 
       ? 'Manual proxy user must login first to access HTTPS sites'
@@ -2123,7 +2970,7 @@ ${isManualProxy
     return clientSocket.end();
   }
   
-  // BLOCK AUTO PROXY USERS WITHOUT DATA BUNDLES (even if authenticated)
+  // ENHANCED PROXY ACCESS CONTROL - STRICT VIDEO-BASED INTERNET UNLOCKING
   if (mappedIdentifier && isAutoProxy && !isPortalHost) {
     const userAgent = req.headers['user-agent'] || '';
     const routerId = req.headers['x-router-id'] || req.ip || 'unknown';
@@ -2131,18 +2978,85 @@ ${isManualProxy
     const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
     const tempUnlocked = (tempFullAccess.get(mappedIdentifier) || 0) > Date.now();
     
-    // STRICT: Auto proxy users can only access HTTPS if they have data bundles (not temp access)
-    if (!tempUnlocked && (quota.exhausted || quota.totalBundleMB === 0)) {
-      console.warn('[HTTPS-BLOCKED-AUTO-PROXY-NO-DATA]', { 
+    // Check if user has received video completion notification and unlocked internet access
+    let hasInternetAccess = false;
+    let videoAccessMB = 0;
+    let notificationReceived = false;
+    
+    if (mappedIdentifier) {
+      try {
+        // PRIORITY 1: Check for active data bundles (instant access)
+        if (quota.totalBundleMB > 0 && !quota.exhausted) {
+          hasInternetAccess = true;
+          videoAccessMB = quota.totalBundleMB;
+          notificationReceived = true; // Bundles imply notification was received
+          console.log(`[INTERNET-ACCESS-GRANTED] ${mappedIdentifier}: ${quota.totalBundleMB}MB bundle active, used ${quota.usedMB.toFixed(2)}MB`);
+        } else {
+          // PRIORITY 2: Check if user has watched videos and received completion notification
+          const videosWatched = getVideosWatchedForUser ? getVideosWatchedForUser(mappedIdentifier) : [];
+          const videoCount = videosWatched.length;
+          
+          // Check if user has received video completion notification (stored in deviceSessions)
+          const deviceSession = deviceSessions.get(deviceFingerprint) || deviceSessions.get(mappedIdentifier);
+          if (deviceSession && deviceSession.videoNotificationReceived) {
+            notificationReceived = true;
+          }
+          
+          // Only grant internet access if videos watched AND notification received
+          if (notificationReceived && videoCount >= 1) {
+            // Progressive access based on videos watched (after notification)
+            if (videoCount >= 15) {
+              videoAccessMB = 500; // 500MB for 15+ videos
+              hasInternetAccess = true;
+            } else if (videoCount >= 10) {
+              videoAccessMB = 250; // 250MB for 10+ videos  
+              hasInternetAccess = true;
+            } else if (videoCount >= 5) {
+              videoAccessMB = 100; // 100MB for 5+ videos
+              hasInternetAccess = true;
+            } else if (videoCount >= 1) {
+              videoAccessMB = 20; // 20MB for 1+ videos (enough for basic browsing)
+              hasInternetAccess = true;
+            }
+            
+            // Check session usage to prevent overuse
+            if (hasInternetAccess && quota.totalBundleMB === 0) {
+              const videoUsage = realtimeUsage.get(mappedIdentifier);
+              const sessionUsedMB = videoUsage ? videoUsage.totalDataMB : 0;
+              
+              if (sessionUsedMB >= videoAccessMB) {
+                hasInternetAccess = false; // Used up video access allowance - redirect to portal
+                console.log(`[INTERNET-ACCESS-EXHAUSTED] ${mappedIdentifier}: Used ${sessionUsedMB.toFixed(2)}MB of ${videoAccessMB}MB allowance - REDIRECTING TO PORTAL`);
+              } else {
+                console.log(`[INTERNET-ACCESS-ACTIVE] ${mappedIdentifier}: ${videoCount} videos = ${videoAccessMB}MB access, used ${sessionUsedMB.toFixed(2)}MB`);
+              }
+            }
+          } else if (videoCount > 0 && !notificationReceived) {
+            console.log(`[NOTIFICATION-PENDING] ${mappedIdentifier}: ${videoCount} videos watched but notification not received yet`);
+          }
+        }
+      } catch (error) {
+        console.error('[INTERNET-ACCESS-CHECK-ERROR]', error.message);
+      }
+    }
+    
+    // STRICT RULE: Block ALL internet access (including social media) until videos watched AND notification received
+    if (!tempUnlocked && !hasInternetAccess) {
+      const blockedReason = !notificationReceived ? 'Videos must be watched first' : 'Data allowance exhausted';
+      const actionText = !notificationReceived ? '🎬 Watch Videos to Unlock Internet' : '🔄 Watch More Videos for Data';
+      
+      console.warn('[INTERNET-BLOCKED-NO-VIDEO-ACCESS]', { 
         host: hostOnly, 
         ip: clientIp,
         identifier: mappedIdentifier,
         remainingMB: quota.remainingMB,
         totalBundleMB: quota.totalBundleMB,
-        exhausted: quota.exhausted
+        exhausted: quota.exhausted,
+        notificationReceived,
+        reason: blockedReason
       });
       
-      const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_https=${encodeURIComponent(hostOnly)}&proxy_type=auto_no_data`;
+      const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_https=${encodeURIComponent(hostOnly)}&proxy_type=video_required&reason=${encodeURIComponent(blockedReason)}`;
       
       clientSocket.write('HTTP/1.1 302 Found\r\n');
       clientSocket.write(`Location: ${redirectUrl}\r\n`);
@@ -2151,28 +3065,45 @@ ${isManualProxy
       
       const htmlContent = `<!DOCTYPE html>
 <html><head>
-<title>HTTPS Access Blocked - No Data</title>
+<title>Internet Access Blocked - Watch Videos First</title>
 <meta http-equiv="refresh" content="5;url=${redirectUrl}">
-<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;}</style>
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #ff6b35;border-radius:10px;background:#fff5f0;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#ff6b35;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+  .quota-info{background:#f8f9fa;padding:15px;border-radius:5px;margin:20px 0;}
+</style>
 </head>
 <body>
-<h1>🚫 HTTPS Access Blocked - No Data Bundles</h1>
-<p><strong>Trying to access:</strong> ${hostOnly}</p>
-<p><strong>Proxy Type:</strong> Auto Proxy (PAC)</p>
-<p><strong>Status:</strong> You have ${quota.remainingMB}MB remaining out of ${quota.totalBundleMB}MB total.</p>
-<p>Auto proxy users must have active data bundles to access HTTPS sites.</p>
-<div style="background:#ffebee;padding:15px;margin:20px;border-radius:5px;border:2px solid #f44336;">
-<h3>📊 Earn Data Bundles:</h3>
-<ul style="list-style:none;padding:0;">
-<li>🎥 <strong>5 videos = 100MB</strong> bundle</li>
-<li>🎥 <strong>8 videos = 250MB</strong> bundle</li>
-<li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
-</ul>
+<div class="container">
+  <div class="icon">🚫</div>
+  <h1>Internet Access Blocked</h1>
+  <p><strong>Trying to access:</strong> ${hostOnly}</p>
+  <p><strong>Reason:</strong> ${blockedReason}</p>
+  
+  <div class="quota-info">
+    <h3>📊 Your Status:</h3>
+    <p><strong>Videos Required:</strong> Watch videos and get notification to unlock internet</p>
+    <p><strong>Current Data:</strong> ${quota.remainingMB.toFixed(1)}MB / ${quota.totalBundleMB}MB</p>
+    <p><strong>Social Media:</strong> ❌ Blocked until videos watched</p>
+    <p><strong>Internet Access:</strong> ❌ Blocked until videos watched</p>
+  </div>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎯 How to Unlock Internet:</h3>
+    <ol style="text-align:left;max-width:400px;margin:0 auto;">
+      <li>📱 Enter the WiFi portal</li>
+      <li>🎬 Watch video advertisements</li>
+      <li>📢 Wait for completion notification</li>
+      <li>🌐 Internet & social media unlocked!</li>
+    </ol>
+  </div>
+  
+  <a href="${redirectUrl}" class="action-btn">${actionText}</a>
+  <p><small>Redirecting to portal in 5 seconds...</small></p>
+  <p style="font-size:12px;color:#666;">Proxy: Auto (PAC) • ISN Free WiFi Portal</p>
 </div>
-<p><strong>Your PAC URL:</strong> http://10.5.48.94:3151/proxy.pac</p>
-<hr>
-<p><a href="${redirectUrl}" style="background:#f44336;color:white;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;">🎬 Watch Videos for Data</a></p>
-<p><small>Redirecting in 5 seconds...</small></p>
 </body></html>`;
       
       clientSocket.write(htmlContent);
@@ -2207,15 +3138,21 @@ ${isManualProxy
         return clientSocket.end();
       }
     }
-    const effectiveIdentifier = mappedIdentifier || (parsedToken && parsedToken.identifier);
+    const effectiveIdentifier = (mappedIdentifier && mappedIdentifier.identifier) || (parsedToken && parsedToken.identifier);
     if(effectiveIdentifier){
-      const quota = computeRemaining(effectiveIdentifier);
+      // CRITICAL FIX: Use unified quota calculation with proper device fingerprinting
+      const userAgent = req.headers['user-agent'] || '';
+      const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+      const quota = computeRemainingUnified(effectiveIdentifier, deviceFingerprint, routerId);
       const tempUnlocked = (tempFullAccess.get(effectiveIdentifier) || 0) > Date.now();
-      const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', ...localIps ]);
+      const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', ...localIps ]);
       const isPortalHost = portalHostCandidates.has(hostOnly);
       
-      // STRICT QUOTA ENFORCEMENT for HTTPS connections too
-      if(!isPortalHost && !tempUnlocked && quota.exhausted){
+      // STRICT QUOTA ENFORCEMENT for HTTPS connections - BUT ALLOW VIDEO DOMAINS
+      const isVideoAdDomain = isVideoAdCDN(hostOnly);
+      
+      if(!isPortalHost && !tempUnlocked && quota.exhausted && !isVideoAdDomain){
         try { activeClients.delete(normalizeIp(clientIp)); } catch {}
         console.warn('[QUOTA-BLOCK-CONNECT] exhausted identifier=', effectiveIdentifier, 'host=', hostOnly, 'ip=', clientIp, 'remaining=', quota.remainingMB);
         clientSocket.write('HTTP/1.1 302 Found\r\n');
@@ -2225,35 +3162,249 @@ ${isManualProxy
         return clientSocket.end();
       }
       
-      // Block social sites until ad watched (but allow if they have social access)
-      if(!tempUnlocked && isGatedSocialHost(hostOnly) && !socialUnlocked.has(effectiveIdentifier)){
-        clientSocket.write('HTTP/1.1 302 Found\r\n');
-        clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=social_blocked&app=${encodeURIComponent(hostOnly)}\r\n`);
-        clientSocket.write('Content-Type: text/html\r\n\r\n');
-        clientSocket.write(`<html><head><title>App Blocked</title></head><body><h1>WhatsApp/Facebook Blocked</h1><p>Watch videos to unlock <strong>${hostOnly}</strong></p><p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html">Watch Videos</a></p></body></html>`);
-        return clientSocket.end();
+      // Allow video domains even when quota is exhausted - CRITICAL FIX for video loading
+      if (isVideoAdDomain) {
+        console.log('[VIDEO-DOMAIN-ALLOWED]', { host: hostOnly, identifier: effectiveIdentifier, quota: quota.remainingMB });
+      }
+      
+      // ENHANCED SOCIAL MEDIA ACCESS CONTROL - Block until videos watched and notification received
+      if(!tempUnlocked && isGatedSocialHost(hostOnly)) {
+        // Check if user has received video completion notification
+        let hasSocialAccess = socialUnlocked.has(effectiveIdentifier);
+        let notificationReceived = false;
+        
+        const deviceSession = deviceSessions.get(effectiveIdentifier) || deviceSessions.get(deviceFingerprint);
+        if (deviceSession && deviceSession.videoNotificationReceived) {
+          notificationReceived = true;
+          // Auto-unlock social media after video notification
+          if (!hasSocialAccess) {
+            socialUnlocked.add(effectiveIdentifier);
+            hasSocialAccess = true;
+            console.log(`[SOCIAL-AUTO-UNLOCK] ${effectiveIdentifier} social media unlocked after video notification`);
+          }
+        }
+        
+        if (!hasSocialAccess) {
+          const actionText = notificationReceived ? 'Watch more videos for continued access' : 'Watch videos to unlock social media';
+          
+          clientSocket.write('HTTP/1.1 302 Found\r\n');
+          clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=social_blocked&app=${encodeURIComponent(hostOnly)}&reason=video_required\r\n`);
+          clientSocket.write('Content-Type: text/html; charset=utf-8\r\n\r\n');
+          
+          const htmlContent = `<!DOCTYPE html>
+<html><head>
+<title>Social Media Blocked - Watch Videos First</title>
+<meta http-equiv="refresh" content="3;url=http://${localIps[0] || 'localhost'}:${PORT}/login.html">
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:500px;margin:0 auto;padding:20px;border:2px solid #ff6b35;border-radius:10px;background:#fff5f0;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#ff6b35;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">📱</div>
+  <h1>${hostOnly.includes('whatsapp') ? 'WhatsApp' : hostOnly.includes('facebook') ? 'Facebook' : 'Social Media'} Blocked</h1>
+  <p><strong>App:</strong> ${hostOnly}</p>
+  <p><strong>Status:</strong> ${actionText}</p>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎯 How to Unlock:</h3>
+    <ol style="text-align:left;">
+      <li>📱 Enter WiFi portal</li>
+      <li>🎬 Watch video ads</li>
+      <li>📢 Get completion notification</li>
+      <li>📱 Social media unlocked!</li>
+    </ol>
+  </div>
+  
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="action-btn">🎬 Watch Videos Now</a>
+  <p><small>Redirecting in 3 seconds...</small></p>
+</div>
+</body></html>`;
+          
+          clientSocket.write(htmlContent);
+          return clientSocket.end();
+        }
       }
     }
     const [host, port] = req.url.split(':');
+    
+    // CRITICAL: Real-time quota enforcement for HTTPS connections
+    if (mappedIdentifier && !isPortalHost && !isVideoAdHost) {
+      const userAgent = req.headers['user-agent'] || '';
+      const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+      const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+      const currentUsage = realtimeUsage.get(mappedIdentifier) || { totalDataMB: 0 };
+      const totalUsedMB = currentUsage.totalDataMB || 0;
+      
+      // Block if quota exceeded
+      if (quota.remainingMB <= 0 && quota.totalBundleMB > 0) {
+        const blockedReason = `HTTPS Data limit exceeded: Used ${totalUsedMB.toFixed(1)}MB of ${quota.totalBundleMB}MB`;
+        
+        console.warn('[HTTPS-BLOCKED-QUOTA-EXCEEDED]', { 
+          host: hostOnly, 
+          ip: clientIp,
+          identifier: mappedIdentifier,
+          totalUsed: totalUsedMB,
+          limit: quota.totalBundleMB,
+          remaining: quota.remainingMB
+        });
+        
+        const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_quota=true&used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`;
+        
+        clientSocket.write('HTTP/1.1 302 Found\r\n');
+        clientSocket.write(`Location: ${redirectUrl}\r\n`);
+        clientSocket.write('Content-Type: text/html; charset=utf-8\r\n');
+        clientSocket.write('Connection: close\r\n\r\n');
+        
+        const htmlContent = `<!DOCTYPE html>
+<html><head>
+<title>HTTPS Data Limit Exceeded</title>
+<meta http-equiv="refresh" content="5;url=${redirectUrl}">
+<style>
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
+  .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #dc3545;border-radius:10px;background:#f8f9fa;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  .action-btn{background:#dc3545;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+  .usage-bar{background:#e9ecef;height:20px;border-radius:10px;margin:20px 0;overflow:hidden;}
+  .usage-fill{background:#dc3545;height:100%;transition:width 0.3s;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">🔒</div>
+  <h1>HTTPS Data Limit Exceeded</h1>
+  <p><strong>Trying to access:</strong> ${hostOnly}</p>
+  
+  <div style="background:#fff3cd;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #ffc107;">
+    <h3>📊 Data Usage Summary:</h3>
+    <p><strong>Used:</strong> ${totalUsedMB.toFixed(1)} MB</p>
+    <p><strong>Limit:</strong> ${quota.totalBundleMB} MB</p>
+    <p><strong>Exceeded by:</strong> ${(totalUsedMB - quota.totalBundleMB).toFixed(1)} MB</p>
+    <div class="usage-bar">
+      <div class="usage-fill" style="width: 100%;"></div>
+    </div>
+  </div>
+  
+  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
+    <h3>🎬 How to Get More Data:</h3>
+    <ol style="text-align:left;">
+      <li>📱 Return to the WiFi portal</li>
+      <li>🎬 Watch video advertisements</li>
+      <li>📊 Each video earns 20MB of data</li>
+      <li>🔒 HTTPS access restored!</li>
+    </ol>
+  </div>
+  
+  <a href="${redirectUrl}" class="action-btn">🎬 Watch More Videos</a>
+  <p><small>Portal access is always free • Videos unlock internet data</small></p>
+</div>
+</body></html>`;
+        
+        clientSocket.write(htmlContent);
+        return clientSocket.end();
+      }
+    }
+    
     const serverSocket = net.connect(port||443, host, ()=>{
       clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if(head && head.length) serverSocket.write(head);
-      // Track bytes more accurately
+      
+      // Track bytes more accurately with real-time quota enforcement
       let bytesUp=0, bytesDown=0;
-      clientSocket.on('data',chunk=>{ bytesUp+=chunk.length; });
-      serverSocket.on('data',chunk=>{ bytesDown+=chunk.length; });
+      let quotaExceeded = false;
+      
+      // Client to server (upload) data with quota checking
+      clientSocket.on('data',chunk=>{ 
+        bytesUp+=chunk.length;
+        
+        // Check quota for non-ad traffic
+        if (mappedIdentifier && !isVideoAdHost && !quotaExceeded) {
+          const userAgent = req.headers['user-agent'] || '';
+          const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+          const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+          const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+          const currentUsage = realtimeUsage.get(mappedIdentifier) || { totalDataMB: 0 };
+          const totalCurrentMB = currentUsage.totalDataMB + (bytesUp + bytesDown) / 1024 / 1024;
+          
+          if (quota.totalBundleMB > 0 && totalCurrentMB > quota.totalBundleMB) {
+            quotaExceeded = true;
+            console.warn(`[HTTPS-REAL-TIME-BLOCK-UP] ${mappedIdentifier}: Quota exceeded ${totalCurrentMB.toFixed(2)}MB > ${quota.totalBundleMB}MB on ${hostOnly}`);
+            try { 
+              clientSocket.end(); 
+              serverSocket.end(); 
+            } catch {} 
+            return;
+          }
+        }
+        
+        if (!quotaExceeded) {
+          serverSocket.write(chunk);
+        }
+      });
+      
+      // Server to client (download) data with quota checking
+      serverSocket.on('data',chunk=>{ 
+        bytesDown+=chunk.length;
+        
+        // Check quota for non-ad traffic  
+        if (mappedIdentifier && !isVideoAdHost && !quotaExceeded) {
+          const userAgent = req.headers['user-agent'] || '';
+          const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+          const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+          const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+          const currentUsage = realtimeUsage.get(mappedIdentifier) || { totalDataMB: 0 };
+          const totalCurrentMB = currentUsage.totalDataMB + (bytesUp + bytesDown) / 1024 / 1024;
+          
+          if (quota.totalBundleMB > 0 && totalCurrentMB > quota.totalBundleMB) {
+            quotaExceeded = true;
+            console.warn(`[HTTPS-REAL-TIME-BLOCK-DOWN] ${mappedIdentifier}: Quota exceeded ${totalCurrentMB.toFixed(2)}MB > ${quota.totalBundleMB}MB on ${hostOnly}`);
+            try { 
+              clientSocket.end(); 
+              serverSocket.end(); 
+            } catch {} 
+            return;
+          }
+        }
+        
+        if (!quotaExceeded) {
+          clientSocket.write(chunk);
+        }
+      });
+      
       const finalize=()=>{ 
-        if((bytesUp+bytesDown)>0 && effectiveIdentifier){ 
+        if((bytesUp+bytesDown)>0 && mappedIdentifier){ 
           try{ 
             // Don't count video ad CDN traffic against user data quota
             const isAdTraffic = isVideoAdCDN(hostOnly);
             const totalMB = (bytesUp+bytesDown)/1024/1024;
             
             if (!isAdTraffic) {
-              const success = addUsage(effectiveIdentifier, totalMB);
-              console.log('[HTTPS-USAGE-TRACKED]', { identifier: effectiveIdentifier, host: hostOnly, bytesUp, bytesDown, totalMB: totalMB.toFixed(3), success });
+              // Enhanced HTTPS usage tracking with device and router info
+              const routerId = parsedToken?.routerId || (req.headers['x-router-id'] || clientIp || 'router-1');
+              const deviceId = parsedToken?.deviceId || 'https-device';
+              
+              const success = addUsage(mappedIdentifier, totalMB, deviceId, routerId);
+              console.log('[HTTPS-USAGE-TRACKED]', { 
+                identifier: mappedIdentifier, 
+                device: deviceId?.slice(0,8)+'...', 
+                host: hostOnly, 
+                bytesUp, 
+                bytesDown, 
+                totalMB: totalMB.toFixed(3), 
+                success,
+                quotaExceeded 
+              });
+              
+              // Update real-time session usage for live tracking
+              if (success) {
+                dataTracker.addSessionUsage(mappedIdentifier, totalMB);
+              }
             } else {
-              console.log('[HTTPS-VIDEO-AD-FREE]', { identifier: effectiveIdentifier, host: hostOnly, bytesUp, bytesDown, totalMB: totalMB.toFixed(3), message: 'Video ad traffic not counted' });
+              console.log('[HTTPS-VIDEO-AD-FREE]', { identifier: mappedIdentifier, host: hostOnly, bytesUp, bytesDown, totalMB: totalMB.toFixed(3), message: 'Video ad traffic not counted' });
             }
           } catch(err) {
             console.warn('[HTTPS-USAGE-TRACK-ERROR]', err?.message);
@@ -2262,8 +3413,6 @@ ${isManualProxy
       };
       clientSocket.on('close',finalize);
       serverSocket.on('close',finalize);
-      clientSocket.pipe(serverSocket);
-      serverSocket.pipe(clientSocket);
     });
     serverSocket.on('error',()=>{ try{ clientSocket.end(); }catch{} });
   });
@@ -2271,8 +3420,12 @@ ${isManualProxy
   proxy.listen(PROXY_PORT, host, ()=> console.log(`Captive proxy listening on http://${host}:${PROXY_PORT}`));
 }
 
+console.log('[proxy] ENABLE_PROXY=', process.env.ENABLE_PROXY);
 if(process.env.ENABLE_PROXY!=='false'){
-  try { startProxy(); } catch(err){ console.warn('Proxy start failed', err?.message); }
+  console.log('[proxy] calling startProxy()');
+  try { startProxy(); console.log('[proxy] startProxy() returned (non-blocking)'); } catch(err){ console.warn('Proxy start failed', err?.message); }
+} else {
+  console.log('[proxy] start skipped - ENABLE_PROXY is false');
 }
 
 // User self usage
@@ -2282,48 +3435,126 @@ app.get('/api/me/usage', (req,res)=>{
   try {
     const idLower = identifier.toLowerCase();
     
-    // STRICT DEVICE-SPECIFIC USAGE CALCULATION
+    // Enhanced usage calculation with real-time data
+    const usageData = dataTracker.getFreshUsageData(idLower);
+    
+    // Get device fingerprint for device-specific tracking
     const userAgent = req.headers['user-agent'] || '';
     const routerId = req.headers['x-router-id'] || req.ip || 'unknown';
     const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
     
-    // Use device-specific quota calculation
-    const quota = computeRemaining(idLower, deviceFingerprint, routerId);
+    // Get video tracking data
+    const { data: users } = getUsers();
+    const user = users.find(u=> (u.email||'').toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
     
-    const { rows: purchases } = listPurchases();
-    const { rows: sessions } = listSessions();
+    let videosWatched, videoEarnedMB;
+    if (user) {
+      // Unified user - get videos from all devices
+      videosWatched = getVideosWatchedForUser(idLower);
+      videoEarnedMB = calculateVideoEarnedData(videosWatched);
+    } else {
+      // Non-unified user - device specific
+      videosWatched = getVideosWatched(idLower, deviceFingerprint);
+      videoEarnedMB = calculateVideoEarnedData(videosWatched);
+    }
     
-    // Filter purchases for THIS SPECIFIC DEVICE only
-    const myPurchases = purchases.filter(p=> 
-      p.identifier === idLower && 
-      (p.deviceId === deviceFingerprint || !p.strictMode) // Include legacy non-strict bundles
-    ).sort((a,b)=> new Date(b.grantedAtISO)-new Date(a.grantedAtISO));
+    // Get all bundles for this user (especially for phone users)
+    let myPurchases = [];
     
-    const mySessions = sessions.filter(s=> s.identifier === idLower && s.active)
-      .sort((a,b)=> new Date(b.lastPingISO)-new Date(a.lastPingISO));
+    try {
+      const wb = loadWorkbookWithTracking();
+      if (wb.Sheets['Purchases']) {
+        const purchases = XLSX.utils.sheet_to_json(wb.Sheets['Purchases']);
+        
+        // For phone users, show all bundles regardless of device
+        if (idLower.match(/^\d{10}$/)) {
+          myPurchases = purchases.filter(p => p.phone_number === idLower || p.identifier === idLower)
+            .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
+        } else {
+          myPurchases = purchases.filter(p => p.identifier === idLower)
+            .sort((a,b) => new Date(b.timestamp || b.grantedAtISO || 0) - new Date(a.timestamp || a.grantedAtISO || 0));
+        }
+      }
+    } catch (error) {
+      console.error('[PURCHASES-FETCH-ERROR]', error);
+    }
     
-    console.log('[USAGE-CHECK]', { 
-      device: deviceFingerprint, 
-      user: idLower, 
-      remaining: quota.remainingMB, 
-      total: quota.totalBundleMB,
-      deviceBundles: myPurchases.length 
-    });
+    // Calculate next milestone
+    const videoCount = videosWatched.length;
+    let nextMilestone = null;
     
-    res.json({ 
-      ok: true, 
-      totalBundleMB: quota.totalBundleMB, 
-      totalUsedMB: quota.totalUsedMB, 
-      remainingMB: quota.remainingMB, 
+    if (videoCount < 5) {
+      nextMilestone = { target: 5, reward: '100MB', needed: 5 - videoCount };
+    } else if (videoCount < 10) {
+      nextMilestone = { target: 10, reward: '250MB', needed: 10 - videoCount };
+    } else if (videoCount < 15) {
+      nextMilestone = { target: 15, reward: '500MB', needed: 15 - videoCount };
+    } else {
+      nextMilestone = { target: 15, reward: 'Max reached (500MB)', needed: 0 };
+    }
+    
+    // Enhanced response with real data
+    const response = {
+      ok: true,
+      // Real-time usage data (no undefined values)
+      totalBundleMB: usageData.totalBundleMB || 0,
+      totalUsedMB: usageData.totalUsedMB || 0,
+      remainingMB: usageData.remainingMB || 0,
+      exhausted: usageData.exhausted || false,
+      
+      // Video tracking data
+      videosWatched: videoCount,
+      videoEarnedMB: videoEarnedMB || 0,
+      nextMilestone: nextMilestone,
+      
+      // Enhanced breakdown with actual numbers
+      breakdown: {
+        videoEarned: videoEarnedMB || 0,
+        purchased: Math.max(0, (usageData.totalBundleMB || 0) - (videoEarnedMB || 0)),
+        used: usageData.totalUsedMB || 0,
+        remaining: usageData.remainingMB || 0
+      },
+      
+      // Device and session info
       deviceId: deviceFingerprint,
       strictMode: true,
-      purchases: myPurchases, 
-      sessions: mySessions 
+      purchases: myPurchases,
+      
+      // Real-time statistics
+      realTimeStats: {
+        lastUpdated: new Date().toISOString(),
+        dataAccuracy: 'real-time',
+        bundleCount: myPurchases.length
+      }
+    };
+    
+    console.log('[ENHANCED-USAGE-CHECK]', { 
+      user: idLower,
+      totalBundle: response.totalBundleMB,
+      totalUsed: response.totalUsedMB,
+      remaining: response.remainingMB,
+      videosWatched: videoCount,
+      videoEarned: videoEarnedMB,
+      purchaseCount: myPurchases.length
     });
+    
+    res.json(response);
+    
   } catch(err){ 
     console.error('[USAGE-ERROR]', err?.message);
     res.status(500).json({ ok:false, message:'Error calculating usage' }); 
   }
+});
+
+// Client IP detection for diagnostic
+app.get('/api/me/ip', (req,res)=>{
+  const clientIp = req.headers['x-forwarded-for'] 
+    ? req.headers['x-forwarded-for'].split(',')[0].trim()
+    : req.connection.remoteAddress 
+    || req.socket.remoteAddress 
+    || (req.connection.socket ? req.connection.socket.remoteAddress : null)
+    || req.ip;
+  res.json({ ok: true, ip: clientIp });
 });
 
 // Admin overview
@@ -2464,10 +3695,16 @@ app.get('/api/admin/dashboard', (req,res)=>{
   try { 
     const o=buildAdminOverview(); 
     
-    // Build enhanced users table with real-time data and full user profiles
+    // Get all active users with enhanced data tracking
+    const allActiveUsers = dataTracker.getAllActiveUsers();
+    
+    // Build enhanced users table with accurate real-time data
     const enhancedUsersTable = o.usersTable.map(user => {
       const usage = realtimeUsage.get(user.identifier);
-      const quota = computeRemaining(user.identifier, null, 'admin-check');
+      
+      // Get accurate quota information using enhanced data tracker
+      const activeUserData = allActiveUsers.find(u => u.phoneNumber === user.identifier);
+      const quota = activeUserData || computeRemaining(user.identifier, null, 'admin-check');
       
       // Calculate connection duration
       const connectionDuration = usage ? Math.floor((Date.now() - usage.connectionStart) / 60000) : 0; // minutes
@@ -2479,6 +3716,12 @@ app.get('/api/admin/dashboard', (req,res)=>{
       // Determine status
       const isActiveNow = usage && (Date.now() - usage.lastUpdateTime) < 60000; // Active if updated within 1 minute
       const status = isActiveNow ? 'Active' : (user.lastLogin ? 'Inactive' : 'Never logged in');
+      
+      // Use enhanced data for accurate display (no undefined values)
+      const totalUsedMB = quota.totalUsedMB || 0;
+      const totalBundleMB = quota.totalBundleMB || 0;
+      const remainingMB = quota.remainingMB || 0;
+      const sessionUsageMB = quota.sessionUsage || 0;
       
       return {
         userID: user.fullName || user.email || user.identifier, // Use real name or fallback to email
@@ -2494,8 +3737,10 @@ app.get('/api/admin/dashboard', (req,res)=>{
         routerID: usage?.routerId || 'Unknown',
         downMbps: usage ? Number(usage.downMbps.toFixed(2)) : 0.00,
         upMbps: usage ? Number(usage.upMbps.toFixed(2)) : 0.00,
-        totalDataUsed: usage ? `${(usage.totalDataMB || 0).toFixed(2)} MB` : '0.00 MB',
-        remainingData: quota ? `${quota.remainingMB.toFixed(2)} MB` : '0.00 MB',
+        totalDataUsed: `${totalUsedMB.toFixed(2)} MB`,
+        totalDataBundle: `${totalBundleMB.toFixed(2)} MB`,
+        remainingData: `${remainingMB.toFixed(2)} MB`,
+        sessionUsage: `${sessionUsageMB.toFixed(2)} MB`,
         connectionDuration: durationFormatted,
         lastActivity: lastActivity,
         status: status,
@@ -2520,24 +3765,87 @@ app.get('/api/admin/dashboard', (req,res)=>{
       flags: stats.flags.join(', ') || 'None'
     }));
     
+    // Enhanced real-time statistics
+    const totalActiveUsers = allActiveUsers.filter(u => u.lastActive && (Date.now() - u.lastActive) < 300000).length; // Active in last 5 minutes
+    const totalDataServed = allActiveUsers.reduce((sum, u) => sum + (u.totalUsedMB || 0), 0);
+    
     res.json({ 
       ok:true, 
       usersTable: enhancedUsersTable,
       routersTable, 
       registrations: o.regLoginTable, // Fixed: Frontend expects 'registrations'
       ads: o.adsTable, // Fixed: Frontend expects 'ads'
-      activeUsersCount: o.activeUsersCount, 
+      activeUsersCount: totalActiveUsers, 
       totalUsers: o.usersCount,
       realtimeStats: {
         totalActiveConnections: realtimeUsage.size,
         totalRouters: routerStats.size,
+        totalDataServedMB: Math.round(totalDataServed * 100) / 100,
         averageDownMbps: Array.from(realtimeUsage.values()).reduce((sum, u) => sum + u.downMbps, 0) / Math.max(realtimeUsage.size, 1),
-        averageUpMbps: Array.from(realtimeUsage.values()).reduce((sum, u) => sum + u.upMbps, 0) / Math.max(realtimeUsage.size, 1)
+        averageUpMbps: Array.from(realtimeUsage.values()).reduce((sum, u) => sum + u.upMbps, 0) / Math.max(realtimeUsage.size, 1),
+        lastUpdated: new Date().toISOString()
       }
     }); 
   } catch(err){ 
     console.error('[ADMIN-DASHBOARD-ERROR]', err);
     res.status(500).json({ ok:false, message:'Error building dashboard' }); 
+  }
+});
+
+// ENHANCED: Device Access Control Admin Dashboard
+app.get('/api/admin/device-access', (req, res) => {
+  try {
+    const requester = (req.headers['x-user-identifier'] || '').toString().trim().toLowerCase();
+    if (!isAdminIdentifier(requester)) {
+      return res.status(403).json({ ok: false, message: 'Forbidden' });
+    }
+    
+    const deviceStatus = deviceIsolation.getDeviceAccessStatus();
+    const config = deviceIsolation.DEVICE_ISOLATION_CONFIG;
+    
+    res.json({
+      ok: true,
+      deviceAccessControl: {
+        ...deviceStatus,
+        configuration: {
+          strictDeviceIsolation: config.STRICT_DEVICE_ISOLATION,
+          accessTokenTTLHours: config.ACCESS_TOKEN_TTL_HOURS,
+          revalidationIntervalHours: config.REVALIDATION_INTERVAL_HOURS,
+          revalidationGraceMinutes: config.REVALIDATION_GRACE_MINUTES,
+          macBindingEnabled: config.MAC_BINDING_ENABLED,
+          routerDeviceBlocking: config.ROUTER_DEVICE_BLOCKING
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[DEVICE-ACCESS-ADMIN-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Error retrieving device access status' });
+  }
+});
+
+// Device access revocation endpoint (for admin use)
+app.post('/api/admin/device-access/revoke', (req, res) => {
+  try {
+    const requester = (req.headers['x-user-identifier'] || '').toString().trim().toLowerCase();
+    if (!isAdminIdentifier(requester)) {
+      return res.status(403).json({ ok: false, message: 'Forbidden' });
+    }
+    
+    const { deviceId, reason } = req.body || {};
+    if (!deviceId) {
+      return res.status(400).json({ ok: false, message: 'deviceId required' });
+    }
+    
+    const revoked = deviceIsolation.revokeDeviceAccess(deviceId, reason || 'admin revocation');
+    
+    res.json({
+      ok: true,
+      revoked: revoked,
+      message: revoked ? 'Device access revoked successfully' : 'Device not found or already revoked'
+    });
+  } catch (error) {
+    console.error('[DEVICE-REVOKE-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Error revoking device access' });
   }
 });
 
@@ -2601,7 +3909,7 @@ const recentCompletions = new Map(); // deviceFingerprint -> timestamp of last c
 // Bundle tiers based on videos watched
 const BUNDLE_TIERS = [
   { videos: 5, mb: 100, label: '5 videos = 100MB' },
-  { videos: 8, mb: 250, label: '8 videos = 250MB' },
+  { videos: 10, mb: 250, label: '10 videos = 250MB' },
   { videos: 15, mb: 500, label: '15 videos = 500MB' }
 ];
 // Ephemeral eligibility after successful ad completion to guard /api/bundle/grant misuse
@@ -2752,6 +4060,400 @@ app.post('/api/ad/event', (req,res)=>{
   } catch(err) {
     console.error('[AD-EVENT-ERROR]', err);
     res.status(500).json({ ok: false, message: 'Ad event processing failed' });
+  }
+});
+
+// Video completion tracking for data earning
+// Emergency device unblock endpoint
+app.post('/api/admin/device-unblock', (req, res) => {
+  try {
+    const { identifier, deviceId, reason } = req.body || {};
+    
+    if (!identifier || !deviceId) {
+      return res.status(400).json({ ok: false, message: 'Missing identifier or deviceId' });
+    }
+    
+    console.log(`[EMERGENCY-UNBLOCK] Unblocking device ${deviceId.slice(0,8)}... for user ${identifier}: ${reason}`);
+    
+    // Clear device blocks
+    deviceIsolation.clearDeviceBlock(identifier, deviceId);
+    
+    // Create emergency access token
+    const deviceInfo = {
+      deviceId: deviceId,
+      mac: '', // Will be resolved if needed
+      ip: '',
+      userAgent: 'Emergency Access',
+      identifier: identifier
+    };
+    
+    // Grant emergency access
+    const routerId = 'default-router';
+    const accessGranted = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, 5, 100);
+    
+    if (accessGranted) {
+      // Register as active client
+      const clientInfo = {
+        identifier: identifier,
+        ip: req.ip || '0.0.0.0',
+        lastSeen: Date.now(),
+        expires: Date.now() + (6 * 60 * 60 * 1000),
+        deviceFingerprint: deviceId,
+        sessionToken: `emergency_${Date.now()}`
+      };
+      
+      activeClients.set(deviceId, clientInfo);
+      activeClients.set(identifier, clientInfo);
+      
+      // Clear any stale usage data
+      realtimeUsage.delete(identifier);
+      
+      console.log(`[EMERGENCY-ACCESS-GRANTED] Device ${deviceId.slice(0,8)}... unblocked for ${identifier}`);
+      
+      res.json({
+        ok: true,
+        message: 'Device unblocked successfully',
+        deviceId: deviceId.slice(0,8) + '...',
+        identifier: identifier,
+        accessGranted: Date.now()
+      });
+    } else {
+      res.status(500).json({
+        ok: false,
+        message: 'Failed to grant emergency access'
+      });
+    }
+    
+  } catch (error) {
+    console.error('[EMERGENCY-UNBLOCK-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Emergency unblock failed' });
+  }
+});
+
+// Emergency access refresh for instant unlocking
+app.post('/api/refresh-access', (req, res) => {
+  try {
+    const { identifier } = req.body || {};
+    
+    if (!identifier) {
+      return res.status(400).json({ ok: false, message: 'Missing identifier' });
+    }
+    
+    // Clear any stale data
+    realtimeUsage.delete(identifier);
+    
+    // Refresh activeClients with current device info
+    const deviceInfo = generateDeviceFingerprint(req);
+    const routerId = req.headers['x-router-id'] || detectRouterId(req) || 'default-router';
+    
+    const clientInfo = {
+      identifier: identifier,
+      ip: req.ip || req.connection.remoteAddress,
+      lastSeen: Date.now(),
+      expires: Date.now() + (6 * 60 * 60 * 1000), // 6 hours
+      deviceFingerprint: deviceInfo.deviceId,
+      sessionToken: `refresh_token_${Date.now()}`
+    };
+    
+    // Register with multiple keys for instant recognition
+    activeClients.set(deviceInfo.deviceId, clientInfo);
+    activeClients.set(identifier, clientInfo);
+    activeClients.set(req.ip || req.connection.remoteAddress, clientInfo);
+    
+    // Check current quota status
+    const quota = computeRemainingUnified(identifier, deviceInfo.deviceId, routerId);
+    
+    console.log(`[ACCESS-REFRESHED] ${identifier}: quota=${quota.remainingMB}MB, bundles=${quota.totalBundleMB}MB`);
+    
+    res.json({
+      ok: true,
+      message: 'Access refreshed successfully',
+      quota: {
+        remainingMB: quota.remainingMB,
+        totalBundleMB: quota.totalBundleMB,
+        exhausted: quota.exhausted
+      },
+      accessGranted: Date.now()
+    });
+    
+  } catch (error) {
+    console.error('[ACCESS-REFRESH-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Access refresh failed' });
+  }
+});
+
+// Emergency access grant endpoint - IMMEDIATE INTERNET UNLOCK
+app.post('/api/emergency/unlock', (req, res) => {
+  try {
+    const { identifier } = req.body || {};
+    
+    if (!identifier) {
+      return res.status(400).json({ ok: false, message: 'Missing identifier' });
+    }
+    
+    console.log(`[EMERGENCY-UNLOCK] Immediately unlocking internet access for ${identifier}`);
+    
+    // SPECIAL FIX FOR BONGILINDIWE844@GMAIL.COM
+    if (identifier.toLowerCase() === 'bongilindiwe844@gmail.com') {
+      console.log(`[EMERGENCY-BONGILINDIWE-FIX] Applying comprehensive fix for ${identifier}`);
+      
+      // Grant device access for all their device fingerprints
+      const deviceIds = [
+        '59a37b82a0c25a2b9db8d3f3e1479d46',
+        'a8197ed1290741654683b68ba9743275', 
+        'b5842c23a41b635b426f7b1d2f5ad523',
+        '2292f0ebbb3b14ce8aaed24e6cf90fa1',
+        'e63de8ed54ef76b4adbf5d03b2a1c36e',
+        '347f88d8fb75b648e8a24e8c3b5b5e6a',
+        '8feb4679ecb0c2ba9e8c7a4b5a3f9e2d'
+      ];
+      
+      deviceIds.forEach(deviceId => {
+        try {
+          const token = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          deviceIsolation.grantDeviceAccess({
+            deviceId: deviceId,
+            ip: '10.5.48.94',
+            userAgent: 'Emergency Access',
+            mac: ''
+          }, '', {
+            sessionToken: token,
+            identifier: identifier
+          });
+          console.log(`[EMERGENCY-DEVICE-ACCESS] Granted access for device ${deviceId.slice(0,8)}...`);
+        } catch (deviceError) {
+          console.log(`[EMERGENCY-DEVICE-ERROR] Could not grant access for ${deviceId.slice(0,8)}...: ${deviceError.message}`);
+        }
+      });
+    }
+    
+    // Set video notification received flag
+    let deviceSession = deviceSessions.get(identifier);
+    if (!deviceSession) {
+      deviceSession = {
+        sessionToken: `emergency_unlock_${Date.now()}`,
+        voucher: null,
+        unlockTimestamp: Date.now(),
+        revalidationRequired: false,
+        lastActivity: Date.now()
+      };
+    }
+    
+    // CRITICAL: Set notification flag to unlock internet
+    deviceSession.videoNotificationReceived = true;
+    deviceSession.lastVideoCompletion = Date.now();
+    deviceSession.totalVideosWatched = 5; // Assume 5 videos watched
+    
+    // Store for both identifier and potential device IDs
+    deviceSessions.set(identifier, deviceSession);
+    
+    // Also add to social unlock
+    socialUnlocked.add(identifier.toLowerCase());
+    
+    // Force immediate internet access
+    tempFullAccess.set(identifier.toLowerCase(), Date.now() + (2 * 60 * 60 * 1000)); // 2 hours temp access
+    
+    console.log(`[EMERGENCY-INTERNET-UNLOCKED] ${identifier} has immediate internet and social media access`);
+    
+    res.json({
+      ok: true,
+      message: 'Emergency internet unlock successful',
+      identifier: identifier,
+      internetUnlocked: true,
+      socialUnlocked: true,
+      tempAccessGranted: true,
+      expiresIn: '2 hours'
+    });
+    
+  } catch (error) {
+    console.error('[EMERGENCY-UNLOCK-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Emergency unlock failed' });
+  }
+});
+
+app.post('/api/video/complete', (req, res) => {
+  try {
+    const { identifier, videoUrl, duration, deviceId: providedDeviceId } = req.body || {};
+    
+    if (!identifier || !videoUrl || !duration) {
+      return res.status(400).json({ ok: false, message: 'Missing required fields: identifier, videoUrl, duration' });
+    }
+    
+    // Use provided deviceId or generate from request
+    const deviceInfo = generateDeviceFingerprint(req);
+    const deviceId = providedDeviceId || deviceInfo.deviceId;
+    const routerId = req.headers['x-router-id'] || detectRouterId(req) || 'default-router';
+    
+    // Record the video view
+    const earnedMB = recordVideoView(identifier, deviceId, videoUrl, duration, routerId);
+    
+    // Get updated video count and total earned data
+    const videosWatched = getVideosWatched(identifier, deviceId);
+    const totalVideoEarnedMB = calculateVideoEarnedData(videosWatched);
+    
+    // CRITICAL: Set video notification received flag to unlock internet access
+    let deviceSession = deviceSessions.get(deviceId) || deviceSessions.get(identifier);
+    if (!deviceSession) {
+      deviceSession = {
+        sessionToken: `video_session_${Date.now()}`,
+        voucher: null,
+        unlockTimestamp: Date.now(),
+        revalidationRequired: false,
+        lastActivity: Date.now(),
+        videoNotificationReceived: false
+      };
+    }
+    
+    // Mark that the user has received video completion notification
+    deviceSession.videoNotificationReceived = true;
+    deviceSession.lastVideoCompletion = Date.now();
+    deviceSession.totalVideosWatched = count;
+    
+    // Store the session for both device ID and identifier
+    deviceSessions.set(deviceId, deviceSession);
+    deviceSessions.set(identifier, deviceSession);
+    
+    console.log(`[VIDEO-NOTIFICATION-SET] ${identifier} device ${deviceId.slice(0,8)}... marked as notified - INTERNET ACCESS UNLOCKED`);
+    
+    // Create actual data bundles at milestones - CRITICAL FIX!
+    if (count === 5 && totalVideoEarnedMB >= 100) {
+      milestone = { message: 'Great progress!', data: '100MB bundle unlocked' };
+      bundleAmount = 100;
+      newBundleCreated = true;
+    } else if (count === 10 && totalVideoEarnedMB >= 250) {
+      milestone = { message: 'Keep watching!', data: '250MB bundle unlocked' };
+      bundleAmount = 250;
+      newBundleCreated = true;
+    } else if (count === 15 && totalVideoEarnedMB >= 500) {
+      milestone = { message: 'Excellent!', data: '500MB bundle unlocked' };
+      bundleAmount = 500;
+      newBundleCreated = true;
+    } else if (count === 1) {
+      milestone = { message: 'Social media access unlocked!', data: '20MB earned' };
+    } else if (count === 25) {
+      milestone = { message: 'Power user!', data: '1GB total earned' };
+    }
+    
+    // CRITICAL: Actually create the data bundle purchase record
+    if (newBundleCreated && bundleAmount > 0) {
+      try {
+        // Create bundle using enhanced data tracker to prevent duplicates
+        const bundleCreated = dataTracker.createBundleIfNotExists(identifier, count, bundleAmount, `${count}_video_bundle`);
+        
+        if (bundleCreated) {
+          console.log(`[VIDEO-BUNDLE-CREATED] ${identifier} earned ${bundleAmount}MB data bundle at ${count} videos`);
+          
+          // CRITICAL FIX: Grant device-specific access immediately with MAC binding
+          const deviceInfo = generateDeviceFingerprint(req);
+          const deviceAccessGranted = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, count, bundleAmount);
+          
+          if (deviceAccessGranted) {
+            console.log(`[DEVICE-ACCESS-GRANTED] Device ${deviceInfo.deviceId.slice(0,8)}... (MAC:${deviceInfo.mac?.slice(0,6) || 'unknown'}) earned ${bundleAmount}MB access for user ${identifier}`);
+            
+            // Clear any blocking for this device
+            deviceIsolation.clearDeviceBlock(identifier, deviceInfo.deviceId);
+            
+            // Create MAC-bound access token for strict device isolation
+            if (deviceInfo.macVerified) {
+              const accessToken = deviceIsolation.createDeviceAccessToken(deviceInfo.deviceId, deviceInfo.mac, identifier, bundleAmount, count);
+              console.log(`[MAC-ACCESS-TOKEN-CREATED] Device ${deviceInfo.mac.slice(0,6)}... bound to ${bundleAmount}MB access`);
+            }
+            
+            // Register as active client to ensure immediate internet access
+            const clientInfo = {
+              identifier: identifier,
+              ip: req.ip || req.connection.remoteAddress,
+              lastSeen: Date.now(),
+              expires: Date.now() + (6 * 60 * 60 * 1000), // 6 hours
+              deviceFingerprint: deviceInfo.deviceId,
+              macAddress: deviceInfo.mac,
+              sessionToken: deviceAccessGranted.accessToken || `video_token_${Date.now()}`
+            };
+            
+            // Register with multiple keys for instant recognition
+            activeClients.set(deviceInfo.deviceId, clientInfo);
+            activeClients.set(identifier, clientInfo);
+            if (deviceInfo.mac) {
+              activeClients.set(deviceInfo.mac, clientInfo);
+            }
+            activeClients.set(req.ip || req.connection.remoteAddress, clientInfo);
+            
+            console.log(`[IMMEDIATE-ACCESS] ${identifier} device ${deviceInfo.deviceId.slice(0,8)}... granted immediate internet access`);
+            
+            // INSTANT ACCESS FIX: Clear any stale usage data and refresh quota immediately
+            realtimeUsage.delete(identifier);
+            console.log(`[QUOTA-REFRESHED] Cleared stale usage data for ${identifier} - fresh bundle access enabled`);
+            
+            // Force immediate activeClients recognition by multiple keys
+            console.log(`[MULTI-KEY-ACCESS] Registered ${identifier} with device/MAC/IP keys for instant recognition`);
+            
+          } else {
+            console.error(`[DEVICE-ACCESS-FAILED] Could not grant device access for ${identifier}`);
+          }
+          
+        } else {
+          console.log(`[BUNDLE-EXISTS] Bundle already exists for ${identifier} at ${count} videos - access should already be granted`);
+          
+          // Even if bundle exists, ensure device has access
+          const deviceInfo = {
+            deviceId: deviceId,
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'] || '',
+            identifier: identifier
+          };
+          
+          const deviceAccessGranted = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, count, bundleAmount);
+          if (deviceAccessGranted) {
+            console.log(`[EXISTING-BUNDLE-ACCESS] Re-granted access for ${identifier} device ${deviceId.slice(0,8)}...`);
+          }
+        }
+      } catch (error) {
+        console.error('[VIDEO-BUNDLE-CREATION-ERROR]', error.message);
+      }
+    } else if (count >= 1) {
+      // Even for first video, grant some access to allow continued watching
+      try {
+        const deviceInfo = {
+          deviceId: deviceId,
+          ip: req.ip || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'] || '',
+          identifier: identifier
+        };
+        
+        const minimalAccess = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, 1, 20); // 20MB for first video
+        if (minimalAccess) {
+          console.log(`[FIRST-VIDEO-ACCESS] ${identifier} device ${deviceId.slice(0,8)}... granted 20MB access for video watching`);
+        }
+      } catch (error) {
+        console.error('[FIRST-VIDEO-ACCESS-ERROR]', error.message);
+      }
+    }
+    
+    console.log(`[VIDEO-COMPLETION] ${identifier} watched video ${count}, earned ${earnedMB}MB (total: ${totalVideoEarnedMB}MB)`);
+    
+    res.json({
+      ok: true,
+      earnedMB: earnedMB,
+      totalVideos: count,
+      totalEarnedMB: totalVideoEarnedMB,
+      milestone: milestone,
+      bundleCreated: newBundleCreated,
+      bundleAmount: bundleAmount,
+      internetUnlocked: true, // Always true after video completion
+      socialUnlocked: true,   // Always true after video completion
+      notification: {
+        title: '🎉 Internet Access Unlocked!',
+        message: count === 1 ? 
+          'You watched your first video! Internet and social media access is now unlocked.' :
+          `Great! You've watched ${count} videos. Your internet access has been refreshed.`,
+        type: 'success',
+        showFor: 8000 // Show for 8 seconds
+      }
+    });
+    
+  } catch (error) {
+    console.error('[VIDEO-COMPLETE-ERROR]', error.message);
+    res.status(500).json({ ok: false, message: 'Video completion tracking failed' });
   }
 });
 
@@ -2996,13 +4698,8 @@ app.post('/api/login', (req,res)=>{
   
   if(validateLogin(email.trim(), password)){
     try { 
-      appendAccessEvent({ 
-        identifier: email.trim().toLowerCase(), 
-        type:'login', 
-        tsISO:new Date().toISOString(), 
-        ip:(req.ip||''), 
-        ua:req.headers['user-agent'] 
-      }); 
+  const evt = { identifier: email.trim().toLowerCase(), type:'login', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] };
+  if (sqliteDB) sqliteDB.appendAccessEvent(evt); else appendAccessEvent(evt);
     } catch {}
     
     // Enhanced device registration on successful login
@@ -3033,6 +4730,13 @@ app.post('/api/change-password', (req,res)=>{
   if(!isStrongPassword(newPassword)){
     return res.status(400).json({ ok:false, message:'Weak new password' });
   }
+  if (sqliteDB) {
+    const changed = sqliteDB.changePassword(identifier.trim(), newPassword);
+    if (!changed.ok) return res.status(404).json({ ok:false, message:changed.message || 'User not found' });
+    try { sqliteDB.appendAccessEvent({ identifier: identifier.trim().toLowerCase(), type:'password_reset', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] }); } catch {}
+    return res.json({ ok:true });
+  }
+
   const { wb, ws, data } = getUsers();
   const user = findUserRecord(data, identifier.trim());
   if(!user) return res.status(404).json({ ok:false, message:'User not found' });
@@ -3220,6 +4924,7 @@ function localIPv4s(){
 
 const HOST = process.env.HOST || '0.0.0.0';
 function startExpress(port, attemptsLeft){
+  console.log('[startExpress] attempting to bind Express on', HOST, port);
   const server = app.listen(port, HOST, ()=>{
     PORT = port;
     console.log(`Server running on http://localhost:${PORT}`);
@@ -3256,9 +4961,11 @@ function startExpress(port, attemptsLeft){
     console.log('[REAL-USERS-ONLY] Admin dashboard will show only actual active users, no demo data');
   });
   server.on('error',err=>{
-    if(err.code==='EADDRINUSE' && attemptsLeft>0){
-      console.warn(`Port ${port} busy, trying ${port+1}...`);
-      startExpress(port+1, attemptsLeft-1);
+    if(err.code==='EADDRINUSE'){
+      console.error(`❌ CRITICAL: Port ${port} is already in use!`);
+      console.error('Please close any other instances of this server or restart your computer.');
+      console.error('Cannot start server on alternate port - phone clients expect exact port 3150.');
+      process.exit(1);
     } else {
       console.error('Failed to start server:', err.message);
       process.exit(1);

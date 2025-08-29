@@ -1,0 +1,8 @@
+node_modules
+.git
+*.log
+server_run.log
+logins.xlsx
+logins*.xlsx
+*.sqlite
+verification*

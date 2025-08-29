@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ISN WiFi - Network Diagnostic</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        h1 { color: #333; text-align: center; }
+        .instruction { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .phone-config { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .ip-info { font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 ISN Free WiFi - Network Diagnostic</h1>
+        
+        <div class="status success">
+            ✅ You can see this page! Portal server is accessible.
+        </div>
+        
+        <div class="ip-info">
+            <strong>Your IP Address:</strong> <span id="client-ip">Loading...</span><br>
+            <strong>Portal Server:</strong> 10.5.48.94:3150<br>
+            <strong>Proxy Server:</strong> 10.5.48.94:8082<br>
+            <strong>Current Time:</strong> <span id="current-time"></span>
+        </div>
+        
+        <div class="phone-config">
+            <h3>📱 For Phone User 0796694562:</h3>
+            <p><strong>If you can see this page, your network connection is working!</strong></p>
+            <p>Next steps:</p>
+            <ol>
+                <li>Configure WiFi proxy settings manually:
+                    <ul>
+                        <li><strong>Proxy:</strong> Manual</li>
+                        <li><strong>Host:</strong> 10.5.48.94</li>
+                        <li><strong>Port:</strong> 8082</li>
+                    </ul>
+                </li>
+                <li>Go back to <a href="/login.html">Login Page</a></li>
+                <li>Enter phone: <strong>0796694562</strong></li>
+                <li>You should have <strong>1895MB</strong> available!</li>
+            </ol>
+        </div>
+        
+        <div class="instruction">
+            <h3>🔧 WiFi Proxy Configuration Steps:</h3>
+            <p><strong>For Android:</strong></p>
+            <ol>
+                <li>Go to WiFi Settings</li>
+                <li>Long press on your WiFi network</li>
+                <li>Select "Modify Network"</li>
+                <li>Expand "Advanced Options"</li>
+                <li>Set Proxy to "Manual"</li>
+                <li>Enter Host: <strong>10.5.48.94</strong></li>
+                <li>Enter Port: <strong>8082</strong></li>
+                <li>Save and reconnect</li>
+            </ol>
+        </div>
+        
+        <div class="status info">
+            <strong>Troubleshooting:</strong><br>
+            • If this page loads, network is OK<br>
+            • If login page doesn't work, check proxy settings<br>
+            • If internet doesn't work after login, contact support<br>
+        </div>
+        
+        <button onclick="window.location.href='/login.html'">Go to Login Page</button>
+        <button onclick="location.reload()">Refresh Test</button>
+    </div>
+    
+    <script>
+        // Get client IP and display current time
+        fetch('/api/me/ip')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('client-ip').textContent = data.ip || 'Unknown';
+            })
+            .catch(() => {
+                document.getElementById('client-ip').textContent = 'Unable to detect';
+            });
+            
+        document.getElementById('current-time').textContent = new Date().toLocaleString();
+        
+        // Auto-refresh every 30 seconds
+        setTimeout(() => location.reload(), 30000);
+    </script>
+</body>
+</html>

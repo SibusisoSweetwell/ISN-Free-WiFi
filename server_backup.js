@@ -1330,7 +1330,7 @@ function startProxy(){
 <body><h1>Watch Videos to Access Internet</h1>
 <p>Auto proxy detected. You must watch videos to earn internet access.</p>
 <p><strong>Bundle System:</strong></p>
-<ul><li>5 videos = 100MB</li><li>8 videos = 250MB</li><li>15 videos = 500MB</li></ul>
+<ul><li>5 videos = 100MB</li><li>10 videos = 250MB</li><li>15 videos = 500MB</li></ul>
 <p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html">Start Watching Videos</a></p>
 <script>window.location.replace('http://${localIps[0] || 'localhost'}:${PORT}/login.html');</script>
 </body></html>`);
@@ -1401,7 +1401,7 @@ function startProxy(){
 <p><strong>Bundle Rewards:</strong></p>
 <ul style="display:inline-block;text-align:left;">
 <li>5 videos = 100MB bundle</li>
-<li>8 videos = 250MB bundle</li>
+<li>10 videos = 250MB bundle</li>
 <li>15 videos = 500MB bundle</li>
 </ul>
 <p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#007bff;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Watch Videos Now</a></p>
@@ -1425,7 +1425,7 @@ function startProxy(){
 <ul style="display:inline-block;text-align:left;">
 <li>Watch your first video to unlock social apps</li>
 <li>Continue watching to earn data bundles</li>
-<li>5 videos = 100MB, 8 videos = 250MB, 15 videos = 500MB</li>
+<li>5 videos = 100MB, 10 videos = 250MB, 15 videos = 500MB</li>
 </ul>
 <p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#25d366;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Watch Videos to Unlock</a></p>
 </body></html>`);
@@ -1895,7 +1895,7 @@ const recentCompletions = new Map(); // deviceFingerprint -> timestamp of last c
 // Bundle tiers based on videos watched
 const BUNDLE_TIERS = [
   { videos: 5, mb: 100, label: '5 videos = 100MB' },
-  { videos: 8, mb: 250, label: '8 videos = 250MB' },
+  { videos: 10, mb: 250, label: '10 videos = 250MB' },
   { videos: 15, mb: 500, label: '15 videos = 500MB' }
 ];
 // Ephemeral eligibility after successful ad completion to guard /api/bundle/grant misuse
@@ -2141,24 +2141,21 @@ app.post('/api/ad/event', (req,res)=>{
           
           console.log('[AD-COMPLETE-SUCCESS]', { 
             identifier: idNorm, 
-            videoCount: userStats.videos,
+            videoCount: deviceStats.videos,
             socialAccess: socialUnlocked.has(idNorm),
             tempAccess: (tempFullAccess.get(idNorm) || 0) > Date.now(),
             fullAccess: false // No more automatic full access
           });
-        } else {
-          console.log('[AD-COMPLETE-FAILED]', { identifier: idNorm, device: deviceFingerprint, watchSeconds: watch, minRequired: minCompleteSeconds });
-        }
       } else {
-        console.log('[AD-COMPLETE-INSUFFICIENT-WATCH]', { identifier: idNorm, watchSeconds: watch });
+        console.log('[AD-VIDEO-INTERVAL-TOO-SHORT]', { 
+          device: deviceFingerprint, 
+          identifier: idNorm, 
+          timeSinceLastVideoMs: now - deviceStats.lastVideoTime,
+          requiredMs: 60000 
+        });
       }
     } else {
-      console.log('[AD-VIDEO-INTERVAL-TOO-SHORT]', { 
-        device: deviceFingerprint, 
-        identifier: idNorm, 
-        timeSinceLastVideoMs: now - deviceStats.lastVideoTime,
-        requiredMs: 60000 
-      });
+      console.log('[AD-COMPLETE-INSUFFICIENT-WATCH]', { identifier: idNorm, watchSeconds: watch });
     }
     
     // Get device stats for response (reuse existing userAgent)
