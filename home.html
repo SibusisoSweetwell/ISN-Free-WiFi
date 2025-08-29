@@ -1005,6 +1005,7 @@ async function showUsage(){
 		stopAdminAutoRefresh(); // Stop auto-refresh when not admin
 		regularUsage.style.display = 'flex';
 		loadRegularUsage();
+		startRegularUsageAutoRefresh();
 	}
 }
 
@@ -1452,6 +1453,15 @@ async function loadRegularUsage() {
 		err.textContent=(e && e.message && e.message.startsWith('HTTP 4'))? 'Not authorized or missing data.' : (e && e.message && e.message.startsWith('TypeError'))? 'Server not reachable.' : 'Error loading your usage';
 	}
 }
+// Auto-refresh regular usage every 1s while the modal is open
+let regularUsageTimer = null;
+function startRegularUsageAutoRefresh(){
+	stopRegularUsageAutoRefresh();
+	regularUsageTimer = setInterval(()=>{
+		try{ loadRegularUsage(); }catch(e){}
+	}, 1000);
+}
+function stopRegularUsageAutoRefresh(){ if(regularUsageTimer){ clearInterval(regularUsageTimer); regularUsageTimer=null; } }
 	document.getElementById('statRemaining').textContent='-';
 	document.getElementById('statDateTime').textContent=new Date().toLocaleString();
 	document.getElementById('statTotalUnlocked').textContent='-';
