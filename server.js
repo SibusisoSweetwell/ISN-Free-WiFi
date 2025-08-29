@@ -1018,6 +1018,19 @@ function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
     
     if (bundleCreated) {
       console.log(`[MILESTONE-REWARD] ${identifier} reached ${totalVideos} videos - bundle created!`);
+      // Map milestones to time-based unlocks as well
+      try {
+        let durationHours = 2; // default for 5 videos
+        if (totalVideos === 5) durationHours = 2;
+        else if (totalVideos === 10) durationHours = 3;
+        else if (totalVideos === 15) durationHours = 4;
+
+        // Mark device unlocked for the milestone with both MB and duration
+        const unlockOk = markDeviceUnlocked(deviceId, identifier, (totalVideos === 5?100: totalVideos === 10?250: totalVideos === 15?500:100), durationHours);
+        if (unlockOk) {
+          console.log(`[MILESTONE-UNLOCKED] ${identifier} device ${deviceId.slice(0,8)}... unlocked for ${durationHours}h due to reaching ${totalVideos} videos`);
+        }
+      } catch(err){ console.warn('[MILESTONE-UNLOCK-ERROR]', err?.message); }
     }
     
     console.log(`[VIDEO-EARNED] ${identifier} earned ${newView.earnedMB}MB by watching video (${duration}s) - Total videos: ${totalVideos}`);
@@ -1117,25 +1130,32 @@ function computeRemainingUnified(identifier, deviceFingerprint, routerId){
 }
 
 // Function to mark device as having earned access through video watching
-function markDeviceUnlocked(deviceId, identifier, bundleMB = 100) {
+function markDeviceUnlocked(deviceId, identifier, bundleMB = 100, durationHours = 2) {
   if (!deviceId) return false;
-  
   try {
     // Update device quota
     let deviceQuota = deviceQuotas.get(deviceId) || { bundleMB: 0, usedMB: 0, unlockEarned: false };
     deviceQuota.unlockEarned = true;
     deviceQuota.videoWatchComplete = true;
     deviceQuotas.set(deviceId, deviceQuota);
-    
+
     // Create purchase record for this device
     const routerId = 'video-unlock';
     const purchase = recordPurchase(identifier, bundleMB, deviceId, routerId, '', 'video_unlock');
-    
+
     if (purchase) {
-      console.log(`[DEVICE-UNLOCKED] Device ${deviceId.slice(0,8)}... earned ${bundleMB}MB by watching video`);
+      // Set device-level expiry for temporary full access
+      try {
+        const expiry = Date.now() + (Number(durationHours) || 2) * 60 * 60 * 1000; // hours -> ms
+        // Store both by deviceId and identifier to improve recognition in proxy
+        tempFullAccess.set(identifier.toLowerCase(), expiry);
+        tempFullAccess.set(deviceId, expiry);
+        console.log(`[DEVICE-UNLOCKED] Device ${deviceId.slice(0,8)}... earned ${bundleMB}MB and temp access until ${new Date(expiry).toISOString()}`);
+      } catch(e) { console.warn('[TEMP-ACCESS-SET-ERROR]', e?.message); }
+
       return true;
     }
-    
+
     return false;
   } catch (error) {
     console.error('[DEVICE-UNLOCK-ERROR]', error);
@@ -2557,7 +2577,8 @@ function startProxy(){
       const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
       
       // STRICT: Auto proxy users can only access internet if they have data bundles (not temp access)
-      const tempUnlocked = (tempFullAccess.get(mappedIdentifier) || 0) > Date.now();
+  const deviceKey = deviceFingerprint || '';
+  const tempUnlocked = ((tempFullAccess.get(mappedIdentifier) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now());
       if (!isPortalHost && !tempUnlocked && (quota.exhausted || quota.totalBundleMB === 0)) {
         console.log('[AUTO-PROXY-NO-BUNDLES] Auto proxy user blocked - no data bundles:', { 
           host: hostHeader, 
@@ -2646,7 +2667,9 @@ function startProxy(){
       const isPortalHost = portalHostCandidates.has(hostHeader);
       const isPortalByPort = reqPortNum && reqPortNum === PORT;
       const isPortal = isPortalHost || isPortalByPort;
-      const tempUnlocked = (tempFullAccess.get(effectiveIdentifier) || 0) > Date.now();
+  // Consider temp unlocks set either for the identifier or for the specific device fingerprint
+  const deviceKey = deviceFingerprint || '';
+  const tempUnlocked = ((tempFullAccess.get(effectiveIdentifier) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now());
       const hasFullAccess = fullAccessUnlocked.has(effectiveIdentifier);
       const hasSocialAccess = socialUnlocked.has(effectiveIdentifier);
       
@@ -3432,7 +3455,9 @@ ${isManualProxy
       const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
       const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
       const quota = computeRemainingUnified(effectiveIdentifier, deviceFingerprint, routerId);
-      const tempUnlocked = (tempFullAccess.get(effectiveIdentifier) || 0) > Date.now();
+  // Consider both identifier-level and device-level temporary access
+  const deviceKey = deviceFingerprint || '';
+  const tempUnlocked = ((tempFullAccess.get(effectiveIdentifier) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now());
       const portalHostCandidates = new Set([ (process.env.PORTAL_HOST||'').toLowerCase(), 'localhost', '10.5.48.94', ...localIps ]);
       const isPortalHost = portalHostCandidates.has(hostOnly);
       
