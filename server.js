@@ -21,6 +21,21 @@ if (process.env.USE_SQLITE === 'true') {
     console.warn('[SQLITE] Init failed, falling back to XLSX:', err && err.message);
     sqliteDB = null;
   }
+  // Quota enforcement for CONNECT: if mapped identifier exists but quota exhausted, block tunnel and point to quota page
+  try {
+    if (mappedIdentifier) {
+      const q = computeRemainingUnified(mappedIdentifier, null, req.headers['x-router-id'] || clientIp);
+      if (q && q.exhausted) {
+        const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${q.totalUsedMB||0}&limit=${q.totalBundleMB||0}`;
+        clientSocket.write('HTTP/1.1 302 Found\r\n');
+        clientSocket.write(`Location: ${redirectUrl}\r\n`);
+        clientSocket.write('Content-Type: text/html\r\n\r\n');
+        clientSocket.write(`<html><body><h1>Data bundle exhausted</h1><p>Redirecting to <a href="${redirectUrl}">${redirectUrl}</a></p></body></html>`);
+        clientSocket.end();
+        return;
+      }
+    }
+  } catch (qe) { console.warn('[CONNECT-QUOTA-CHK-ERR]', qe && qe.message); }
 }
 console.log('[CONFIG] USE_SQLITE=', process.env.USE_SQLITE, 'sqliteDB active=', !!sqliteDB);
 const http = require('http');
@@ -131,6 +146,17 @@ function generateDeviceFingerprint(req, includeMAC = true) {
 // Function to get MAC address from system ARP cache
 function getMACAddress(ip) {
   try {
+// Diagnostic: report SQLITE_PATH and file writability when using SQLite
+if (process.env.USE_SQLITE === 'true') {
+  const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'logins.db');
+  try {
+    const exists = fs.existsSync(dbPath);
+    let writable = false;
+    try { fs.accessSync(path.dirname(dbPath), fs.constants.W_OK); writable = true; } catch(e){ writable=false; }
+    console.log('[SQLITE-INFO] SQLITE_PATH=', dbPath, 'exists=', exists, 'writableDir=', writable);
+    if (!writable) console.warn('[SQLITE-WARN] DB directory not writable. Ensure container/platform mounts a writable volume at '+path.dirname(dbPath));
+  } catch(e){ console.warn('[SQLITE-INFO-ERR]', e && e.message); }
+}
     if (!ip || ip === '127.0.0.1' || ip === '::1') return null;
     
     // Check cache first
@@ -1396,7 +1422,16 @@ function requireAdminToken(req, res, next) {
 
 // Shared admin token validator used by middleware and endpoints
 function isValidAdminToken(req) {
-  const incoming = (req.headers['x-admin-token'] || '').toString().trim();
+  // Accept token from header, cookie (admin_token) or query param (admin_token or token)
+  const headerToken = (req.headers['x-admin-token'] || '').toString().trim();
+  let cookieToken = '';
+  try {
+    const c = req.headers['cookie'] || '';
+    const m = c.match(/(?:^|; )admin_token=([^;]+)/);
+    if (m) cookieToken = decodeURIComponent(m[1]);
+  } catch (e) { cookieToken = ''; }
+  const queryToken = (req.query && (req.query.admin_token || req.query.token || req.query.adminToken)) ? String(req.query.admin_token || req.query.token || req.query.adminToken).toString().trim() : '';
+  const incoming = headerToken || cookieToken || queryToken;
   const serverSecret = (process.env.PORTAL_SECRET || 'isn_portal_secret_dev').toString().trim();
   const mask = s => {
     if (!s) return '<empty>';
@@ -1666,29 +1701,56 @@ function normalizePhone(raw){
 
 function saveUser(email, password, phone, firstName, surname, dob){
   try {
-    const wb = loadWorkbook();
-    const ws = wb.Sheets['Users'];
-    const data = XLSX.utils.sheet_to_json(ws);
     const origEmail = (email||'').trim().toLowerCase();
     const normPhone = normalizePhone(phone);
+    // Basic validation (shared for both XLSX and SQLite flows)
     if(!origEmail && !normPhone){
       return { ok:false, field:'email', message:'Provide email or phone (at least one)' };
     }
     if(!password) return { ok:false, message:'Password required' };
     if(!isStrongPassword(password)) return { ok:false, message:'Weak password (needs upper, lower, number, symbol & 8+ chars)' };
+    if(!firstName) return { ok:false, field:'firstName', message:'First name required' };
+    if(!surname) return { ok:false, field:'surname', message:'Surname required' };
+    if(!dob) return { ok:false, field:'dob', message:'Date of birth required' };
+    if(new Date(dob) > new Date()) return { ok:false, field:'dob', message:'Date of birth cannot be in the future' };
+    if(phone && !normPhone) return { ok:false, field:'phone', message:'Valid South African phone required' };
+
+    // If SQLite adapter is enabled, use it (and skip Excel writes)
+    if (sqliteDB) {
+      // Ensure duplicate checks
+      try {
+        const existingByEmail = origEmail ? sqliteDB.findUser(origEmail) : null;
+        if (existingByEmail) return { ok:false, field:'email', message:'Email already registered' };
+        const existingByPhone = normPhone ? sqliteDB.findUser(normPhone) : null;
+        if (existingByPhone) return { ok:false, field:'phone', message:'Phone already registered' };
+      } catch (e) {
+        console.warn('[SAVEUSER-SQLITE-CHECK-ERR]', e && e.message);
+      }
+
+      const createResult = sqliteDB.createUser({ email: origEmail || null, password, phone: normPhone || null, firstName, surname, dob });
+      if (!createResult || !createResult.ok) {
+        return { ok:false, message: createResult && createResult.message ? createResult.message : 'SQLite create user failed' };
+      }
+      // Fetch stored row to log masked hash
+      try {
+        const row = sqliteDB.findUser(origEmail || normPhone);
+        const ph = row && row.password_hash ? String(row.password_hash) : '';
+        const mask = h => { if(!h) return '<none>'; if(h.length<=12) return h.slice(0,4)+'...'; return h.slice(0,6)+'...'+h.slice(-4); };
+        console.log('[REGISTRATION] sqlite user created:', { identifier: (origEmail||normPhone), password_hash_mask: mask(ph) });
+      } catch (loge) { console.warn('[REGISTRATION-LOG-ERR]', loge && loge.message); }
+
+      return { ok:true, identifier: (origEmail || normPhone).toLowerCase() };
+    }
+    // Fallback Excel/XLSX storage path (existing behavior)
+    const wb = loadWorkbook();
+    const ws = wb.Sheets['Users'];
+    const data = XLSX.utils.sheet_to_json(ws);
+    // Duplicate checks for XLSX path
     if(origEmail && data.find(u=> (u.email||'').toLowerCase()===origEmail)){
       return { ok:false, field:'email', message:'Email already registered' };
     }
     if(normPhone && data.find(u=> u.phone===normPhone)){
       return { ok:false, field:'phone', message:'Phone already registered' };
-    }
-    if(!firstName) return { ok:false, field:'firstName', message:'First name required' };
-    if(!surname) return { ok:false, field:'surname', message:'Surname required' };
-    if(!dob) return { ok:false, field:'dob', message:'Date of birth required' };
-    if(new Date(dob) > new Date()) return { ok:false, field:'dob', message:'Date of birth cannot be in the future' };
-    // If phone provided but invalid normalization produced empty string, flag error
-    if(phone && !normPhone){
-      return { ok:false, field:'phone', message:'Valid South African phone required' };
     }
     const created = new Date();
     const createdISO = created.toISOString();
@@ -1710,6 +1772,10 @@ function saveUser(email, password, phone, firstName, surname, dob){
     
     try {
       XLSX.writeFile(wb, DATA_FILE);
+      try {
+        const maskPwd = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
+        console.log('[REGISTRATION] xlsx user created:', { identifier: (origEmail || normPhone), password_mask: maskPwd(password) });
+      } catch(e){ /* best-effort logging */ }
     } catch (writeError) {
       console.error('[XLSX-WRITE-ERROR] Failed to write user data:', writeError.message);
       if (writeError.message.includes('32767')) {
@@ -1800,33 +1866,62 @@ const resetCodes = new Map(); // email -> { code, expires }
 app.post('/api/forgot/start', (req,res)=>{
   const { email } = req.body;
   if(!email) return res.status(400).json({ ok:false, message:'Email required' });
-  const { data } = getUsers();
   const emailLower = String(email).trim().toLowerCase();
-  if(!data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower)) return res.status(404).json({ ok:false, message:'Email not found' });
-  const code = Math.floor(100000 + Math.random()*900000).toString();
-  resetCodes.set(email, { code, expires: Date.now()+10*60*1000 });
-  // For demo we return the code (normally you'd email/SMS it)
-  res.json({ ok:true, code });
+  try {
+    if (sqliteDB) {
+      const user = sqliteDB.findUser(emailLower);
+      if (!user) return res.status(404).json({ ok:false, message:'Email not found' });
+    } else {
+      const { data } = getUsers();
+      if(!data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower)) return res.status(404).json({ ok:false, message:'Email not found' });
+    }
+    const code = Math.floor(100000 + Math.random()*900000).toString();
+    resetCodes.set(emailLower, { code, expires: Date.now()+10*60*1000 });
+    console.log('[FORGOT-START] reset code generated for', emailLower);
+    // For demo we return the code (normally you'd email/SMS it)
+    res.json({ ok:true, code });
+  } catch (err) {
+    console.warn('[FORGOT-START-ERR]', err && err.message);
+    return res.status(500).json({ ok:false, message:'Server error' });
+  }
 });
 
 app.post('/api/forgot/verify', (req,res)=>{
   const { email, code, newPassword } = req.body;
   if(!email||!code||!newPassword) return res.status(400).json({ ok:false, message:'Missing fields' });
-  const entry = resetCodes.get(email);
+  const emailLower = String(email).trim().toLowerCase();
+  const entry = resetCodes.get(emailLower);
   if(!entry || entry.code!==code || Date.now()>entry.expires){
     return res.status(400).json({ ok:false, message:'Invalid or expired code' });
   }
-  // update password in sheet
-  const { wb, ws, data } = getUsers();
-  const user = data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower);
-  if(!user) return res.status(404).json({ ok:false, message:'User not found' });
-  user.password = newPassword;
-  const newWs = XLSX.utils.json_to_sheet(data);
-  wb.Sheets['Users'] = newWs;
-  XLSX.writeFile(wb, DATA_FILE);
-  resetCodes.delete(email);
-  try { appendAccessEvent({ identifier: email.toLowerCase(), type:'password_reset', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] }); } catch {}
-  res.json({ ok:true });
+  try {
+    if (sqliteDB) {
+      const ch = sqliteDB.changePassword(emailLower, newPassword);
+      if (!ch || !ch.ok) return res.status(500).json({ ok:false, message: ch && ch.message ? ch.message : 'Failed to change password' });
+      // log masked hash
+      try {
+        const row = sqliteDB.findUser(emailLower);
+        const ph = row && row.password_hash ? String(row.password_hash) : '';
+        const mask = h => { if(!h) return '<none>'; if(h.length<=12) return h.slice(0,4)+'...'; return h.slice(0,6)+'...'+h.slice(-4); };
+        console.log('[FORGOT-VERIFY] password updated for', emailLower, 'hash_mask=', mask(ph));
+      } catch (le){ console.warn('[FORGOT-VERIFY-LOG-ERR]', le && le.message); }
+    } else {
+      // update password in sheet
+      const { wb, ws, data } = getUsers();
+      const user = data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower);
+      if(!user) return res.status(404).json({ ok:false, message:'User not found' });
+      user.password = newPassword;
+      const newWs = XLSX.utils.json_to_sheet(data);
+      wb.Sheets['Users'] = newWs;
+      XLSX.writeFile(wb, DATA_FILE);
+    }
+    resetCodes.delete(emailLower);
+    try { appendAccessEvent({ identifier: emailLower, type:'password_reset', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] }); } catch {}
+    res.json({ ok:true });
+  } catch (err) {
+    console.warn('[FORGOT-VERIFY-ERR]', err && err.message);
+    return res.status(500).json({ ok:false, message:'Server error' });
+  }
 });
 
 app.post('/api/register', (req,res)=>{
@@ -2356,6 +2451,19 @@ function startProxy(){
         }
       }
     }
+
+    // Quota enforcement for proxied HTTP requests: if device mapped and quota exhausted, redirect to quota page
+    try {
+      if (mappedIdentifier) {
+        const q = computeRemainingUnified(mappedIdentifier, null, clientReq.headers['x-router-id'] || clientIp);
+        if (q && q.exhausted) {
+          const redirectTo = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${q.totalUsedMB || 0}&limit=${q.totalBundleMB || 0}`;
+          clientRes.writeHead(302, { Location: redirectTo, 'Content-Type': 'text/html' });
+          clientRes.end(`<html><body>Quota exhausted. Redirecting to <a href="${redirectTo}">${redirectTo}</a></body></html>`);
+          return;
+        }
+      }
+    } catch (qe) { console.warn('[PROXY-QUOTA-CHK-ERR]', qe && qe.message); }
 
   // ALLOW VIDEO AD CDNs for unauthenticated users (needed for video ads to load)
   // (isVideoAdHost computed earlier in whitelist section)
@@ -3360,7 +3468,7 @@ ${isManualProxy
           const actionText = notificationReceived ? 'Watch more videos for continued access' : 'Watch videos to unlock social media';
           
           clientSocket.write('HTTP/1.1 302 Found\r\n');
-          clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/login.html?message=social_blocked&app=${encodeURIComponent(hostOnly)}&reason=video_required\r\n`);
+          clientSocket.write(`Location: http://${localIps[0] || 'localhost'}:${PORT}/quota.html?message=social_blocked&app=${encodeURIComponent(hostOnly)}&reason=video_required\r\n`);
           clientSocket.write('Content-Type: text/html; charset=utf-8\r\n\r\n');
           
           const htmlContent = `<!DOCTYPE html>
@@ -4929,6 +5037,47 @@ app.get('/admin/users', requireAdminToken, (req, res) => {
   }
 });
 
+// Admin helper: lookup a user across SQLite and XLSX to diagnose registration/login issues
+app.get('/admin/user-info', requireAdminToken, (req, res) => {
+  try {
+    const q = (req.query.email || req.query.identifier || req.query.id || '').toString().trim();
+    if (!q) return res.status(400).json({ ok: false, message: 'provide ?email= or ?identifier=' });
+    const out = { query: q, sqlite: null, xlsx: null };
+    const emailLower = q.includes('@') ? q.toLowerCase() : null;
+    // Check sqlite
+    try {
+      if (sqliteDB) {
+        const srow = sqliteDB.findUser(emailLower || q);
+        if (srow) {
+          const mask = h => { if(!h) return '<none>'; if(h.length<=12) return h.slice(0,4)+'...'; return h.slice(0,6)+'...'+h.slice(-4); };
+          out.sqlite = { found: true, id: srow.id || null, email: srow.email || null, phone: srow.phone || null, password_hash_mask: mask(srow.password_hash) };
+        } else {
+          out.sqlite = { found: false };
+        }
+      }
+    } catch (e) { out.sqlite = { error: e && e.message }; }
+
+    // Check XLSX
+    try {
+      const { data } = getUsers();
+      const match = data.find(u => {
+        if (emailLower) return (String(u.email||'').trim().toLowerCase() === emailLower);
+        const norm = normalizePhone(q);
+        return norm && u.phone === norm;
+      });
+      if (match) {
+        out.xlsx = { found: true, email: match.email || null, phone: match.phone || null, password_present: !!match.password };
+      } else {
+        out.xlsx = { found: false };
+      }
+    } catch (e) { out.xlsx = { error: e && e.message }; }
+
+    return res.json({ ok: true, result: out });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err && err.message });
+  }
+});
+
 // Admin dump users (no auth) - returns email, phone, masked password_hash (first 6 chars)
 app.get('/admin/dump-users', requireAdminToken, (req, res) => {
   try {
@@ -5042,6 +5191,15 @@ app.get('/admin/check-remote', requireAdminToken, async (req, res) => {
     return res.json(result);
   } catch (err) {
     return res.json({ ok: false, host, port, error: err && err.message });
+  }
+});
+
+// Serve protected admin dashboard HTML
+app.get('/admin/dashboard.html', requireAdminToken, (req, res) => {
+  try {
+    return res.sendFile(path.join(__dirname, 'admin', 'dashboard.html'));
+  } catch (err) {
+    return res.status(500).send('Error loading admin dashboard');
   }
 });
 

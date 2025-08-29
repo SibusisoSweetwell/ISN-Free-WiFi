@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Dashboard</title>
+  <style>
+    body{font-family:Inter,Segoe UI,Arial;background:#f6f8fb;color:#111;margin:0;padding:24px}
+    .wrap{max-width:960px;margin:0 auto}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    h1{margin:0;font-size:20px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+    .card{background:#fff;padding:16px;border-radius:10px;box-shadow:0 6px 18px rgba(16,24,40,.06)}
+    .label{font-size:12px;color:#6b7280}
+    .value{font-size:20px;font-weight:700;margin-top:6px}
+    pre{white-space:pre-wrap;word-break:break-word}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Admin Dashboard</h1>
+      <div id="controls">
+        <button id="refresh">Refresh</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">User count</div>
+        <div id="userCount" class="value">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Login attempts</div>
+        <div id="loginAttempts" class="value">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Quota unlocks</div>
+        <div id="quotaUnlocks" class="value">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Proxy bypasses</div>
+        <div id="proxyBypasses" class="value">—</div>
+      </div>
+    </div>
+
+    <section style="margin-top:18px">
+      <div class="card">
+        <div class="label">Raw metrics</div>
+        <pre id="raw">Loading…</pre>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    async function loadMetrics(){
+      try{
+        const res = await fetch('/admin/metrics', { headers: { 'X-Admin-Token': sessionStorage.getItem('adminToken') || '' } });
+        if(res.status===401){ document.getElementById('raw').textContent='Unauthorized (missing/invalid admin token)'; return; }
+        const data = await res.json();
+        document.getElementById('userCount').textContent = (data.totalUsers!=null)? data.totalUsers : '—';
+        document.getElementById('loginAttempts').textContent = (data.loginAttempts!=null)? data.loginAttempts : '—';
+        document.getElementById('quotaUnlocks').textContent = (data.adUnlocks!=null)? data.adUnlocks : '—';
+        document.getElementById('proxyBypasses').textContent = (data.proxyBypasses!=null)? data.proxyBypasses : '—';
+        document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+      }catch(err){ document.getElementById('raw').textContent = 'Error fetching metrics: '+(err && err.message); }
+    }
+    document.getElementById('refresh').addEventListener('click', loadMetrics);
+    loadMetrics();
+  </script>
+</body>
+</html>
