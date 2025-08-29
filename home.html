@@ -449,6 +449,7 @@
 					<div id="adminError" style="color:var(--brand);background:#ffe5e5;border:1px solid #ffcccc;padding:12px;border-radius:12px;display:none;"></div>
 
 					<div id="adminContent" style="display:none;flex-direction:column;gap:24px;">
+					<div style="text-align:right;margin-bottom:6px;"><a href="admin-unlocks.html">Manage Unlocks →</a></div>
 						<!-- Real-time Summary -->
 						<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;">
 							<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
@@ -558,6 +559,30 @@
 								</table>
 							</div>
 						</div>
+					</div>
+				</div>
+
+				<!-- Temporary Unlocks Management (Admin -> My Usage) -->
+				<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
+					<h4 style="margin:0 0 16px;color:var(--brand);font-size:18px;">Temporary Unlocks (My Usage)</h4>
+					<div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+						<input id="adminSecretLocal" type="password" placeholder="Admin secret" style="padding:8px;border-radius:8px;border:1px solid #eee;" />
+						<button onclick="loadTempUnlocksAdmin()" style="background:var(--brand);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;">Load Unlocks</button>
+						<button onclick="bulkRevokeUnlocks()" style="background:#c30000;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;">Bulk Revoke Expired</button>
+					</div>
+					<div style="overflow:auto;max-height:260px;">
+						<table id="homeTempUnlocksTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px;">
+							<thead>
+								<tr style="background:var(--panel);">
+									<th style="text-align:left;padding:8px;font-weight:700;">ID</th>
+									<th style="text-align:left;padding:8px;font-weight:700;">Identifier</th>
+									<th style="text-align:left;padding:8px;font-weight:700;">Device ID</th>
+									<th style="text-align:left;padding:8px;font-weight:700;">Expiry</th>
+									<th style="text-align:left;padding:8px;font-weight:700;">Actions</th>
+								</tr>
+							</thead>
+							<tbody></tbody>
+						</table>
 					</div>
 				</div>
 				
@@ -1077,6 +1102,61 @@ async function loadAdminDashboard() {
 					<td style="padding:6px;"><span style="color:${user.isActive ? '#007bff' : '#ffc107'};font-weight:600;">${user.status || 'Unknown'}</span></td>
 				</tr>
 			`).join('');
+		}
+
+		// --- Temp unlocks admin functions for My Usage admin panel ---
+		async function loadTempUnlocksAdmin() {
+			const secret = document.getElementById('adminSecretLocal').value;
+			const tbody = document.querySelector('#homeTempUnlocksTable tbody');
+			tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;">Loading...</td></tr>';
+			try {
+				const res = await fetch('/api/admin/temp-unlocks?secret=' + encodeURIComponent(secret));
+				if (!res.ok) throw new Error('Failed to load');
+				const data = await res.json();
+				if (!data.ok) throw new Error(data.message || 'Failed');
+				const rows = data.unlocks || [];
+				if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5">No active temp unlocks</td></tr>'; return; }
+				tbody.innerHTML = rows.map(r => `
+					<tr>
+						<td style="padding:8px;font-weight:600;">${r.id}</td>
+						<td style="padding:8px;">${r.identifier}</td>
+						<td style="padding:8px;">${r.deviceId}</td>
+						<td style="padding:8px;">${new Date(r.expiry).toLocaleString()}</td>
+						<td style="padding:8px;"><button onclick="revokeUnlockById(${r.id})">Revoke</button></td>
+					</tr>
+				`).join('');
+			} catch (err) {
+				tbody.innerHTML = '<tr><td colspan="5" style="color:#c30000;">Error: ' + (err.message||err) + '</td></tr>';
+			}
+		}
+
+		async function revokeUnlockById(id) {
+			const secret = document.getElementById('adminSecretLocal').value;
+			if (!confirm('Revoke unlock ID ' + id + '?')) return;
+			try {
+				const res = await fetch('/api/admin/temp-unlocks/revoke', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, secret }) });
+				const data = await res.json();
+				if (!data.ok) throw new Error(data.message || 'Failed');
+				alert('Revoked');
+				loadTempUnlocksAdmin();
+			} catch (err) { alert('Revoke failed: ' + (err.message||err)); }
+		}
+
+		async function bulkRevokeUnlocks() {
+			// Simple convenience: remove expired rows from DB by calling admin revoke with each expired id
+			const secret = document.getElementById('adminSecretLocal').value;
+			const res = await fetch('/api/admin/temp-unlocks?secret=' + encodeURIComponent(secret));
+			if (!res.ok) return alert('Failed to load unlocks');
+			const data = await res.json(); if (!data.ok) return alert('Failed to load unlocks');
+			const rows = (data.unlocks||[]).filter(r => Number(r.expiry) <= Date.now());
+			if (!rows.length) return alert('No expired unlocks to revoke');
+			if (!confirm('Revoke ' + rows.length + ' expired unlock(s)?')) return;
+			let removed=0;
+			for (const r of rows) {
+				try { const rr = await fetch('/api/admin/temp-unlocks/revoke',{ method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: r.id, secret }) }); const j = await rr.json(); if (j.ok && j.removed) removed += j.removed; } catch(e) {}
+			}
+			alert('Revoked '+removed+' rows');
+			loadTempUnlocksAdmin();
 		}
 
 		// Update registrations table
