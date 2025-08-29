@@ -1,0 +1,19 @@
+{
+  "0796694562": {
+    "videosWatched": 5,
+    "dataUsed": 2100000000,
+    "lastVideoTime": 1756355889000,
+    "sessionExpiry": 1756377489000,
+    "totalDataEarned": 104857600,
+    "videoProgress": [
+      { "completed": 1756355589000, "adId": "video1", "duration": 30 },
+      { "completed": 1756355649000, "adId": "video2", "duration": 30 },
+      { "completed": 1756355709000, "adId": "video3", "duration": 30 },
+      { "completed": 1756355769000, "adId": "video4", "duration": 30 },
+      { "completed": 1756355829000, "adId": "video5", "duration": 30 }
+    ],
+    "purchasedData": 3500000000,
+    "remainingPurchased": 1400000000,
+    "lastActivity": 1756355889000
+  }
+}

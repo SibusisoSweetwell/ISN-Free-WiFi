@@ -231,6 +231,42 @@
 			.footer{padding:48px 28px 70px;}
 			.socials a{width:44px;height:44px;}
 		}
+		
+		/* Mobile table fixes for Recent Bundles */
+		@media (max-width: 600px) {
+			#usageHistoryWrapper table {
+				min-width: unset !important;
+				font-size: 11px !important;
+			}
+			#usageHistoryWrapper th,
+			#usageHistoryWrapper td {
+				padding: 6px 4px !important;
+				word-break: break-word;
+			}
+			/* Hide the Router column on very small screens */
+			#usageHistoryWrapper th:nth-child(4),
+			#usageHistoryWrapper td:nth-child(4) {
+				display: none;
+			}
+		}
+		
+		@media (max-width: 400px) {
+			#usageHistoryWrapper {
+				padding: 16px 12px !important;
+			}
+			#usageHistoryWrapper table {
+				font-size: 10px !important;
+			}
+			#usageHistoryWrapper th,
+			#usageHistoryWrapper td {
+				padding: 4px 2px !important;
+			}
+			/* On very small screens, hide the "Granted At" column too */
+			#usageHistoryWrapper th:nth-child(5),
+			#usageHistoryWrapper td:nth-child(5) {
+				display: none;
+			}
+		}
 	</style>
 </head>
 <body>
@@ -984,157 +1020,135 @@ async function showUsage(){
 }
 
 async function loadAdminDashboard() {
-	// Always use a normalized identifier
-	const currentId = (sessionStorage.getItem('currentUserIdentifier') || '').toLowerCase();
+	const currentId = sessionStorage.getItem('currentUserIdentifier');
 	const adminLoading = document.getElementById('adminLoading');
 	const adminError = document.getElementById('adminError');
 	const adminContent = document.getElementById('adminContent');
-
+	
 	try {
 		adminLoading.style.display = 'block';
 		adminError.style.display = 'none';
 		adminContent.style.display = 'none';
-
+		
 		// Load real-time usage data
 		const response = await fetch('/api/admin/realtime-usage', {
 			headers: {
 				'X-User-Identifier': currentId
 			}
 		});
-
+		
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
-
+		
 		const data = await response.json();
-
-		if (!data || !data.ok) {
-			throw new Error((data && data.message) || 'Failed to load data');
+		
+		if (!data.ok) {
+			throw new Error(data.message || 'Failed to load data');
 		}
-
-		// Safe defaults
-		const summary = data.summary || {};
-		const routers = Array.isArray(data.routers) ? data.routers : [];
-		const users = Array.isArray(data.users) ? data.users : [];
-		const registrations = Array.isArray(data.registrations) ? data.registrations : [];
-		const ads = Array.isArray(data.ads) ? data.ads : [];
-
+		
 		// Update system stats
 		const systemStats = document.getElementById('systemStats');
-		if (systemStats) {
-			systemStats.innerHTML = `
-				<div><span style="opacity:.6;">Total Users:</span> <span>${summary.totalUsers || 0}</span></div>
-				<div><span style="opacity:.6;">Active Users:</span> <span style="color:var(--brand);font-weight:700;">${summary.activeUsers || 0}</span></div>
-				<div><span style="opacity:.6;">Total Routers:</span> <span>${summary.totalRouters || 0}</span></div>
-				<div><span style="opacity:.6;">Total Data Served:</span> <span>${(Number(summary.totalDataServed || 0)).toFixed(2)} MB</span></div>
-			`;
-		}
-
+		systemStats.innerHTML = `
+			<div><span style="opacity:.6;">Total Users:</span> <span>${data.summary.totalUsers}</span></div>
+			<div><span style="opacity:.6;">Active Users:</span> <span style="color:var(--brand);font-weight:700;">${data.summary.activeUsers}</span></div>
+			<div><span style="opacity:.6;">Total Routers:</span> <span>${data.summary.totalRouters}</span></div>
+			<div><span style="opacity:.6;">Total Data Served:</span> <span>${data.summary.totalDataServed.toFixed(2)} MB</span></div>
+		`;
+		
 		// Update network stats
 		const networkStats = document.getElementById('networkStats');
-		if (networkStats) {
-			networkStats.innerHTML = `
-				<div><span style="opacity:.6;">Avg Download:</span> <span>${(Number(summary.averageDownMbps || 0)).toFixed(2)} Mbps</span></div>
-				<div><span style="opacity:.6;">Avg Upload:</span> <span>${(Number(summary.averageUpMbps || 0)).toFixed(2)} Mbps</span></div>
-				<div><span style="opacity:.6;">Last Updated:</span> <span>${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</span></div>
-			`;
-		}
-
+		networkStats.innerHTML = `
+			<div><span style="opacity:.6;">Avg Download:</span> <span>${data.summary.averageDownMbps.toFixed(2)} Mbps</span></div>
+			<div><span style="opacity:.6;">Avg Upload:</span> <span>${data.summary.averageUpMbps.toFixed(2)} Mbps</span></div>
+			<div><span style="opacity:.6;">Last Updated:</span> <span>${new Date(data.timestamp).toLocaleTimeString()}</span></div>
+		`;
+		
 		// Update routers table
 		const routersTableBody = document.querySelector('#adminRoutersTable tbody');
-		if (routersTableBody) {
-			routersTableBody.innerHTML = routers.map(router => `
-				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:8px;font-weight:600;">${router.routerId || ''}</td>
-					<td style="padding:8px;">${router.ipAddress || ''}</td>
-					<td style="padding:8px;">${router.location || ''}</td>
-					<td style="padding:8px;">${(Number(router.totalDataServed || 0)).toFixed(2)} MB</td>
-					<td style="padding:8px;font-weight:600;color:var(--brand);">${router.connectedUsers || 0}</td>
-					<td style="padding:8px;"><span style="color:#28a745;font-weight:600;">${router.status || 'Unknown'}</span></td>
-					<td style="padding:8px;">${(Number(router.downMbps || 0)).toFixed(2)}</td>
-					<td style="padding:8px;">${(Number(router.upMbps || 0)).toFixed(2)}</td>
-					<td style="padding:8px;">${router.lastMaintenance || '-'}</td>
-					<td style="padding:8px;">${Array.isArray(router.flags) ? router.flags.join(', ') : (router.flags || 'None')}</td>
-				</tr>
-			`).join('');
-		}
-
+		routersTableBody.innerHTML = data.routers.map(router => `
+			<tr style="border-bottom:1px solid #eee;">
+				<td style="padding:8px;font-weight:600;">${router.routerId}</td>
+				<td style="padding:8px;">${router.ipAddress}</td>
+				<td style="padding:8px;">${router.location}</td>
+				<td style="padding:8px;">${router.totalDataServed.toFixed(2)} MB</td>
+				<td style="padding:8px;font-weight:600;color:var(--brand);">${router.connectedUsers}</td>
+				<td style="padding:8px;"><span style="color:#28a745;font-weight:600;">${router.status}</span></td>
+				<td style="padding:8px;">${router.downMbps.toFixed(2)}</td>
+				<td style="padding:8px;">${router.upMbps.toFixed(2)}</td>
+				<td style="padding:8px;">${router.lastMaintenance}</td>
+				<td style="padding:8px;">${Array.isArray(router.flags) ? router.flags.join(', ') : router.flags || 'None'}</td>
+			</tr>
+		`).join('');
+		
 		// Update users table
 		const usersTableBody = document.querySelector('#adminUsersTable tbody');
-		if (usersTableBody) {
-			usersTableBody.innerHTML = users.map(user => `
-				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:6px;font-weight:600;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${user.identifier || ''}</td>
-					<td style="padding:6px;">${user.ip || ''}</td>
-					<td style="padding:6px;">${user.wifiNetwork || ''}</td>
-					<td style="padding:6px;">${user.routerId || ''}</td>
-					<td style="padding:6px;color:var(--brand);font-weight:600;">${(Number(user.downMbps || 0)).toFixed(2)}</td>
-					<td style="padding:6px;color:var(--brand);font-weight:600;">${(Number(user.upMbps || 0)).toFixed(2)}</td>
-					<td style="padding:6px;">${(Number(user.totalDataMB || 0)).toFixed(2)} MB</td>
-					<td style="padding:6px;">${(Number(user.remainingDataMB || 0)).toFixed(2)} MB</td>
-					<td style="padding:6px;">${user.connectionDuration || 0} min</td>
-					<td style="padding:6px;">${user.lastActivity ? new Date(user.lastActivity).toLocaleTimeString() : '-'}</td>
-					<td style="padding:6px;"><span style="color:${user.isActive ? '#007bff' : '#ffc107'};font-weight:600;">${user.status || 'Unknown'}</span></td>
-				</tr>
-			`).join('');
-		}
-
+		usersTableBody.innerHTML = data.users.map(user => `
+			<tr style="border-bottom:1px solid #eee;">
+				<td style="padding:6px;font-weight:600;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${user.identifier}</td>
+				<td style="padding:6px;">${user.ip}</td>
+				<td style="padding:6px;">${user.wifiNetwork}</td>
+				<td style="padding:6px;">${user.routerId}</td>
+				<td style="padding:6px;color:var(--brand);font-weight:600;">${user.downMbps.toFixed(2)}</td>
+				<td style="padding:6px;color:var(--brand);font-weight:600;">${user.upMbps.toFixed(2)}</td>
+				<td style="padding:6px;">${user.totalDataMB.toFixed(2)} MB</td>
+				<td style="padding:6px;">${user.remainingDataMB.toFixed(2)} MB</td>
+				<td style="padding:6px;">${user.connectionDuration} min</td>
+				<td style="padding:6px;">${new Date(user.lastActivity).toLocaleTimeString()}</td>
+				<td style="padding:6px;"><span style="color:${user.isActive ? '#007bff' : '#ffc107'};font-weight:600;">${user.status}</span></td>
+			</tr>
+		`).join('');
+		
 		// Update registrations table
 		const registrationsTableBody = document.querySelector('#adminRegistrationsTable tbody');
-		if (registrationsTableBody) {
-			registrationsTableBody.innerHTML = registrations.map(reg => `
-				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:6px;font-weight:600;font-size:10px;">${reg.userId || reg.identifier || ''}</td>
-					<td style="padding:6px;">${reg.email || ''}</td>
-					<td style="padding:6px;">${reg.registrationDate ? new Date(reg.registrationDate).toLocaleDateString() : '-'}</td>
-					<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.loginCount || 0}</td>
-					<td style="padding:6px;">${reg.lastLogin ? new Date(reg.lastLogin).toLocaleString() : '-'}</td>
-					<td style="padding:6px;">${reg.lastLoginIP || '-'}</td>
-					<td style="padding:6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${reg.lastLoginDevice ? reg.lastLoginDevice.substring(0, 50) : '-'}</td>
-					<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.profileChangeCount || 0}</td>
-					<td style="padding:6px;">${reg.lastProfileChange ? new Date(reg.lastProfileChange).toLocaleString() : '-'}</td>
-					<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.passwordResetCount || 0}</td>
-					<td style="padding:6px;">${reg.lastPasswordReset ? new Date(reg.lastPasswordReset).toLocaleString() : '-'}</td>
-				</tr>
-			`).join('');
-		}
-
+		registrationsTableBody.innerHTML = (data.registrations || []).map(reg => `
+			<tr style="border-bottom:1px solid #eee;">
+				<td style="padding:6px;font-weight:600;font-size:10px;">${reg.userId || reg.identifier || ''}</td>
+				<td style="padding:6px;">${reg.email || ''}</td>
+				<td style="padding:6px;">${reg.registrationDate ? new Date(reg.registrationDate).toLocaleDateString() : '-'}</td>
+				<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.loginCount || 0}</td>
+				<td style="padding:6px;">${reg.lastLogin ? new Date(reg.lastLogin).toLocaleString() : '-'}</td>
+				<td style="padding:6px;">${reg.lastLoginIP || '-'}</td>
+				<td style="padding:6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${reg.lastLoginDevice ? reg.lastLoginDevice.substring(0, 50) : '-'}</td>
+				<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.profileChangeCount || 0}</td>
+				<td style="padding:6px;">${reg.lastProfileChange ? new Date(reg.lastProfileChange).toLocaleString() : '-'}</td>
+				<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.passwordResetCount || 0}</td>
+				<td style="padding:6px;">${reg.lastPasswordReset ? new Date(reg.lastPasswordReset).toLocaleString() : '-'}</td>
+			</tr>
+		`).join('');
+		
 		// Update ads table
 		const adsTableBody = document.querySelector('#adminAdsTable tbody');
-		if (adsTableBody) {
-			adsTableBody.innerHTML = ads.map(ad => `
-				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:6px;font-weight:600;">${ad.adId || ''}</td>
-					<td style="padding:6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${ad.title || ''}</td>
-					<td style="padding:6px;">${ad.type || ''}</td>
-					<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.views || 0}</td>
-					<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.clicks || 0}</td>
-					<td style="padding:6px;font-weight:600;">${ad.ctr ? (Number(ad.ctr).toFixed(2)) : '0.00'}%</td>
-					<td style="padding:6px;">${ad.uniqueUsers || 0}</td>
-					<td style="padding:6px;">${ad.watchDurationSeconds || 0}</td>
-					<td style="padding:6px;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${Array.isArray(ad.routerZones) ? ad.routerZones.join(', ') : (ad.routerZones || '-')}</td>
-					<td style="padding:6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${ad.ageDemographics ? Object.entries(ad.ageDemographics).map(([k,v]) => `${k}:${v}`).join(', ') : '-'}</td>
-				</tr>
-			`).join('');
-		}
-
+		adsTableBody.innerHTML = (data.ads || []).map(ad => `
+			<tr style="border-bottom:1px solid #eee;">
+				<td style="padding:6px;font-weight:600;">${ad.adId || ''}</td>
+				<td style="padding:6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${ad.title || ''}</td>
+				<td style="padding:6px;">${ad.type || ''}</td>
+				<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.views || 0}</td>
+				<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.clicks || 0}</td>
+				<td style="padding:6px;font-weight:600;">${ad.ctr ? ad.ctr.toFixed(2) : '0.00'}%</td>
+				<td style="padding:6px;">${ad.uniqueUsers || 0}</td>
+				<td style="padding:6px;">${ad.watchDurationSeconds || 0}</td>
+				<td style="padding:6px;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${Array.isArray(ad.routerZones) ? ad.routerZones.join(', ') : ad.routerZones || '-'}</td>
+				<td style="padding:6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${ad.ageDemographics ? Object.entries(ad.ageDemographics).map(([k,v]) => `${k}:${v}`).join(', ') : '-'}</td>
+			</tr>
+		`).join('');
+		
 		adminLoading.style.display = 'none';
 		adminContent.style.display = 'flex';
-
+		
 		// Start auto-refresh for admin dashboard (every 10 seconds)
 		startAdminAutoRefresh();
-
+		
 	} catch (error) {
 		console.error('Admin dashboard error:', error);
-		if (adminLoading) adminLoading.style.display = 'none';
-		if (adminError) {
-			adminError.style.display = 'block';
-			adminError.textContent = `Error loading dashboard: ${error && error.message ? error.message : 'Unknown error'}`;
-		}
-
+		adminLoading.style.display = 'none';
+		adminError.style.display = 'block';
+		adminError.textContent = `Error loading dashboard: ${error.message}`;
+		
 		// Retry auto-refresh even on error (every 15 seconds)
 		setTimeout(() => {
-			if (document.getElementById('adminDashboard') && document.getElementById('adminDashboard').style.display !== 'none') {
+			if (document.getElementById('adminDashboard').style.display !== 'none') {
 				loadAdminDashboard();
 			}
 		}, 15000);
@@ -1168,8 +1182,8 @@ function startAdminAutoRefresh() {
 }
 
 async function refreshAdminDataSilently() {
-	const currentId = (sessionStorage.getItem('currentUserIdentifier') || '').toLowerCase();
-
+	const currentId = sessionStorage.getItem('currentUserIdentifier');
+	
 	try {
 		// Load real-time usage data without showing loading state
 		const response = await fetch('/api/admin/realtime-usage', {
@@ -1177,46 +1191,40 @@ async function refreshAdminDataSilently() {
 				'X-User-Identifier': currentId
 			}
 		});
-
+		
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
-
+		
 		const data = await response.json();
-
-		if (!data || !data.ok) {
-			throw new Error((data && data.message) || 'Failed to load data');
+		
+		if (!data.ok) {
+			throw new Error(data.message || 'Failed to load data');
 		}
-
-		const summary = data.summary || {};
-		const routers = Array.isArray(data.routers) ? data.routers : [];
-		const users = Array.isArray(data.users) ? data.users : [];
-		const registrations = Array.isArray(data.registrations) ? data.registrations : [];
-		const ads = Array.isArray(data.ads) ? data.ads : [];
-
+		
 		// Update system stats silently
 		const systemStats = document.getElementById('systemStats');
 		if (systemStats) {
 			systemStats.innerHTML = `
-				<div><span style="opacity:.6;">Total Users:</span> <span>${summary.totalUsers || 0}</span></div>
-				<div><span style="opacity:.6;">Active Users:</span> <span style="color:var(--brand);font-weight:700;">${summary.activeUsers || 0}</span></div>
-				<div><span style="opacity:.6;">Total Routers:</span> <span>${summary.totalRouters || 0}</span></div>
-				<div><span style="opacity:.6;">Total Data Served:</span> <span>${(Number(summary.totalDataServed || 0)).toFixed(2)} MB</span></div>
+				<div><span style="opacity:.6;">Total Users:</span> <span>${data.summary.totalUsers}</span></div>
+				<div><span style="opacity:.6;">Active Users:</span> <span style="color:var(--brand);font-weight:700;">${data.summary.activeUsers}</span></div>
+				<div><span style="opacity:.6;">Total Routers:</span> <span>${data.summary.totalRouters}</span></div>
+				<div><span style="opacity:.6;">Total Data Served:</span> <span>${data.summary.totalDataServed.toFixed(2)} MB</span></div>
 			`;
 		}
-
+		
 		// Update network stats silently with LIVE bandwidth like sports scores
 		const networkStats = document.getElementById('networkStats');
 		if (networkStats) {
-			const totalDown = Number(summary.totalDownMbps || 0);
-			const totalUp = Number(summary.totalUpMbps || 0);
-			const peakDown = Number(summary.networkPeakDown || 0);
-			const peakUp = Number(summary.networkPeakUp || 0);
-
+			const totalDown = data.summary.totalDownMbps || 0;
+			const totalUp = data.summary.totalUpMbps || 0;
+			const peakDown = data.summary.networkPeakDown || 0;
+			const peakUp = data.summary.networkPeakUp || 0;
+			
 			// Color coding like sports scores
 			const downColor = totalDown > 20 ? '#ff4444' : totalDown > 5 ? '#ff8800' : '#44ff44';
 			const upColor = totalUp > 10 ? '#ff4444' : totalUp > 2 ? '#ff8800' : '#44ff44';
-
+			
 			networkStats.innerHTML = `
 				<div style="display:flex;justify-content:space-between;margin-bottom:10px;">
 					<div style="text-align:center;flex:1;">
@@ -1235,52 +1243,52 @@ async function refreshAdminDataSilently() {
 					<div>Peak ↑ ${peakUp.toFixed(1)} Mbps</div>
 				</div>
 				<div style="margin-top:5px;text-align:center;font-size:10px;opacity:.6;">
-					Network Status: <span style="color:var(--brand);">${summary.networkStatus || 'Normal'}</span>
+					Network Status: <span style="color:var(--brand);">${data.summary.networkStatus || 'Normal'}</span>
 				</div>
 			`;
 		}
-
+		
 		// Update tables silently
 		const routersTableBody = document.querySelector('#adminRoutersTable tbody');
-		if (routersTableBody) {
-			routersTableBody.innerHTML = routers.map(router => `
+		if (routersTableBody && data.routers) {
+			routersTableBody.innerHTML = data.routers.map(router => `
 				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:8px;font-weight:600;">${router.routerId || ''}</td>
-					<td style="padding:8px;">${router.ipAddress || ''}</td>
-					<td style="padding:8px;">${router.location || ''}</td>
-					<td style="padding:8px;">${(Number(router.totalDataServed || 0)).toFixed(2)} MB</td>
-					<td style="padding:8px;font-weight:600;color:var(--brand);">${router.connectedUsers || 0}</td>
-					<td style="padding:8px;"><span style="color:#28a745;font-weight:600;">${router.status || 'Unknown'}</span></td>
-					<td style="padding:8px;">${(Number(router.downMbps || 0)).toFixed(2)}</td>
-					<td style="padding:8px;">${(Number(router.upMbps || 0)).toFixed(2)}</td>
-					<td style="padding:8px;">${router.lastMaintenance || '-'}</td>
-					<td style="padding:8px;">${Array.isArray(router.flags) ? router.flags.join(', ') : (router.flags || 'None')}</td>
+					<td style="padding:8px;font-weight:600;">${router.routerId}</td>
+					<td style="padding:8px;">${router.ipAddress}</td>
+					<td style="padding:8px;">${router.location}</td>
+					<td style="padding:8px;">${router.totalDataServed.toFixed(2)} MB</td>
+					<td style="padding:8px;font-weight:600;color:var(--brand);">${router.connectedUsers}</td>
+					<td style="padding:8px;"><span style="color:#28a745;font-weight:600;">${router.status}</span></td>
+					<td style="padding:8px;">${router.downMbps.toFixed(2)}</td>
+					<td style="padding:8px;">${router.upMbps.toFixed(2)}</td>
+					<td style="padding:8px;">${router.lastMaintenance}</td>
+					<td style="padding:8px;">${Array.isArray(router.flags) ? router.flags.join(', ') : router.flags || 'None'}</td>
 				</tr>
 			`).join('');
 		}
-
+		
 		const usersTableBody = document.querySelector('#adminUsersTable tbody');
-		if (usersTableBody) {
-			usersTableBody.innerHTML = users.map(user => `
+		if (usersTableBody && data.users) {
+			usersTableBody.innerHTML = data.users.map(user => `
 				<tr style="border-bottom:1px solid #eee;">
-					<td style="padding:6px;font-weight:600;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${user.identifier || ''}</td>
-					<td style="padding:6px;">${user.ip || ''}</td>
-					<td style="padding:6px;">${user.wifiNetwork || ''}</td>
-					<td style="padding:6px;">${user.routerId || ''}</td>
-					<td style="padding:6px;color:var(--brand);font-weight:600;">${(Number(user.downMbps || 0)).toFixed(2)}</td>
-					<td style="padding:6px;color:var(--brand);font-weight:600;">${(Number(user.upMbps || 0)).toFixed(2)}</td>
-					<td style="padding:6px;">${(Number(user.totalDataMB || 0)).toFixed(2)} MB</td>
-					<td style="padding:6px;">${(Number(user.remainingDataMB || 0)).toFixed(2)} MB</td>
-					<td style="padding:6px;">${user.connectionDuration || 0} min</td>
-					<td style="padding:6px;">${user.lastActivity ? new Date(user.lastActivity).toLocaleTimeString() : '-'}</td>
-					<td style="padding:6px;"><span style="color:${user.isActive ? '#007bff' : '#ffc107'};font-weight:600;">${user.status || 'Unknown'}</span></td>
+					<td style="padding:6px;font-weight:600;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${user.identifier}</td>
+					<td style="padding:6px;">${user.ip}</td>
+					<td style="padding:6px;">${user.wifiNetwork}</td>
+					<td style="padding:6px;">${user.routerId}</td>
+					<td style="padding:6px;color:var(--brand);font-weight:600;">${user.downMbps.toFixed(2)}</td>
+					<td style="padding:6px;color:var(--brand);font-weight:600;">${user.upMbps.toFixed(2)}</td>
+					<td style="padding:6px;">${user.totalDataMB.toFixed(2)} MB</td>
+					<td style="padding:6px;">${user.remainingDataMB.toFixed(2)} MB</td>
+					<td style="padding:6px;">${user.connectionDuration} min</td>
+					<td style="padding:6px;">${new Date(user.lastActivity).toLocaleTimeString()}</td>
+					<td style="padding:6px;"><span style="color:${user.isActive ? '#007bff' : '#ffc107'};font-weight:600;">${user.status}</span></td>
 				</tr>
 			`).join('');
 		}
-
+		
 		const registrationsTableBody = document.querySelector('#adminRegistrationsTable tbody');
-		if (registrationsTableBody) {
-			registrationsTableBody.innerHTML = registrations.map(reg => `
+		if (registrationsTableBody && data.registrations) {
+			registrationsTableBody.innerHTML = data.registrations.map(reg => `
 				<tr style="border-bottom:1px solid #eee;">
 					<td style="padding:6px;font-weight:600;font-size:10px;">${reg.userId || reg.identifier || ''}</td>
 					<td style="padding:6px;">${reg.email || ''}</td>
@@ -1292,18 +1300,31 @@ async function refreshAdminDataSilently() {
 					<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.profileChangeCount || 0}</td>
 					<td style="padding:6px;">${reg.lastProfileChange ? new Date(reg.lastProfileChange).toLocaleString() : '-'}</td>
 					<td style="padding:6px;font-weight:600;color:var(--brand);">${reg.passwordResetCount || 0}</td>
-					<td style="padding:6px;">${reg.lastPasswordReset ? new Date(reg.lastPasswordReset).toLocaleTimeString() : '-'}</td>
+					<td style="padding:6px;">${reg.lastPasswordReset ? new Date(reg.lastPasswordReset).toLocaleString() : '-'}</td>
 				</tr>
 			`).join('');
 		}
-
-		if (document.getElementById('adminContent')) {
-			document.getElementById('adminContent').style.display = 'flex';
+		
+		const adsTableBody = document.querySelector('#adminAdsTable tbody');
+		if (adsTableBody && data.ads) {
+			adsTableBody.innerHTML = data.ads.map(ad => `
+				<tr style="border-bottom:1px solid #eee;">
+					<td style="padding:6px;font-weight:600;">${ad.adId || ''}</td>
+					<td style="padding:6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${ad.title || ''}</td>
+					<td style="padding:6px;">${ad.type || ''}</td>
+					<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.views || 0}</td>
+					<td style="padding:6px;font-weight:600;color:var(--brand);">${ad.clicks || 0}</td>
+					<td style="padding:6px;font-weight:600;">${ad.ctr ? ad.ctr.toFixed(2) : '0.00'}%</td>
+					<td style="padding:6px;">${ad.uniqueUsers || 0}</td>
+					<td style="padding:6px;">${ad.watchDurationSeconds || 0}</td>
+					<td style="padding:6px;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${Array.isArray(ad.routerZones) ? ad.routerZones.join(', ') : ad.routerZones || '-'}</td>
+					<td style="padding:6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${ad.ageDemographics ? Object.entries(ad.ageDemographics).map(([k,v]) => `${k}:${v}`).join(', ') : '-'}</td>
+				</tr>
+			`).join('');
 		}
-
+		
 	} catch (error) {
 		console.error('Silent refresh error:', error);
-		// Let caller handle error; throw to allow retry logic to run
 		throw error;
 	}
 }
@@ -1719,7 +1740,7 @@ function startAdSequence(bundleSize){
 	videoWatchTime = 0;
 	videoCompletionValidated = false;
 	
-	const adCount=bundleSize===100?5:bundleSize===250?8:15;
+	const adCount=bundleSize===100?5:bundleSize===250?10:15;
 	let basePool;
 	if(USE_MP4_ONLY) basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
 	else if(USE_YOUTUBE_ONLY) basePool=ytAds.map(id=>({type:'yt',id}));

@@ -1,0 +1,51 @@
+{
+  "0796694562": {
+    "deviceTokens": {
+      "031f0b64": {
+        "deviceId": "031f0b64",
+        "mac": "",
+        "granted": 1756355889000,
+        "expires": 1756442289000,
+        "accessLevel": 5,
+        "dataGranted": 104857600,
+        "reason": "Video completion milestone - 5 videos watched"
+      },
+      "c21f969b": {
+        "deviceId": "c21f969b",
+        "mac": "",
+        "granted": 1756355889000,
+        "expires": 1756442289000,
+        "accessLevel": 5,
+        "dataGranted": 104857600,
+        "reason": "Video completion milestone - 5 videos watched"
+      },
+      "8feb4679": {
+        "deviceId": "8feb4679",
+        "mac": "",
+        "granted": 1756355889000,
+        "expires": 1756442289000,
+        "accessLevel": 5,
+        "dataGranted": 104857600,
+        "reason": "Video completion milestone - 5 videos watched"
+      },
+      "81a6c8ca": {
+        "deviceId": "81a6c8ca",
+        "mac": "",
+        "granted": 1756355889000,
+        "expires": 1756442289000,
+        "accessLevel": 5,
+        "dataGranted": 104857600,
+        "reason": "Video completion milestone - 5 videos watched"
+      }
+    },
+    "allowedDevices": ["031f0b64", "c21f969b", "8feb4679", "81a6c8ca"],
+    "routerAccess": {
+      "default-router": {
+        "granted": 1756355889000,
+        "expires": 1756442289000,
+        "level": 5,
+        "dataAllowed": 104857600
+      }
+    }
+  }
+}
