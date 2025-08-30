@@ -4932,8 +4932,16 @@ app.post('/api/video/complete', (req, res) => {
     const earnedMB = recordVideoView(identifier, deviceId, videoUrl, duration, routerId);
     
     // Get updated video count and total earned data
-    const videosWatched = getVideosWatched(identifier, deviceId);
-    const totalVideoEarnedMB = calculateVideoEarnedData(videosWatched);
+  const videosWatched = getVideosWatched(identifier, deviceId);
+  const totalVideoEarnedMB = calculateVideoEarnedData(videosWatched);
+
+  // Ensure we have a numeric count for videos watched (some helpers return arrays or numbers)
+  const count = Array.isArray(videosWatched) ? videosWatched.length : (Number(videosWatched) || 0);
+
+  // Setup bundle/milestone tracking variables
+  let milestone = null;
+  let bundleAmount = 0;
+  let newBundleCreated = false;
     
     // CRITICAL: Set video notification received flag to unlock internet access
     let deviceSession = deviceSessions.get(deviceId) || deviceSessions.get(identifier);

@@ -2588,6 +2588,23 @@ function grantBundle(){
 					adStatus.style.color = '#10b981'; // Green success color
 					
 					showToast(bundleSizeSelected + ' MB data bundle activated! Enjoy your internet access.'); 
+					// Notify server of video completion so device/session is marked as notified
+					try {
+						await fetch('/api/video/complete', {
+							method: 'POST',
+							headers: {'Content-Type':'application/json'},
+							body: JSON.stringify({
+								identifier: identifier,
+								videoUrl: adList && adList.length ? (adList[currentAdIndex-1] || '') : '',
+								duration: totalWatchTime || 0,
+								deviceId: null
+							})
+						});
+						console.log('[VIDEO-COMPLETE-NOTIFY] server notified of completion for', identifier);
+					} catch(notifyErr){ console.warn('[VIDEO-COMPLETE-NOTIFY-ERR]', notifyErr); }
+					
+					// Inform user clearly that internet should now be available
+					adStatus.textContent = bundleSizeSelected + ' MB activated — internet should be available now.';
 				} else {
 					// Handle grant failure
 					const errorData = await response.json().catch(() => ({}));
