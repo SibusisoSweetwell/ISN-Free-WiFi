@@ -2220,6 +2220,32 @@ app.post('/api/bundle/grant', (req,res)=>{
       try { fullAccessUnlocked.add(entry.identifier.toLowerCase()); } catch {}
     }
   }
+  try {
+    // Mark device as having received a bundle so proxy can recognise device-scoped access
+    try {
+      const deviceKey = deviceFingerprint || '';
+      const current = deviceBundlesGranted.get(deviceKey) || new Set();
+      current.add(bundleMB);
+      deviceBundlesGranted.set(deviceKey, current);
+    } catch (e) { console.warn('[BUNDLE-GRANT-DEVICE-TRACK-ERR]', e && e.message); }
+
+    // Temporary full access for device and identifier to take effect immediately
+    const grantExpiry = Date.now() + (6 * 60 * 60 * 1000); // 6 hours
+    try { tempFullAccess.set(entry.identifier, grantExpiry); } catch {}
+    try { tempFullAccess.set(deviceFingerprint, grantExpiry); } catch {}
+
+    // If deviceIsolation supports persistent device tokens, create one so manual proxy lookup works
+    try {
+      if (deviceIsolation && typeof deviceIsolation.setDeviceAccessToken === 'function') {
+        const token = {
+          identifier: entry.identifier,
+          bundlesMB: bundleMB,
+          expires: grantExpiry
+        };
+        deviceIsolation.setDeviceAccessToken(deviceFingerprint, token);
+      }
+    } catch (e) { console.warn('[DEVICE-ISOLATION-SET-TOKEN-ERR]', e && e.message); }
+  } catch (err) { console.warn('[BUNDLE-GRANT-POST-PROCESS-ERR]', err && err.message); }
   console.log(`[BUNDLE-GRANT] ${bundleMB}MB granted to device ${deviceFingerprint} for user ${identifier}`);
   // Lightweight signed token (NOT JWT) -> id.exp.signature
   const expires = Date.now() + 6*60*60*1000; // 6h session token
@@ -2649,17 +2675,43 @@ function startProxy(){
       });
       // Continue processing - allow video ad access for video watching
     }
-    // MANUAL PROXY: Block everything except portal and video ads until user logs in
+    // MANUAL PROXY: Allow manual-proxy users who have watched videos on THIS device
+    // to get temporary access without forcing a full login. Otherwise require login.
     else if (isManualProxy && !mappedIdentifier && !isPortalHost) {
-      console.log('[MANUAL-PROXY-BLOCKED] Manual proxy user must login first:', { 
-        host: hostHeader, 
-        ip: clientIp
-      });
-      clientRes.writeHead(302, { 
-        'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
-        'Content-Type': 'text/html; charset=utf-8'
-      });
-      clientRes.end(`<!DOCTYPE html>
+      try {
+        const userAgent = clientReq.headers['user-agent'] || '';
+        const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
+        const deviceInfo = generateDeviceFingerprint(clientReq);
+        const deviceId = deviceInfo.deviceId;
+
+        // Attempt to get videos watched for this specific device fingerprint
+        const videosWatched = typeof getVideosWatchedForUser === 'function'
+          ? getVideosWatchedForUser(null, deviceId, routerId)
+          : (typeof getVideosWatched === 'function' ? (getVideosWatched(null, deviceId, routerId) || []).length : 0);
+
+        let videoCount = 0;
+        if (Array.isArray(videosWatched)) videoCount = videosWatched.length;
+        else videoCount = Number(videosWatched) || 0;
+
+        let videoAccessMB = 0;
+        if (videoCount >= 15) videoAccessMB = 500;
+        else if (videoCount >= 10) videoAccessMB = 250;
+        else if (videoCount >= 5) videoAccessMB = 100;
+
+        if (videoAccessMB > 0) {
+          // Grant a temporary device-scoped unlock so the proxy code later in the pipeline
+          // recognises this device as entitled to consume the video-earned allowance.
+          const expiry = Date.now() + (4 * 60 * 60 * 1000); // 4 hours
+          tempFullAccess.set(deviceId, expiry);
+          console.log('[MANUAL-PROXY-VIDEO-ACCESS-GRANTED]', { deviceId: deviceId.slice(0,8), videoCount, videoAccessMB });
+          // Do not return here; allow the request to continue and be processed normally.
+        } else {
+          console.log('[MANUAL-PROXY-BLOCKED] Manual proxy user must login first:', { host: hostHeader, ip: clientIp, videos: videoCount });
+          clientRes.writeHead(302, {
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
+            'Content-Type': 'text/html; charset=utf-8'
+          });
+          clientRes.end(`<!DOCTYPE html>
 <html><head>
 <title>Manual Proxy - Login Required</title>
 <meta http-equiv="refresh" content="3;url=http://${localIps[0] || 'localhost'}:${PORT}/login.html">
@@ -2675,7 +2727,17 @@ function startProxy(){
 <p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#007bff;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Login to Portal</a></p>
 <p><small>Redirecting in 3 seconds...</small></p>
 </body></html>`);
-      return;
+          return;
+        }
+      } catch (err) {
+        console.warn('[MANUAL-PROXY-ERROR]', err && err.message);
+        clientRes.writeHead(302, {
+          'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
+          'Content-Type': 'text/html; charset=utf-8'
+        });
+        clientRes.end(`<html><body>Redirecting to login...</body></html>`);
+        return;
+      }
     }
     
     // AUTO PROXY: Block everything except portal until user watches videos AND has active data bundles
