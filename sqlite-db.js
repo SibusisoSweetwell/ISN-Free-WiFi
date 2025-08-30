@@ -84,6 +84,10 @@ function hashPassword(p) {
   return bcrypt.hashSync(p, 10);
 }
 
+// Local safe logging helpers - only emit verbose SQLITE debugging when DEBUG_SQLITE=true
+function _maskSecret(s){ if(!s) return '<none>'; const st=String(s); if(st.length<=6) return st[0]+'***'; return st.slice(0,3)+'...'+st.slice(-3); }
+function _sqliteDbg(){ if(process.env.DEBUG_SQLITE!=='true') return; try{ console.debug.apply(console, arguments); }catch(e){} }
+
 function validateLogin(identifier, password) {
   if (!DB) {
     console.warn('[SQLITE-DBG] validateLogin called but DB not initialized');
@@ -93,19 +97,19 @@ function validateLogin(identifier, password) {
   const pw = String(password || '');
   const maskedPw = pw.length > 2 ? pw[0] + '***' + pw[pw.length-1] : '***';
   const isEmail = id.includes('@');
-  console.log('[SQLITE-DBG] validateLogin input:', { identifier: id, password: maskedPw });
+  _sqliteDbg('[SQLITE-DBG] validateLogin input:', { identifier: id, password: maskedPw });
   const row = isEmail
     ? DB.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(id)
     : DB.prepare('SELECT * FROM users WHERE phone=?').get(id);
   if (!row) {
-    console.log('[SQLITE-DBG] user not found for', id);
+    _sqliteDbg('[SQLITE-DBG] user not found for', id);
     return false;
   }
 
   if (row.password_hash) {
     try {
       const ok = bcrypt.compareSync(pw, row.password_hash);
-      console.log('[SQLITE-DBG] user found, password_hash present, bcrypt.compareSync ->', ok);
+      _sqliteDbg('[SQLITE-DBG] user found, password_hash present, bcrypt.compareSync ->', ok);
       return ok;
     } catch (err) {
       console.warn('[SQLITE-DBG] bcrypt.compareSync error', err && err.message);
@@ -115,9 +119,11 @@ function validateLogin(identifier, password) {
 
   // legacy: if password_hash missing, allow plain-text match then migrate
   if (row.password && row.password === pw) {
-    console.log('[SQLITE-DBG] legacy plaintext password matched; migrating to hash');
+    _sqliteDbg('[SQLITE-DBG] legacy plaintext password matched; migrating to hash');
     const newHash = hashPassword(pw);
     DB.prepare('UPDATE users SET password_hash=? WHERE id=?').run(newHash, row.id);
+    // Remove legacy plaintext to avoid keeping secrets in DB
+    try { DB.prepare('UPDATE users SET password=NULL WHERE id=?').run(row.id); } catch(e){}
     return true;
   }
   return false;
@@ -147,8 +153,9 @@ function createUser(obj) {
   const dateISO = new Date().toISOString();
   const hash = obj.password ? hashPassword(obj.password) : null;
   const emailNorm = obj.email ? String(obj.email).trim().toLowerCase() : null;
+  // IMPORTANT: Do not store plaintext password in the users table for new accounts; keep only password_hash.
   const info = DB.prepare(`INSERT INTO users (email,phone,password_hash,password,firstName,surname,dob,dateCreatedISO,dateCreatedLocal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(emailNorm, obj.phone || null, hash, obj.password || null, obj.firstName || null, obj.surname || null, obj.dob || null, dateISO, new Date().toString());
+    .run(emailNorm, obj.phone || null, hash, null, obj.firstName || null, obj.surname || null, obj.dob || null, dateISO, new Date().toString());
   return { ok: true, id: info.lastInsertRowid };
 }
 

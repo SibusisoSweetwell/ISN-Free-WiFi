@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "purchase": {
+    "id": "mexjqer5-97lj4j",
+    "identifier": "joseph@gmail.com",
+    "deviceId": "8031e1cfc3b8c4b0",
+    "email": "admin@isn.local",
+    "phone": "",
+    "bundleMB": 100,
+    "usedMB": 0,
+    "routerId": "test-router",
+    "deviceUA": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "grantedAtISO": "2025-08-30T00:51:31.505Z",
+    "source": "manual-test",
+    "strictMode": true,
+    "macAddress": "",
+    "sessionToken": "a931e076441095ac3c76b682aacee618"
+  },
+  "token": "joseph@gmail.com.1756536691576.b220a0323c692eb4e35b19f65fbd0a57",
+  "quota": {
+    "totalBundleMB": 100,
+    "remainingMB": 100,
+    "totalUsedMB": 0,
+    "exhausted": false
+  }
+}

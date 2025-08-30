@@ -62,7 +62,8 @@ try {
         
         console.log(`✅ Added ${newUsers.length} new user(s)`);
         newUsers.forEach(user => {
-            console.log(`   📧 ${user.email} / 🔑 ${user.password}`);
+            const mask = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+'***'+p.slice(-1); };
+            console.log(`   📧 ${user.email} / 🔑 ${mask(user.password)}`);
         });
     } else {
         console.log('✅ Test users already exist');
@@ -80,4 +81,4 @@ try {
 
 console.log('\n🌐 Try logging in at: http://10.5.48.94:3151/login.html');
 console.log('📧 Email: test@test.com');
-console.log('🔑 Password: test123');
+console.log('🔑 Password: test***');

@@ -11,7 +11,7 @@ async function testUserSession() {
     const response = await new Promise((resolve, reject) => {
       const postData = JSON.stringify({
         email: 'joseph@gmail.com',
-        password: 'test123'
+  password: 'test123'
       });
       
       const req = http.request({

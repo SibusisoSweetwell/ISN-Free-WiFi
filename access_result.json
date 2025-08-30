@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "quota": {
+    "totalBundleMB": 100,
+    "remainingMB": 100,
+    "totalUsedMB": 0,
+    "exhausted": false
+  }
+}

@@ -66,6 +66,10 @@
 		.btn{background:var(--brand);color:#fff;border:none;padding:14px 30px;font-weight:600;font-size:16px;border-radius:14px;cursor:pointer;box-shadow:0 8px 22px -6px rgba(0,0,0,.35);transition:background .25s, transform .25s;}
 		.btn:hover{background:var(--brand-dark);transform:translateY(-3px);}    
 
+		/* Admin-style manage button (red/white) */
+		.manage-btn { background:#e74c3c; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer }
+		.manage-btn:hover { opacity:0.95 }
+
 				/* Access bundle modal */
 				.modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(9px) saturate(140%);background:rgba(0,0,0,.35);padding:40px 24px;opacity:0;pointer-events:none;transition:opacity .45s ease;}
 				.modal-overlay.active{opacity:1;pointer-events:auto;}
@@ -449,7 +453,7 @@
 					<div id="adminError" style="color:var(--brand);background:#ffe5e5;border:1px solid #ffcccc;padding:12px;border-radius:12px;display:none;"></div>
 
 					<div id="adminContent" style="display:none;flex-direction:column;gap:24px;">
-					<div style="text-align:right;margin-bottom:6px;"><a href="admin-unlocks.html">Manage Unlocks →</a></div>
+					<div style="text-align:right;margin-bottom:6px;"><button class="manage-btn" onclick="location.href='admin-unlocks.html'">Manage Unlocks</button></div>
 						<!-- Real-time Summary -->
 						<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;">
 							<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
@@ -1021,8 +1025,8 @@ async function loadAdminDashboard() {
 		adminError.style.display = 'none';
 		adminContent.style.display = 'none';
 
-		// Load real-time usage data
-		const response = await fetch('/api/admin/realtime-usage', {
+	// Load full admin dashboard (includes users, registrations and ads)
+	const response = await fetch('/api/admin/dashboard', {
 			headers: {
 				'X-User-Identifier': currentId
 			}
@@ -1038,12 +1042,12 @@ async function loadAdminDashboard() {
 			throw new Error((data && data.message) || 'Failed to load data');
 		}
 
-		// Safe defaults
-		const summary = data.summary || {};
-		const routers = Array.isArray(data.routers) ? data.routers : [];
-		const users = Array.isArray(data.users) ? data.users : [];
-		const registrations = Array.isArray(data.registrations) ? data.registrations : [];
-		const ads = Array.isArray(data.ads) ? data.ads : [];
+	// Normalize fields from /api/admin/dashboard or fallback to realtime shape
+	const summary = data.summary || { totalUsers: data.totalUsers || 0, activeUsers: data.activeUsers || 0 };
+	const routers = Array.isArray(data.routersTable) ? data.routersTable : (Array.isArray(data.routers) ? data.routers : []);
+	const users = Array.isArray(data.usersTable) ? data.usersTable : (Array.isArray(data.users) ? data.users : []);
+	const registrations = Array.isArray(data.registrations) ? data.registrations : [];
+	const ads = Array.isArray(data.ads) ? data.ads : (Array.isArray(data.adsTable) ? data.adsTable : []);
 
 		// Update system stats
 		const systemStats = document.getElementById('systemStats');
@@ -1252,8 +1256,8 @@ async function refreshAdminDataSilently() {
 	const currentId = (sessionStorage.getItem('currentUserIdentifier') || '').toLowerCase();
 
 	try {
-		// Load real-time usage data without showing loading state
-		const response = await fetch('/api/admin/realtime-usage', {
+	// Load full admin dashboard data without showing loading state
+	const response = await fetch('/api/admin/dashboard', {
 			headers: {
 				'X-User-Identifier': currentId
 			}
@@ -1269,11 +1273,12 @@ async function refreshAdminDataSilently() {
 			throw new Error((data && data.message) || 'Failed to load data');
 		}
 
-		const summary = data.summary || {};
-		const routers = Array.isArray(data.routers) ? data.routers : [];
-		const users = Array.isArray(data.users) ? data.users : [];
-		const registrations = Array.isArray(data.registrations) ? data.registrations : [];
-		const ads = Array.isArray(data.ads) ? data.ads : [];
+	// Normalize fields to support both /realtime-usage and /dashboard shapes
+	const summary = data.summary || { totalUsers: data.totalUsers || 0, activeUsers: data.activeUsers || 0 };
+	const routers = Array.isArray(data.routersTable) ? data.routersTable : (Array.isArray(data.routers) ? data.routers : []);
+	const users = Array.isArray(data.usersTable) ? data.usersTable : (Array.isArray(data.users) ? data.users : []);
+	const registrations = Array.isArray(data.registrations) ? data.registrations : [];
+	const ads = Array.isArray(data.ads) ? data.ads : (Array.isArray(data.adsTable) ? data.adsTable : []);
 
 		// Update system stats silently
 		const systemStats = document.getElementById('systemStats');
@@ -1809,7 +1814,7 @@ function startAdSequence(bundleSize){
 	videoWatchTime = 0;
 	videoCompletionValidated = false;
 	
-	const adCount=bundleSize===100?5:bundleSize===250?8:15;
+	const adCount=bundleSize===100?5:bundleSize===250?10:15;
 	let basePool;
 	if(USE_MP4_ONLY) basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
 	else if(USE_YOUTUBE_ONLY) basePool=ytAds.map(id=>({type:'yt',id}));

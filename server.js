@@ -63,6 +63,7 @@ const RENDER_HOST = (process.env.RENDER_HOST || 'isn-free-wifi.onrender.com').to
 const PORTAL_SECRET = process.env.PORTAL_SECRET || 'isn_portal_secret_dev';
 const DATA_FILE = path.join(__dirname, 'logins.xlsx');
 const ADMIN_EMAIL = 'sbusisosweetwell15@gmail.com';
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'admin_secret_dev';
 
 // Enhanced per-device access control with MAC address tracking
 // Prevents one device from unlocking access for all other devices
@@ -637,8 +638,97 @@ function recordPurchase(identifier, bundleMB, deviceId, routerId, ua, source) {
   deviceQuotas.set(deviceId, deviceQuota);
   
   console.log(`[DEVICE-BUNDLE] Granted ${bundleMB}MB to device ${deviceId.slice(0,8)}... for user ${idLower}`);
+  try {
+    // Also persist to sqlite purchases table when available
+    if (sqliteDB) {
+      // Persist under normalized identifier so lookups by identifier succeed
+      const phoneNumber = idLower;
+      const videoCount = 0;
+      const bundleType = 'manual_grant';
+      const created = sqliteDB.createPurchaseIfNotExists(phoneNumber, videoCount, bundleMB, bundleType);
+      if (created) console.log('[SQLITE] persisted purchase for', phoneNumber);
+    }
+  } catch(e){ console.warn('[RECORD-PURCHASE-SQLITE-ERR]', e && e.message); }
   return entry;
 }
+
+// --- Admin API (protected by ADMIN_TOKEN or ?secret=) ---
+function checkAdminAuth(req) {
+  const token = req.headers['x-admin-token'] || req.query.secret || '';
+  return token === ADMIN_TOKEN;
+}
+
+app.get('/api/admin/purchases', (req, res) => {
+  if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
+  try {
+    if (sqliteDB) {
+      const rows = sqliteDB.getAllPurchases ? sqliteDB.getAllPurchases() : sqliteDB.getPurchases ? sqliteDB.getPurchases() : [];
+      return res.json({ ok: true, count: rows.length, purchases: rows.slice(0, 200) });
+    }
+    const { rows } = listPurchases();
+    return res.json({ ok: true, count: rows.length, purchases: rows.slice(0, 200) });
+  } catch (e) {
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+app.get('/api/admin/temp-unlocks', (req, res) => {
+  if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
+  try {
+    if (sqliteDB) {
+      const rows = sqliteDB.loadTempUnlocks ? sqliteDB.loadTempUnlocks() : [];
+      return res.json({ ok: true, unlocks: rows });
+    }
+    // Fallback to XLSX sheet
+    const wb = loadWorkbookWithTracking();
+    const ws = wb.Sheets['TempUnlocks'] || XLSX.utils.json_to_sheet([]);
+    const rows = XLSX.utils.sheet_to_json(ws);
+    return res.json({ ok: true, unlocks: rows });
+  } catch (e) {
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/temp-unlocks/revoke', express.json(), (req, res) => {
+  if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
+  const id = req.body && req.body.id;
+  if (!id) return res.json({ ok: false, message: 'Missing id' });
+  try {
+    if (sqliteDB && sqliteDB.removeTempUnlockById) {
+      const removed = sqliteDB.removeTempUnlockById(id);
+      return res.json({ ok: true, removed });
+    }
+    // Fallback: remove from XLSX
+    const wb = loadWorkbookWithTracking();
+    const ws = wb.Sheets['TempUnlocks'] || XLSX.utils.json_to_sheet([]);
+    let rows = XLSX.utils.sheet_to_json(ws);
+    const before = rows.length;
+    rows = rows.filter(r => String(r.id) !== String(id));
+    writeSheet(wb, 'TempUnlocks', rows);
+    return res.json({ ok: true, removed: before - rows.length });
+  } catch (e) {
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/temp-unlocks/bulk-revoke-expired', express.json(), (req, res) => {
+  if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
+  try {
+    const now = Date.now();
+    if (sqliteDB && sqliteDB.removeExpiredTempUnlocks) {
+      const removed = sqliteDB.removeExpiredTempUnlocks(now);
+      return res.json({ ok: true, removed });
+    }
+    const wb = loadWorkbookWithTracking();
+    const ws = wb.Sheets['TempUnlocks'] || XLSX.utils.json_to_sheet([]);
+    let rows = XLSX.utils.sheet_to_json(ws);
+    const before = rows.length;
+    rows = rows.filter(r => Number(r.expiry) > now);
+    writeSheet(wb, 'TempUnlocks', rows);
+    return res.json({ ok: true, removed: before - rows.length });
+  } catch (e) { return res.json({ ok: false, message: e.message }); }
+});
+
 
 // Increment usage with enhanced data tracking
 function addUsage(identifier, usedDeltaMB, deviceId, routerId) {
@@ -1030,6 +1120,17 @@ function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
     
     if (bundleCreated) {
       console.log(`[MILESTONE-REWARD] ${identifier} reached ${totalVideos} videos - bundle created!`);
+      // Ensure sqlite-created bundle is visible immediately to runtime quota checks
+      try {
+        if (typeof dataTracker.clearCache === 'function') dataTracker.clearCache(identifier.toLowerCase());
+        if (sqliteDB) {
+          // Update in-memory device quota so proxy checks see this device as having bundleMB
+          let dq = deviceQuotas.get(deviceId) || { bundleMB: 0, usedMB: 0, unlockEarned: false };
+          dq.bundleMB = (Number(dq.bundleMB) || 0) + (totalVideos === 5 ? 100 : totalVideos === 10 ? 250 : totalVideos === 15 ? 500 : 0);
+          dq.unlockEarned = true;
+          deviceQuotas.set(deviceId, dq);
+        }
+      } catch(e){ console.warn('[BUNDLE-PROPAGATION-ERR]', e && e.message); }
       // Map milestones to time-based unlocks as well
       try {
         let durationHours = 2; // default for 5 videos
@@ -1060,12 +1161,27 @@ function computeRemainingUnified(identifier, deviceFingerprint, routerId){
   // Use enhanced data tracker for accurate real-time data
   const usageData = dataTracker.getFreshUsageData(idLower);
   
-  const { data: users } = getUsers();
-  const user = users.find(u=> String(u.email||'').trim().toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
-  
-  if(!user) {
-    // For non-registered users, use basic computation
-    return computeRemaining(idLower, deviceFingerprint, routerId);
+  // Prefer sqlite user lookup when available to ensure newly-created bundles are recognized immediately
+  let user = null;
+  try {
+    if (sqliteDB) {
+      // Try to find a sqlite user record, but DO NOT force a fallback to XLSX when missing.
+      // When sqlite is active we want to use sqlite-backed purchases/usage even if there's
+      // no explicit users row for this identifier (e.g. email addresses stored in purchases).
+      user = sqliteDB.findUser(idLower) || null;
+    }
+  } catch (e) { user = null; }
+
+  if (!user) {
+    // Legacy fallback: only use XLSX store if sqlite is not active. If sqlite is active but
+    // there's no users row, continue - dataTracker/getPurchasesByPhone will still surface
+    // recent purchases created in sqlite so we must not return early to the XLSX-only path.
+    if (!sqliteDB) {
+      const { data: users } = getUsers();
+      user = users.find(u=> String(u.email||'').trim().toLowerCase()===idLower || (u.phone && u.phone===normalizePhone(idLower)) );
+      if (!user) return computeRemaining(idLower, deviceFingerprint, routerId);
+    }
+    // If sqliteDB is active and user is null, proceed - sqlite purchases/usages will be used below
   }
   
   // ENHANCED DEVICE ACCESS CHECK: Create proper device info object
@@ -1801,10 +1917,12 @@ function saveUser(email, password, phone, firstName, surname, dob){
     const created = new Date();
     const createdISO = created.toISOString();
     const createdLocal = created.toLocaleString();
+    // Store masked password in XLSX to avoid keeping plaintext in legacy sheet
+    const maskPwdForSheet = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
     data.push({
       email: origEmail || '',
       phone: normPhone || '',
-      password,
+      password: maskPwdForSheet(password),
       firstName: firstName||'',
       surname: surname||'',
       dob: dob||'',
@@ -1818,7 +1936,8 @@ function saveUser(email, password, phone, firstName, surname, dob){
     
     try {
   if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
-      try {
+        try {
+        // Keep logging minimal; only show masked representation
         const maskPwd = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
         console.log('[REGISTRATION] xlsx user created:', { identifier: (origEmail || normPhone), password_mask: maskPwd(password) });
       } catch(e){ /* best-effort logging */ }
@@ -2084,14 +2203,14 @@ app.post('/api/bundle/grant', (req,res)=>{
   const routerIdValue = routerId || req.headers['x-router-id'] || req.ip || 'unknown';
   const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerIdValue).digest('hex').slice(0,16);
   
-  // FIXED: Call recordPurchase with correct parameters
+  // FIXED: Call recordPurchase with correct parameters (deviceFingerprint is the deviceId)
   const entry = recordPurchase(
-    identifier.trim(), 
-    bundleMB, 
-    routerIdValue, 
-    userAgent, 
-    source || 'manual', 
-    deviceFingerprint
+    identifier.trim(),
+    bundleMB,
+    deviceFingerprint,
+    routerIdValue,
+    userAgent,
+    source || 'manual'
   );
   registerActiveClient(req, entry.identifier);
   if(source==='ad-sequence'){
@@ -2179,7 +2298,8 @@ app.get('/api/access/check', (req,res)=>{
     const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
     
     const quota=computeRemainingUnified(identifier, deviceFingerprint, routerId);
-    res.json({ ok:true, quota });
+    // Add debug info showing deviceFingerprint and sqlite purchases count for this identifier
+  res.json({ ok:true, quota });
   } catch(err){ res.status(500).json({ ok:false, message:'Error computing quota'}); }
 });
 
@@ -3927,6 +4047,29 @@ app.get('/api/me/usage', (req,res)=>{
     res.status(500).json({ ok:false, message:'Error calculating usage' }); 
   }
 });
+
+  // DEBUG: Inspect quota, sqlite purchases, in-memory device quotas and temp unlocks
+  app.get('/api/debug/quota', (req, res) => {
+    const identifier = (req.query.identifier || '').toString().trim().toLowerCase();
+    const deviceId = (req.query.deviceId || '').toString().trim();
+    try {
+      const routerId = req.headers['x-router-id'] || req.ip || 'unknown';
+      const userAgent = req.headers['user-agent'] || '';
+      const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
+
+      const quota = computeRemainingUnified(identifier, deviceFingerprint, routerId);
+      const purchases = (sqliteDB && typeof sqliteDB.getPurchasesByPhone === 'function') ? sqliteDB.getPurchasesByPhone(identifier) : null;
+      const deviceQ = deviceQuotas.get(deviceId || deviceFingerprint) || null;
+      const tempForId = tempFullAccess.get(identifier) || null;
+      const tempForDev = tempFullAccess.get(deviceId) || null;
+
+  // include PID and sqlite active flag to help identify which server process handled the request
+  res.json({ ok: true, identifier, deviceId, deviceFingerprint, routerId, quota, purchases, deviceQ, tempForId, tempForDev, pid: process.pid, sqliteActive: !!sqliteDB });
+    } catch (err) {
+      console.error('[DEBUG-QUOTA-ERR]', err && err.message);
+      res.status(500).json({ ok: false, message: err && err.message });
+    }
+  });
 
 // Client IP detection for diagnostic
 app.get('/api/me/ip', (req,res)=>{
