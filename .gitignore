@@ -137,3 +137,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Ignore test database artifacts created under tools/
+tools/*.db
+tools/*.db-*
