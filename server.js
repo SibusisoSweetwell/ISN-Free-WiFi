@@ -2234,6 +2234,21 @@ app.post('/api/bundle/grant', (req,res)=>{
     try { tempFullAccess.set(entry.identifier, grantExpiry); } catch {}
     try { tempFullAccess.set(deviceFingerprint, grantExpiry); } catch {}
 
+    // Ensure device is registered as active immediately so manual-proxy CONNECT sees it
+    try {
+      // registerActiveClient will create activeClients and deviceSessions entries
+      registerActiveClient(req, entry.identifier, 6);
+
+      // Also mark the device session as having received the video completion notification
+      const ds = deviceSessions.get(deviceFingerprint) || deviceSessions.get(entry.identifier);
+      if (ds) {
+        ds.videoNotificationReceived = true;
+        ds.lastVideoCompletion = Date.now();
+        deviceSessions.set(deviceFingerprint, ds);
+        deviceSessions.set(entry.identifier, ds);
+      }
+    } catch (e) { console.warn('[BUNDLE-GRANT-ACTIVE-REGISTER-ERR]', e && e.message); }
+
     // If deviceIsolation supports persistent device tokens, create one so manual proxy lookup works
     try {
       if (deviceIsolation && typeof deviceIsolation.setDeviceAccessToken === 'function') {
