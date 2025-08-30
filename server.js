@@ -3351,6 +3351,12 @@ function startProxy(){
   const parsedToken = parsePortalToken(token || '');
   const clientIp = (req.socket && req.socket.remoteAddress) || '';
   let mappedIdentifier = resolveActiveClient(clientIp);
+  // If the browser included a portal_token, prefer that identifier for unlock checks
+  const tokenIdentifier = parsedToken && parsedToken.identifier ? parsedToken.identifier : null;
+  if (!mappedIdentifier && tokenIdentifier) {
+    // mappedIdentifier is normally an object { identifier, deviceId, sessionToken }
+    mappedIdentifier = { identifier: tokenIdentifier, deviceId: null, sessionToken: parsedToken && parsedToken.sessionToken };
+  }
   
   // STRICT HTTPS BLOCKING - Check proxy type and enforce restrictions
   const hostOnly = req.url.split(':')[0].toLowerCase();
@@ -3456,14 +3462,19 @@ function startProxy(){
   try {
     // Compute device fingerprint and quota for mapped identifier or candidate device
     const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
-    const deviceFingerprint = crypto.createHash('md5').update((req.headers['user-agent']||'') + routerId).digest('hex').slice(0,16);
+  const deviceFingerprint = crypto.createHash('md5').update((req.headers['user-agent']||'') + routerId).digest('hex').slice(0,16);
 
-    const deviceKey = deviceFingerprint || '';
-    const tempUnlocked = ((tempFullAccess.get(mappedIdentifier) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now());
+  const deviceKey = deviceFingerprint || '';
+  // Check tempFullAccess for identifier (mappedIdentifier may be object or string) and device key
+  let identifierKey = null;
+  if (mappedIdentifier) identifierKey = typeof mappedIdentifier === 'string' ? mappedIdentifier : mappedIdentifier.identifier;
+  if (!identifierKey && tokenIdentifier) identifierKey = tokenIdentifier;
+  const tempUnlocked = ((identifierKey && (tempFullAccess.get(identifierKey) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now()));
 
     // If mappedIdentifier exists, use unified quota check
     if (mappedIdentifier) {
-      const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+      const identifierKey = typeof mappedIdentifier === 'string' ? mappedIdentifier : mappedIdentifier.identifier;
+      const quota = computeRemainingUnified(identifierKey, deviceFingerprint, routerId);
       if (!quota.exhausted && quota.remainingMB > 0) {
         allowConnect = true;
         console.log('[HTTPS-CONNECT-ALLOWED-BUNDLE]', { identifier: mappedIdentifier, remainingMB: quota.remainingMB });
