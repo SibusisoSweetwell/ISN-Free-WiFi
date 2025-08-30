@@ -55,13 +55,13 @@ try {
         wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
         XLSX.writeFile(wb, 'logins.xlsx');
         
-        console.log('✅ Test user created:');
-        console.log('   Email: test@test.com');
-        console.log('   Password: test123');
+    console.log('✅ Test user created:');
+    console.log('   Email: test@test.com');
+    console.log('   Password: test***');
     } else {
-        console.log('✅ Test user already exists:');
-        console.log('   Email: test@test.com');
-        console.log('   Password: test123');
+    console.log('✅ Test user already exists:');
+    console.log('   Email: test@test.com');
+    console.log('   Password: test***');
     }
 } catch (err) {
     console.log('❌ Error creating test user:', err.message);
@@ -70,5 +70,5 @@ try {
 console.log('\n=== Test Complete ===');
 console.log('You can now try logging in with:');
 console.log('Email: test@test.com');
-console.log('Password: test123');
+console.log('Password: test***');
 console.log('URL: http://10.5.48.94:3151/login.html (note port 3151, not 3150)');

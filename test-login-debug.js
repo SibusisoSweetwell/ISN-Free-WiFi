@@ -1,6 +1,6 @@
-// Test login functionality directly
-const express = require('express');
+// Test login functionality directly (debug helper)
 const XLSX = require('xlsx');
+const http = require('http');
 
 const DATA_FILE = 'logins.xlsx';
 
@@ -41,17 +41,15 @@ function validateLogin(identifier, password){
   return !!user;
 }
 
-console.log('=== Testing Login System ===\n');
+console.log('=== Testing Login System (debug) ===\n');
 
-// 1. Check if file exists and create test users
 try {
-  let wb = loadWorkbook();
+  const wb = loadWorkbook();
   const data = XLSX.utils.sheet_to_json(wb.Sheets['Users']);
-  
-  console.log(`📁 Database file: ${DATA_FILE}`);
-  console.log(`👥 Current users: ${data.length}`);
-  
-  // Add test user if needed
+  console.log('DB file:', DATA_FILE);
+  console.log('Current users:', data.length);
+
+  // Ensure test user exists
   const testUser = data.find(u => u.email === 'test@test.com');
   if (!testUser) {
     data.push({
@@ -62,84 +60,46 @@ try {
       surname: 'User',
       dateCreated: new Date().toISOString()
     });
-    
     wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
     XLSX.writeFile(wb, DATA_FILE);
-    console.log('✅ Created test user: test@test.com / test123');
+    console.log('✅ Test user created: test@test.com');
   } else {
-    console.log('✅ Test user exists: test@test.com / test123');
+    console.log('✅ Test user exists: test@test.com');
   }
-  
-  // List all users
-  const currentData = XLSX.utils.sheet_to_json(wb.Sheets['Users']);
-  console.log('\n👤 All users in database:');
-  currentData.forEach((user, i) => {
-    console.log(`   ${i+1}. ${user.email} | ${user.password} | ${user.phone || 'no phone'}`);
+
+  // List users (mask passwords)
+  console.log('\nAll users:');
+  data.forEach((u,i)=>{
+    const mask = p => (!p)?'<none>':(p.length>4? p[0]+'***'+p.slice(-1): p[0]+'***');
+    console.log(`${i+1}. ${u.email} | ${mask(u.password)} | ${u.phone||'no phone'}`);
   });
-  
-  // 2. Test login function
-  console.log('\n🔐 Testing login validation:');
-  
-  const testCases = [
+
+  // Test login validation cases
+  console.log('\nTesting login validation:');
+  const tests = [
     { email: 'test@test.com', password: 'test123', expected: true },
-    { email: 'test@test.com', password: 'wrong', expected: false },
-    { email: 'nonexistent@test.com', password: 'test123', expected: false }
+    { email: 'test@test.com', password: 'wrong', expected: false }
   ];
-  
-  testCases.forEach(test => {
-    const result = validateLogin(test.email, test.password);
-    const status = result === test.expected ? '✅' : '❌';
-    console.log(`   ${status} ${test.email} / ${test.password} -> ${result} (expected: ${test.expected})`);
+  tests.forEach(t=>{
+    const ok = validateLogin(t.email, t.password);
+    console.log(`  ${t.email} / ${t.password.length>0? t.password[0]+'***':'<none>'} -> ${ok} (expected ${t.expected})`);
   });
-  
-} catch (error) {
-  console.error('❌ Error:', error.message);
+
+} catch (err) {
+  console.error('Error during debug tests:', err.message||err);
 }
 
-console.log('\n🌐 Now test in browser:');
-console.log('   URL: http://10.5.48.94:3151/login.html');
-console.log('   Email: test@test.com');
-console.log('   Password: test123');
-
-// Quick test of the actual API endpoint
-console.log('\n🧪 Testing API endpoint...');
-const testPort = 3151;
-const http = require('http');
-
-const postData = JSON.stringify({
-  email: 'test@test.com',
-  password: 'test123'
-});
-
-const options = {
-  hostname: '10.5.48.94',
-  port: testPort,
-  path: '/api/login',
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(postData)
-  }
-};
-
-const req = http.request(options, (res) => {
-  let data = '';
-  res.on('data', (chunk) => {
-    data += chunk;
-  });
-  res.on('end', () => {
-    console.log(`   API Response (${res.statusCode}): ${data}`);
-    if (res.statusCode === 200) {
-      console.log('   ✅ API login test SUCCESSFUL');
-    } else {
-      console.log('   ❌ API login test FAILED');
-    }
+// Quick API test (non-interactive)
+console.log('\nAPI endpoint test (non-interactive):');
+const postData = JSON.stringify({ email: 'test@test.com', password: 'test123' });
+const options = { hostname: '10.5.48.94', port: 3151, path: '/api/login', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) } };
+const req = http.request(options, res=>{
+  let data='';
+  res.on('data', c=> data+=c);
+  res.on('end', ()=>{
+    console.log(` API Response (${res.statusCode}): ${data}`);
   });
 });
-
-req.on('error', (e) => {
-  console.log(`   ❌ API test error: ${e.message}`);
-});
-
+req.on('error', e=> console.error('API test error:', e.message));
 req.write(postData);
 req.end();

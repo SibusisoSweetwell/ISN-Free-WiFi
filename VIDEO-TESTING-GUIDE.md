@@ -47,7 +47,7 @@ The system uses reliable Google Cloud Storage test videos:
 
 ### Step 2: Login
 1. Use any registered account or create new one
-2. Example: email@example.com, password: test123
+2. Example: email@example.com, password: <redacted-example-password>
 3. Complete login process
 
 ### Step 3: Select Data Bundle

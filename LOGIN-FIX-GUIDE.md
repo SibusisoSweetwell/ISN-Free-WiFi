@@ -14,13 +14,13 @@
 Use these credentials to test login:
 
 📧 **Email:** `test@test.com`
-🔑 **Password:** `test123`
+🔑 **Password:** `<redacted-example-password>`
 
 ### 3. **ADMIN CREDENTIALS**
 For admin access:
 
 📧 **Email:** `admin@isn.co.za`  
-🔑 **Password:** `admin123`
+🔑 **Password:** `<redacted-example-password>`
 
 ## 🌐 PROXY CONFIGURATION
 
@@ -82,7 +82,7 @@ For automatic proxy configuration:
 
 3. **Test login with:**
    - Email: test@test.com
-   - Password: test123
+   - Password: <redacted-example-password>
 
 4. **Configure user devices with proper proxy settings:**
    - **Manual:** `10.5.48.94:9092`
@@ -110,7 +110,9 @@ To verify the fix works:
 
 1. **Portal Access:**
    - Open: http://10.5.48.94:3151/login.html
-   - Enter: test@test.com / test123
+   - Enter: test@test.com / <redacted-example-password>
+
+Note: Example passwords have been redacted from this document for security; replace with your own test credentials when following steps.
    - Should redirect to home.html successfully
 
 2. **Manual Proxy Test:**

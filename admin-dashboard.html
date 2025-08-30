@@ -71,6 +71,8 @@
         .refresh-btn:hover {
             background: #5a6fd8;
         }
+    .manage-btn { background:#e74c3c; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer }
+    .manage-btn:hover { opacity:0.95 }
         .stats-row {
             display: flex;
             justify-content: space-between;
@@ -137,7 +139,9 @@
 
         <div class="card">
             <h3>👥 User Activity Monitoring</h3>
-                <div style="margin-top:8px;text-align:right;"><a href="admin-unlocks.html" style="text-decoration:none;">Manage Unlocks →</a></div>
+                <div style="margin-top:8px;text-align:right;">
+                    <button class="manage-btn" onclick="location.href='admin-unlocks.html'">Manage Unlocks</button>
+                </div>
             <div class="table-container">
                 <table id="usersTable">
                     <thead>

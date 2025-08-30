@@ -63,7 +63,7 @@
 
 ### Step 2: Test Video Playback
 1. Go to: `http://10.5.48.94:3150`
-2. Login with: `joseph@gmail.com` (password: `test123`)
+2. Login with: `joseph@gmail.com` (password: <redacted-example-password>)
 3. Click "Get Connected" → Select data bundle
 4. Observe video behavior:
    - Should see "Loading..." briefly

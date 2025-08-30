@@ -42,6 +42,8 @@ try {
   console.log('✅ Created fresh logins.xlsx file with proper structure');
   console.log('✅ Added admin user: admin@isn.local');
   console.log('✅ Excel file is now clean and ready for use');
+  console.log('✅ Added admin user: admin@isn.local (password hidden)');
+  console.log('✅ Excel file is now clean and ready for use');
 } catch (error) {
   console.error('❌ Error creating Excel file:', error.message);
 }
