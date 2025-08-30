@@ -3436,57 +3436,53 @@ function startProxy(){
     // If video ad host, allow through by continuing; downstream logic will treat it as ad traffic
   }
   // BLOCK UNAUTHENTICATED HTTPS TRAFFIC (except portal and video ads)
-  if (!mappedIdentifier && !isPortalHost && !isVideoAdHost) {
+  // Decide whether this CONNECT should be allowed based on device/identifier unlocks or bundles
+  let allowConnect = false;
+  try {
+    // Compute device fingerprint and quota for mapped identifier or candidate device
+    const routerId = req.headers['x-router-id'] || clientIp || 'unknown';
+    const deviceFingerprint = crypto.createHash('md5').update((req.headers['user-agent']||'') + routerId).digest('hex').slice(0,16);
+
+    const deviceKey = deviceFingerprint || '';
+    const tempUnlocked = ((tempFullAccess.get(mappedIdentifier) || 0) > Date.now()) || ((tempFullAccess.get(deviceKey) || 0) > Date.now());
+
+    // If mappedIdentifier exists, use unified quota check
+    if (mappedIdentifier) {
+      const quota = computeRemainingUnified(mappedIdentifier, deviceFingerprint, routerId);
+      if (!quota.exhausted && quota.remainingMB > 0) {
+        allowConnect = true;
+        console.log('[HTTPS-CONNECT-ALLOWED-BUNDLE]', { identifier: mappedIdentifier, remainingMB: quota.remainingMB });
+      }
+    }
+
+    // If no mappedIdentifier but device temp unlock exists (from watching videos), allow until expiry
+    if (!allowConnect && tempUnlocked) {
+      allowConnect = true;
+      console.log('[HTTPS-CONNECT-ALLOWED-TEMP]', { device: deviceKey.slice(0,8), mappedIdentifier });
+    }
+
+    // Allow portal and video-ad hosts always
+    if (isPortalHost || isVideoAdHost) allowConnect = true;
+  } catch (err) {
+    console.warn('[HTTPS-CONNECT-CHECK-ERR]', err && err.message);
+  }
+
+  if (!allowConnect) {
     const blockMessage = isManualProxy 
       ? 'Manual proxy user must login first to access HTTPS sites'
       : 'Auto proxy user must watch videos first to access HTTPS sites';
-      
-    console.warn('[HTTPS-BLOCKED-UNAUTHENTICATED]', { 
-      host: hostOnly, 
-      ip: clientIp, 
-      type: isManualProxy ? 'MANUAL' : 'AUTO',
-      reason: blockMessage
-    });
-  } else if (!mappedIdentifier && isVideoAdHost) {
-    console.log('[HTTPS-VIDEO-AD-ALLOWED]', { 
-      host: hostOnly, 
-      ip: clientIp,
-      type: isManualProxy ? 'MANUAL' : 'AUTO',
-      reason: 'Video ad CDN host allowed for unauthenticated users'
-    });
-  }
-  
-  if (!mappedIdentifier && !isPortalHost && !isVideoAdHost) {
+    console.warn('[HTTPS-BLOCKED-UNAUTHENTICATED]', { host: hostOnly, ip: clientIp, type: isManualProxy ? 'MANUAL' : 'AUTO', reason: blockMessage });
+
     // Send HTTP 302 redirect response for HTTPS CONNECT requests
     const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/login.html?blocked_https=${encodeURIComponent(hostOnly)}&proxy_type=${isManualProxy ? 'manual' : 'auto'}`;
-    
     clientSocket.write('HTTP/1.1 302 Found\r\n');
     clientSocket.write(`Location: ${redirectUrl}\r\n`);
     clientSocket.write('Content-Type: text/html; charset=utf-8\r\n');
     clientSocket.write('Connection: close\r\n\r\n');
-    
-    const htmlContent = `<!DOCTYPE html>
-<html><head>
-<title>HTTPS Access Blocked</title>
-<meta http-equiv="refresh" content="3;url=${redirectUrl}">
-<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;}</style>
-</head>
-<body>
-<h1>🔒 HTTPS Access Blocked</h1>
-<p><strong>Trying to access:</strong> ${hostOnly}</p>
-<p><strong>Proxy Type:</strong> ${isManualProxy ? 'Manual Proxy' : 'Auto Proxy (PAC)'}</p>
-${isManualProxy 
-  ? '<p>Manual proxy users must <strong>login</strong> first to access HTTPS sites.</p><p><strong>Your Settings:</strong> 10.5.48.94:8082</p>'
-  : '<p>Auto proxy users must <strong>watch videos</strong> first to earn internet bundles.</p><p><strong>Your PAC URL:</strong> http://10.5.48.94:3150/proxy.pac</p>'
-}
-<hr>
-<p><a href="${redirectUrl}" style="background:${isManualProxy ? '#007bff' : '#ff6b35'};color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">${isManualProxy ? '🔐 Login Now' : '🎬 Watch Videos'}</a></p>
-<p><small>Redirecting in 3 seconds...</small></p>
-</body></html>`;
-    
-    clientSocket.write(htmlContent);
-    return clientSocket.end();
+    clientSocket.end();
+    return;
   }
+  
   
   // Per-connection CONNECT quota enforcement: if mappedIdentifier exists check quota and block tunnel when exhausted
   try {
