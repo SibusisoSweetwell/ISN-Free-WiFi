@@ -235,6 +235,31 @@
 			.footer{padding:48px 28px 70px;}
 			.socials a{width:44px;height:44px;}
 		}
+
+		/* Mobile: keep modal compact, keep the lead text visible, and place the video below the lead.
+		   Do not let the white modal stretch to the full viewport height. Constrain video to a
+		   reasonable height so the panel remains tidy on phones. */
+		@media (max-width:700px){
+			/* Restore lead and bundle controls on phones but keep the video-shell constrained so the white modal stays compact.
+			   Do NOT force display with !important so the JS can hide/show these elements as intended. */
+			#accessModal .bundle-list,
+			#accessModal .bundle-note,
+			#accessModal .lead{display:block;margin-bottom:8px;font-size:15px;}
+
+			/* Keep ad-player layout rules but don't force it visible; the active class controls display. */
+			#accessModal .ad-player{flex-direction:column;gap:12px;}
+			#accessModal .video-shell{aspect-ratio:unset;height:min(40vh,360px);border-radius:12px;}
+
+			/* Ensure <video> and iframe both letterbox (contain) so landscape recordings aren't cropped in portrait phones */
+			#accessModal .video-shell video,
+			#accessModal .video-shell iframe{width:100%;height:100%;object-fit:contain;}
+
+			/* Slightly reposition overlay buttons so they're reachable on narrow screens */
+			#accessModal .video-overlay-btn{top:8px;right:8px;left:auto;gap:8px}
+
+			/* Keep modal compact and scrollable if content exceeds the available space */
+			#accessModal .access-modal{padding:18px 16px;border-radius:12px;max-width:100%;width:100%;max-height:calc(100vh - 80px);overflow:auto;}
+		}
 	</style>
 </head>
 <body>
@@ -1503,9 +1528,13 @@ function openAccessModal(adMode=false){
 		// show bundle list
 		document.querySelector('.bundle-list').style.display='flex';
 		document.getElementById('bundleNote').style.display='block';
+		// show lead on small screens when user opens modal
+		try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=accessModal.querySelector('.lead'); if(l) l.style.display='block'; } }catch{}
 		document.getElementById('adPlayer').classList.remove('active');
 		setTimeout(()=>{ const first=accessModal.querySelector('.bundle-btn'); if(first) first.focus(); },50);
 	}else{
+		// hide lead immediately on phones when opening into ad mode
+		try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=accessModal.querySelector('.lead'); if(l) l.style.display='none'; } }catch{}
 		setTimeout(()=>{ const mute=document.getElementById('muteBtn'); if(mute) mute.focus(); },50);
 	}
 	trapFocus(accessModal);
@@ -1820,7 +1849,16 @@ function startAdSequence(bundleSize){
 	else if(USE_YOUTUBE_ONLY) basePool=ytAds.map(id=>({type:'yt',id}));
 	else basePool=adPool;
 	const shuffled=[...basePool].sort(()=>Math.random()-0.5);
-	adList=shuffled.slice(0,adCount);
+		adList=shuffled.slice(0,adCount);
+		// If the available pool is smaller than the requested adCount, repeat items to reach the expected length
+		if(adList.length < adCount && shuffled.length){
+			let idx = 0;
+			while(adList.length < adCount){
+				// Push copies of entries from the shuffled pool to reach adCount
+				adList.push(Object.assign({}, shuffled[idx % shuffled.length]));
+				idx++;
+			}
+		}
 	// Optionally inject one adaptive (potential 4K) stream at start if device suitable
 	try{
 		if(allowHighQualityAds() && adaptiveAds.length){
@@ -1834,10 +1872,25 @@ function startAdSequence(bundleSize){
 	forceStartMobileKeepAwake(); // new: always start mobile fallback early
 	if(typeof HARD_WAKE_MODE!=='undefined' && HARD_WAKE_MODE){ try{ ensureHardWake(); }catch{} }
 	if(typeof EXTREME_WAKE_MODE!=='undefined' && EXTREME_WAKE_MODE){ try{ startExtremeWake(); }catch{} }
+	// Hide bundle controls/note and the lead on phones so the UI matches previous behaviour
 	document.querySelector('.bundle-list').style.display='none';
 	document.getElementById('bundleNote').style.display='none';
+	try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=document.querySelector('#accessModal .lead'); if(l) l.style.display='none'; } }catch{}
 	adPlayer.classList.add('active');
 	playCurrentInlineAd();
+	// Safeguard: if the video is unexpectedly paused after UI changes, try to resume once active
+	setTimeout(()=>{ try{ const v=adVideo; if(v && v.paused && adPlayer.classList.contains('active')){ v.play().catch(()=>{}); } }catch{} },350);
+}
+
+// Helper: ensure ad playback resumes when the player gains focus or becomes active
+function ensureAdPlaybackOnFocus(){
+	try{
+		const v=adVideo;
+		if(!v) return;
+		if(adPlayer.classList.contains('active')){
+			if(v.paused) v.play().catch(()=>{});
+		}
+	}catch{}
 }
 function playCurrentInlineAd(){
 	clearAdTimers();

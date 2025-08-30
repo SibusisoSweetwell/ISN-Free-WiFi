@@ -58,7 +58,7 @@ For automatic proxy configuration:
 
 ### **✅ AUTO PROXY (PAC) USERS:**
 - Must **WATCH VIDEOS** first to earn data bundles
-- Bundle system: 5 videos = 100MB, 8 videos = 250MB, 15 videos = 500MB
+- Bundle system: 5 videos = 100MB, 10 videos = 250MB, 15 videos = 500MB
 - Completely blocked until videos watched
 
 ### **🔒 SECURITY IMPROVEMENTS:**

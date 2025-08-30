@@ -53,7 +53,7 @@ The system uses reliable Google Cloud Storage test videos:
 ### Step 3: Select Data Bundle
 1. Choose a data bundle size:
    - 100 MB (5 videos)
-   - 250 MB (8 videos)  
+   - 250 MB (10 videos)  
    - 500 MB (15 videos)
 2. Click on your chosen bundle
 
