@@ -69,8 +69,24 @@ const PROXY_PORT = 8082; // Fixed port for proxy
 const RENDER_HOST = (process.env.RENDER_HOST || 'isn-free-wifi.onrender.com').toLowerCase();
 const PORTAL_SECRET = process.env.PORTAL_SECRET || 'isn_portal_secret_dev';
 const DATA_FILE = path.join(__dirname, 'logins.xlsx');
-const ADMIN_EMAIL = 'sbusisosweetwell15@gmail.com';
+// Default admin identity - configure via env in production
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'sbusisosweetwell15@gmail.com';
+const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
+const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || null; // must be provided via env in production
+const ADMIN_SEED_CODE = process.env.ADMIN_SEED_CODE || null; // must be provided via env in production
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'admin_secret_dev';
+
+// Fail-fast in production if admin secrets are not provided via environment
+if (process.env.NODE_ENV === 'production') {
+  if (!ADMIN_SEED_PASSWORD || !ADMIN_SEED_CODE || !ADMIN_EMAIL) {
+    console.error('[SECURITY] ADMIN_SEED_PASSWORD, ADMIN_SEED_CODE and ADMIN_EMAIL must be set in production environment variables.');
+    process.exit(1);
+  }
+}
+
+// Admin code and password are hashed before storage. We also create a guaranteed
+// admin user at startup so the account is always present. The seed values may
+// be overridden by environment variables in production.
 
 // Enhanced per-device access control with MAC address tracking
 // Prevents one device from unlocking access for all other devices
@@ -1731,12 +1747,36 @@ app.post('/login', (req, res)=>{
   // Accept either form fields or JSON
   const identifier = (req.body.email || req.body.username || '').trim();
   const password = req.body.password || '';
+  const adminCode = req.body.code || req.body.adminCode || '';
   if (!identifier || !password) {
     // For form submissions, redirect back with message
     return res.status(302).redirect('/login.html?message=missing_fields');
   }
   const ok = validateLogin(identifier, password);
   if (ok) {
+    // If this is the admin account, require the admin code as well
+    if(isAdminIdentifier(identifier)){
+      try {
+        // Load stored admin_code_hash for this identifier
+        let storedHash = null;
+        if(sqliteDB){
+          const row = sqliteDB.findUser(identifier) || sqliteDB.findUser(ADMIN_PHONE);
+          if(row && row.admin_code_hash) storedHash = String(row.admin_code_hash);
+        } else {
+          const { data } = getUsers();
+          const user = data.find(u=> (u.email||'').toLowerCase()===String(identifier).trim().toLowerCase() || u.phone===normalizePhone(identifier));
+          if(user && user.admin_code_hash) storedHash = String(user.admin_code_hash);
+        }
+        if(!storedHash){
+          console.warn('[ADMIN-LOGIN] Admin code not configured for', identifier);
+          return res.status(302).redirect('/login.html?message=admin_code_missing');
+        }
+        if(!adminCode || !bcrypt.compareSync(String(adminCode), storedHash)){
+          console.warn('[ADMIN-LOGIN-FAIL] bad admin code for', identifier);
+          return res.status(302).redirect('/login.html?message=invalid_admin_code');
+        }
+      } catch(e){ console.warn('[ADMIN-LOGIN-ERR]', e && e.message); return res.status(302).redirect('/login.html?message=server_error'); }
+    }
     // For form login, set a cookie token (simple random token) and redirect to home
     const token = crypto.randomBytes(24).toString('hex');
     res.cookie('portal_token', token, { httpOnly: true });
@@ -2179,6 +2219,58 @@ function isAdminIdentifier(identifier){
     }
   } catch {}
   return false;
+}
+
+// Ensure the seeded admin user exists in storage (SQLite or XLSX). Stores
+// bcrypt hashes for password and admin code (admin_code_hash) so raw secrets
+// are not persisted.
+function ensureAdminSeeded(){
+  try {
+    const email = (ADMIN_EMAIL||'').trim().toLowerCase();
+    const phone = normalizePhone(ADMIN_PHONE||'');
+    const password = ADMIN_SEED_PASSWORD || '';
+    const code = ADMIN_SEED_CODE || '';
+    if(!email && !phone) return;
+    const pwdHash = bcrypt.hashSync(password, 10);
+    const codeHash = bcrypt.hashSync(code, 10);
+
+    if (sqliteDB) {
+      try {
+        // Ensure admin_code_hash column exists (no-op if already present)
+        try { sqliteDB._db().prepare('ALTER TABLE users ADD COLUMN admin_code_hash TEXT').run(); } catch(e) {}
+        // Find existing user by email or phone
+        let row = sqliteDB.findUser(email) || sqliteDB.findUser(phone);
+        if(!row){
+          const create = sqliteDB.createUser({ email: email || null, password: password, phone: phone || null, firstName: 'Sibusiso', surname: 'Sweetwell', dob: '' });
+          if(create && create.ok){
+            row = sqliteDB.findUser(email) || sqliteDB.findUser(phone);
+          }
+        }
+        if(row){
+          try { sqliteDB._db().prepare('UPDATE users SET password_hash=? WHERE id=?').run(pwdHash, row.id); } catch(e){}
+          try { sqliteDB._db().prepare('UPDATE users SET admin_code_hash=? WHERE id=?').run(codeHash, row.id); } catch(e){}
+          console.log('[ADMIN-SEED] ensured admin present (sqlite) ->', email || phone);
+        }
+      } catch(e){ console.warn('[ADMIN-SEED-SQLITE-ERR]', e && e.message); }
+    } else {
+      try {
+        const { wb, ws, data } = getUsers();
+        const existing = data.find(u=> (u.email||'').toLowerCase()===email) || data.find(u=> u.phone===phone);
+        if(!existing){
+          data.push({ email: email||'', phone: phone||'', password_hash: pwdHash, admin_code_hash: codeHash, password: '<hashed>', firstName: 'Sibusiso', surname: 'Sweetwell', dob: '', dateCreatedISO: new Date().toISOString(), dateCreatedLocal: new Date().toString() });
+          wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizeDataForExcel(data));
+          XLSX.writeFile(wb, DATA_FILE);
+          console.log('[ADMIN-SEED] added admin to XLSX ->', email || phone);
+        } else {
+          existing.password_hash = pwdHash;
+          existing.admin_code_hash = codeHash;
+          wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizeDataForExcel(data));
+          XLSX.writeFile(wb, DATA_FILE);
+          console.log('[ADMIN-SEED] updated admin hashes in XLSX ->', email || phone);
+        }
+      } catch(e){ console.warn('[ADMIN-SEED-XLSX-ERR]', e && e.message); }
+    }
+  } catch(err){ console.warn('[ADMIN-SEED-ERR]', err && err.message); }
 }
 
 // In-memory reset codes (simple demo; for production use a DB + expiry)
@@ -6029,6 +6121,8 @@ app.post('/api/me/delete', (req,res)=>{
       if (!ok) return res.status(401).json({ ok:false, message:'Password incorrect' });
       const user = sqliteDB.findUser(raw);
       if (!user) return res.status(404).json({ ok:false, message:'User not found' });
+  // Prevent deleting seeded admin account
+  try { if((user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase() || normalizePhone(user.phone)===normalizePhone(ADMIN_PHONE)){ return res.status(403).json({ ok:false, message:'Cannot delete admin account' }); } } catch(e){}
       // Remove avatar file if exists
       if(user.avatarPath){
         try {
@@ -6054,7 +6148,9 @@ app.post('/api/me/delete', (req,res)=>{
       user = data.find(u=> String(u.email||'').trim().toLowerCase()===lower || u.phone===normPhone);
     }
     if(!user) return res.status(404).json({ ok:false, message:'User not found'});
-    if(user.password !== password) return res.status(401).json({ ok:false, message:'Password incorrect'});
+  // Prevent deleting seeded admin account
+  try { if((user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase() || normalizePhone(user.phone)===normalizePhone(ADMIN_PHONE)){ return res.status(403).json({ ok:false, message:'Cannot delete admin account' }); } } catch(e){}
+  if(user.password !== password) return res.status(401).json({ ok:false, message:'Password incorrect'});
     // Remove avatar file if exists
     if(user.avatarPath){
       try {
@@ -6168,6 +6264,8 @@ app.get('/proxy.pac',(req,res)=>{
   } catch(err){ res.status(500).send('PAC error'); }
 });
 
+// Ensure the seeded admin account exists before binding the server
+try { ensureAdminSeeded(); } catch(e){ console.warn('[ADMIN-SEED-CALL-ERR]', e && e.message); }
 startExpress(PORT, 5);
 
 // Global diagnostics to avoid silent exits

@@ -141,3 +141,7 @@ vite.config.ts.timestamp-*
 # Ignore test database artifacts created under tools/
 tools/*.db
 tools/*.db-*
+# Local user database and backups
+logins.xlsx
+logins.db
+admin_seed.json
