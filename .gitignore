@@ -145,3 +145,11 @@ tools/*.db-*
 logins.xlsx
 logins.db
 admin_seed.json
+
+# Temporary diagnostic files created by local debugging
+.tmp_*
+# SQLite WAL / SHM and other local DB artifacts
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
