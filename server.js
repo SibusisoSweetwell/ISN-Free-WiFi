@@ -33,6 +33,8 @@ const https = require('https');
 const net = require('net');
 const url = require('url');
 const crypto = require('crypto');
+// Rate limiting for admin endpoints
+const rateLimit = require('express-rate-limit');
 console.log('All modules loaded successfully');
 
 // Data sanitization to prevent Excel 32,767 character cell limit errors
@@ -83,6 +85,15 @@ if (process.env.NODE_ENV === 'production') {
     process.exit(1);
   }
 }
+
+// Rate limiter: conservative for admin-sensitive endpoints
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: 'Too many attempts, try again later.' }
+});
 
 // Admin code and password are hashed before storage. We also create a guaranteed
 // admin user at startup so the account is always present. The seed values may
@@ -714,7 +725,7 @@ app.get('/api/ads/playlist',(req,res)=>{
 });
 
 // --- Admin monitoring endpoints: temp access maps and device bundles ---
-app.get('/api/admin/temp-access', (req,res)=>{
+app.get('/api/admin/temp-access', adminLimiter, (req,res)=>{
   try{
     const requester = (req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
     if(!checkAdminAuth(req) && !isAdminIdentifier(requester)) return res.status(403).json({ ok:false, message:'Forbidden' });
@@ -726,7 +737,7 @@ app.get('/api/admin/temp-access', (req,res)=>{
   }catch(e){ res.status(500).json({ ok:false, message:'error' }); }
 });
 
-app.get('/api/admin/diagnostics', (req,res)=>{
+app.get('/api/admin/diagnostics', adminLimiter, (req,res)=>{
   try{
     if(!checkAdminAuth(req)) return res.status(403).json({ ok:false, message:'Forbidden' });
     const diagnostics = {
@@ -742,7 +753,7 @@ app.get('/api/admin/diagnostics', (req,res)=>{
 });
 
 // Admin: grant data to an identifier (email/phone) or deviceId
-app.post('/api/admin/grant', (req, res) => {
+app.post('/api/admin/grant', adminLimiter, (req, res) => {
   try {
     if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
     const { identifier, email, phone, mb, deviceId, routerId, durationHours } = req.body || {};
@@ -794,7 +805,7 @@ app.post('/api/admin/grant', (req, res) => {
   }
 });
 
-app.get('/api/admin/purchases', (req, res) => {
+app.get('/api/admin/purchases', adminLimiter, (req, res) => {
   if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
   try {
     if (sqliteDB) {
@@ -808,7 +819,7 @@ app.get('/api/admin/purchases', (req, res) => {
   }
 });
 
-app.get('/api/admin/temp-unlocks', (req, res) => {
+app.get('/api/admin/temp-unlocks', adminLimiter, (req, res) => {
   if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
   try {
     if (sqliteDB) {
@@ -825,7 +836,7 @@ app.get('/api/admin/temp-unlocks', (req, res) => {
   }
 });
 
-app.post('/api/admin/temp-unlocks/revoke', express.json(), (req, res) => {
+app.post('/api/admin/temp-unlocks/revoke', adminLimiter, express.json(), (req, res) => {
   if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
   const id = req.body && req.body.id;
   if (!id) return res.json({ ok: false, message: 'Missing id' });
@@ -847,7 +858,7 @@ app.post('/api/admin/temp-unlocks/revoke', express.json(), (req, res) => {
   }
 });
 
-app.post('/api/admin/temp-unlocks/bulk-revoke-expired', express.json(), (req, res) => {
+app.post('/api/admin/temp-unlocks/bulk-revoke-expired', adminLimiter, express.json(), (req, res) => {
   if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
   try {
     const now = Date.now();
@@ -1743,7 +1754,7 @@ function isValidAdminToken(req) {
 }
 
 // POST form login (handles browser form POSTs from login.html)
-app.post('/login', (req, res)=>{
+app.post('/login', adminLimiter, (req, res)=>{
   // Accept either form fields or JSON
   const identifier = (req.body.email || req.body.username || '').trim();
   const password = req.body.password || '';
@@ -4444,7 +4455,7 @@ app.get('/api/me/ip', (req,res)=>{
 });
 
 // Admin overview
-app.get('/api/admin/overview', (req,res)=>{
+app.get('/api/admin/overview', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try {
@@ -4457,7 +4468,7 @@ app.get('/api/admin/overview', (req,res)=>{
 });
 
 // Real-time usage monitoring endpoint for admin with live bandwidth tracking like sports scores
-app.get('/api/admin/realtime-usage', (req,res)=>{
+app.get('/api/admin/realtime-usage', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   
@@ -4575,7 +4586,7 @@ function recordAdEvent(ev){
 }
 
 // Admin dashboard explicit tables
-app.get('/api/admin/dashboard', (req,res)=>{
+app.get('/api/admin/dashboard', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try { 
@@ -4679,7 +4690,7 @@ app.get('/api/admin/dashboard', (req,res)=>{
 });
 
 // ENHANCED: Device Access Control Admin Dashboard
-app.get('/api/admin/device-access', (req, res) => {
+app.get('/api/admin/device-access', adminLimiter, (req, res) => {
   try {
     const requester = (req.headers['x-user-identifier'] || '').toString().trim().toLowerCase();
     if (!isAdminIdentifier(requester)) {
@@ -4710,7 +4721,7 @@ app.get('/api/admin/device-access', (req, res) => {
 });
 
 // Device access revocation endpoint (for admin use)
-app.post('/api/admin/device-access/revoke', (req, res) => {
+app.post('/api/admin/device-access/revoke', adminLimiter, (req, res) => {
   try {
     const requester = (req.headers['x-user-identifier'] || '').toString().trim().toLowerCase();
     if (!isAdminIdentifier(requester)) {
@@ -4736,7 +4747,7 @@ app.post('/api/admin/device-access/revoke', (req, res) => {
 });
 
 // Router meta upsert
-app.post('/api/admin/router/meta', (req,res)=>{
+app.post('/api/admin/router/meta', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   const { routerId, ipAddress, location, lastMaintenanceISO } = req.body||{};
@@ -4745,7 +4756,7 @@ app.post('/api/admin/router/meta', (req,res)=>{
 });
 
 // Ad definition upsert
-app.post('/api/admin/ads/upsert', (req,res)=>{
+app.post('/api/admin/ads/upsert', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   const { adId, title, type, routerZones } = req.body||{};
@@ -4754,7 +4765,7 @@ app.post('/api/admin/ads/upsert', (req,res)=>{
 });
 
 // Admin function to reset all user data (clear bundles, usage, sessions) - NUCLEAR OPTION
-app.post('/api/admin/reset-all-data', (req,res)=>{
+app.post('/api/admin/reset-all-data', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try {
@@ -4953,7 +4964,7 @@ app.post('/api/ad/event', (req,res)=>{
 
 // Video completion tracking for data earning
 // Emergency device unblock endpoint
-app.post('/api/admin/device-unblock', (req, res) => {
+app.post('/api/admin/device-unblock', adminLimiter, (req, res) => {
   try {
     const { identifier, deviceId, reason } = req.body || {};
     
@@ -5538,7 +5549,7 @@ app.get('/api/device/sessions', (req, res) => {
   }
 });
 
-app.get('/api/admin/ads/summary', (req,res)=>{
+app.get('/api/admin/ads/summary', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try { const o=buildAdminOverview(); res.json({ ok:true, ads:o.adsTable }); } catch(err){ res.status(500).json({ ok:false, message:'Error summarising ads' }); }
@@ -5580,7 +5591,7 @@ app.get(['/debug/state','/debug'],(req,res)=>{
 });
 
 // List raw ad definitions (even with zero events) for admin "My Usage by Ad" view
-app.get('/api/admin/ads/list', (req,res)=>{
+app.get('/api/admin/ads/list', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try {
@@ -5594,7 +5605,7 @@ app.get('/api/admin/ads/list', (req,res)=>{
 });
 
 // Lightweight diagnostics: total ad events & distinct adIds (admin only)
-app.get('/api/admin/ads/events/count', (req,res)=>{
+app.get('/api/admin/ads/events/count', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   try {
@@ -5609,7 +5620,7 @@ app.get('/api/admin/ads/events/count', (req,res)=>{
 
 // Admin push endpoint for router live metrics (to be called by router agent / script)
 // Body: { routerId, bytesDown, bytesUp, devices:[{id,ip?}] }
-app.post('/api/admin/router/usage', (req,res)=>{
+app.post('/api/admin/router/usage', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   const { routerId, bytesDown, bytesUp, devices } = req.body||{};
@@ -5625,7 +5636,7 @@ app.post('/api/admin/router/usage', (req,res)=>{
 });
 
 // Admin query of recent router usage (aggregate & time series)
-app.get('/api/admin/router/usage', (req,res)=>{
+app.get('/api/admin/router/usage', adminLimiter, (req,res)=>{
   const requester=(req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
   if(!isAdminIdentifier(requester)){ return res.status(403).json({ ok:false, message:'Forbidden' }); }
   const routerId = (req.query.routerId||'').toString().trim();
@@ -6109,7 +6120,7 @@ app.post('/api/me/profile/update', (req,res)=>{
 });
 
 // Delete account (requires correct password)
-app.post('/api/me/delete', (req,res)=>{
+app.post('/api/me/delete', adminLimiter, (req,res)=>{
   const { identifier, password } = req.body||{};
   if(!identifier || !password) return res.status(400).json({ ok:false, message:'Missing fields'});
   try {
