@@ -78,6 +78,8 @@
 		/* Admin-style manage button (red/white) */
 		.manage-btn { background:#e74c3c; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer }
 		.manage-btn:hover { opacity:0.95 }
+	/* When .stable is applied to root, reduce transitions that can cause visual jitter on phones */
+	:root.stable * { transition: none !important; animation: none !important; }
 
 				/* Access bundle modal */
 				.modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(9px) saturate(140%);background:rgba(0,0,0,.35);padding:40px 24px;opacity:0;pointer-events:none;transition:opacity .45s ease;}
@@ -892,7 +894,7 @@ setTimeout(async () => {
 }, 2000);
 
 // Hook usage reporting with enhanced device tracking
-let demoUsageTicker=null; function startDemoUsage(){ if(demoUsageTicker) return; const id=(sessionStorage.getItem('currentUserIdentifier')||'').toLowerCase(); if(!id) return; demoUsageTicker=setInterval(()=>{ if(quotaBlockShown) return; fetch('/api/usage/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier:id,usedMB:0.2})}).then(r=>r.json()).then(j=>{ if(j.quota && j.quota.exhausted && !j.quota.unlockEarned) showQuotaBlock(j.quota, 'Device needs to earn access'); }).catch(()=>{}); }, 20000); }
+let demoUsageTicker=null; function startDemoUsage(){ if(demoUsageTicker) return; const id=(sessionStorage.getItem('currentUserIdentifier')||'').toLowerCase(); if(!id) return; const intervalMs = isTouchDevice() ? 60000 : 20000; demoUsageTicker=setInterval(()=>{ if(quotaBlockShown) return; fetch('/api/usage/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier:id,usedMB:0.2})}).then(r=>r.json()).then(j=>{ if(j.quota && j.quota.exhausted && !j.quota.unlockEarned) showQuotaBlock(j.quota, 'Device needs to earn access'); }).catch(()=>{}); }, intervalMs); }
 startDemoUsage();
 window.addEventListener('storage',e=>{ if(e.key==='currentUserIdentifier'){ startDemoUsage(); } });
 // When a new bundle is granted (frontend closeAccessModal after grantBundle), reset quota block flag
@@ -957,7 +959,9 @@ function openProfileDrawer(){
 	profileDrawer.removeAttribute('aria-hidden');
 	drawerBackdrop.removeAttribute('aria-hidden');
 	document.body.style.overflow='hidden';
-	setTimeout(()=>{ const first=profileDrawer.querySelector('.drawer-menu button, .drawer-menu a'); if(first) first.focus(); },40);
+	// Helper: avoid programmatic focus on touch devices to prevent visual vibration/focus flicker
+	function isTouchDevice(){ try{ return (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints>0)); }catch(e){ return false; } }
+	setTimeout(()=>{ try{ const first=profileDrawer.querySelector('.drawer-menu button, .drawer-menu a'); if(first && !isTouchDevice()) first.focus(); }catch(e){} },40);
 	trapDrawerFocus();
 }
 function closeProfileDrawer(returnFocus=true){
@@ -968,7 +972,7 @@ function closeProfileDrawer(returnFocus=true){
 	drawerBackdrop.setAttribute('aria-hidden','true');
 	document.body.style.overflow='';
 	releaseDrawerTrap();
-	if(returnFocus && lastFocusBeforeDrawer) lastFocusBeforeDrawer.focus();
+	if(returnFocus && lastFocusBeforeDrawer && !isTouchDevice()) lastFocusBeforeDrawer.focus();
 }
 drawerBackdrop.addEventListener('click',e=>{ if(e.target===drawerBackdrop) closeProfileDrawer(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && profileDrawer.classList.contains('active')){ e.preventDefault(); closeProfileDrawer(); } });
@@ -1519,7 +1523,7 @@ function closeUsage(){
 	if(p){ p.classList.remove('active'); p.setAttribute('aria-hidden','true'); } 
 }
 function showHelp(){ if(typeof profileDrawer!=='undefined' && profileDrawer.classList.contains('active')){ try{ closeProfileDrawer(false); }catch{} } openHelp(); }
-function openHelp(){ const ov=document.getElementById('helpOverlay'); if(!ov) return; if(!ov.classList.contains('active')){ ov.classList.add('active'); ov.removeAttribute('aria-hidden'); requestAnimationFrame(()=>{ const h=ov.querySelector('h2'); if(h) h.focus&&h.focus(); }); } }
+function openHelp(){ const ov=document.getElementById('helpOverlay'); if(!ov) return; if(!ov.classList.contains('active')){ ov.classList.add('active'); ov.removeAttribute('aria-hidden'); requestAnimationFrame(()=>{ const h=ov.querySelector('h2'); if(h && !isTouchDevice()) h.focus&&h.focus(); }); } }
 function closeHelp(){ const ov=document.getElementById('helpOverlay'); if(!ov) return; ov.classList.remove('active'); ov.setAttribute('aria-hidden','true'); }
 
 function scrollToFooter(){ document.getElementById('siteFooter').scrollIntoView({behavior:'smooth'}); }
@@ -1540,11 +1544,17 @@ function openAccessModal(adMode=false){
 		// show lead on small screens when user opens modal
 		try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=accessModal.querySelector('.lead'); if(l) l.style.display='block'; } }catch{}
 		document.getElementById('adPlayer').classList.remove('active');
-		setTimeout(()=>{ const first=accessModal.querySelector('.bundle-btn'); if(first) first.focus(); },50);
+		setTimeout(()=>{ try{ const first=accessModal.querySelector('.bundle-btn'); if(first && !isTouchDevice()){ first.focus(); } }catch(e){} },50);
 	}else{
 		// hide lead immediately on phones when opening into ad mode
 		try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=accessModal.querySelector('.lead'); if(l) l.style.display='none'; } }catch{}
-		setTimeout(()=>{ const mute=document.getElementById('muteBtn'); if(mute) mute.focus(); },50);
+		setTimeout(()=>{ try{
+			// Don't shift focus to the mute button on touch devices (this can cause visual 'vibrate' effects)
+			if(!(('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints>0))){
+				const mute=document.getElementById('muteBtn'); if(mute && !isTouchDevice()) mute.focus();
+			}
+		}catch(e){}
+		},50);
 	}
 	trapFocus(accessModal);
 }
@@ -1552,7 +1562,7 @@ function closeAccessModal(){
 	accessModal.classList.remove('active');
 	accessModal.setAttribute('aria-hidden','true');
 	releaseFocusTrap();
-	if(lastFocusedBeforeModal) lastFocusedBeforeModal.focus();
+	if(lastFocusedBeforeModal && !isTouchDevice()) lastFocusedBeforeModal.focus();
 }
 function chooseBundle(size){
 	openAccessModal(true); // keep modal open but switch to ad player
@@ -1908,8 +1918,12 @@ function playCurrentInlineAd(){
 	const thumb=document.getElementById('adThumb');
 	const imgFallback=document.getElementById('imgFallback');
 	adVideo.style.display='none'; yt.style.display='none';
-	// reset mute button state (we will attempt to start with sound)
-	muteBtn.classList.remove('active'); muteBtn.textContent='Mute';
+	// Apply persisted/global mute preference so subsequent ads follow user choice
+	function getPersistedMute(){ try{ return localStorage.getItem('adMuted'); }catch(e){ return null; } }
+	function setPersistedMute(v){ try{ if(v===null) localStorage.removeItem('adMuted'); else localStorage.setItem('adMuted', v); }catch(e){} }
+	const persisted = getPersistedMute();
+	if(persisted==='unmuted'){ adVideo.muted = false; } else if(persisted==='muted'){ adVideo.muted = true; } else { adVideo.muted = isTouchDevice() ? true : false; }
+	if(muteBtn){ muteBtn.classList.toggle('active', !adVideo.muted); muteBtn.textContent = adVideo.muted ? 'Unmute' : 'Mute'; }
 	adStatus.textContent='Loading...';
 	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip (10)';
 	skipCountdownStarted=false;
@@ -1924,7 +1938,7 @@ function playCurrentInlineAd(){
 		delete adVideo._forceSeekDone; delete adVideo._reloadAttempt;
 		adVideo.classList.remove('visible');
 		adVideo.removeAttribute('src');
-		adVideo.currentTime=0; adVideo.muted=true; adVideo.volume=1; adVideo.style.display='block'; videoStartStamp=performance.now(); visibilityLoop();
+		adVideo.currentTime=0; adVideo.volume=1; adVideo.style.display='block'; videoStartStamp=performance.now(); visibilityLoop();
 		
 		// Enhanced video loading with format validation
 		(async()=>{
@@ -1941,14 +1955,38 @@ function playCurrentInlineAd(){
 						console.warn('[VIDEO-CODEC] Browser may not support H.264, trying anyway...');
 					}
 					
-					// Add retry mechanism for video loading
-					adVideo.src=entry.url; 
-					adVideo.load();
-					
-					// Set up retry logic if video fails to load
-					adVideo._retryCount = 0;
-					adVideo._maxRetries = 3; // Increased retries
-					adVideo._currentEntry = entry;
+					// Tune video element for faster starts
+					try{ adVideo.setAttribute('playsinline',''); adVideo.preload='auto'; adVideo.removeAttribute('controls'); }catch{}
+					// Warm the connection with a lightweight range HEAD (if CORS allows) to reduce latency on some CDNs
+					(async()=>{
+						try{
+							await fetch(entry.url, { method: 'HEAD', mode:'cors', cache:'no-cache' });
+						}catch(e){ /* HEAD may be blocked by CORS; ignore */ }
+						// Now set the src and load
+						adVideo.src = entry.url;
+						adVideo._retryCount = 0;
+						adVideo._maxRetries = 3;
+						adVideo._currentEntry = entry;
+						adVideo.load();
+						// Error handler with backoff
+						adVideo._onerrorHandler = async function(){
+							try{
+								adVideo._retryCount = (adVideo._retryCount||0) + 1;
+								if(adVideo._retryCount <= adVideo._maxRetries){
+									const wait = 250 * Math.pow(2, adVideo._retryCount-1);
+									console.warn('[VIDEO-ERROR] retry', adVideo._retryCount, 'waiting', wait);
+									setTimeout(()=>{ try{ adVideo.load(); adVideo.play().catch(()=>{}); }catch{} }, wait);
+								} else {
+									console.error('[VIDEO-ERROR] max retries reached, using fallback');
+									tryVideoFallback();
+								}
+							}catch(e){ tryVideoFallback(); }
+						};
+						adVideo.addEventListener('error', adVideo._onerrorHandler);
+					})();
+
+								// When metadata is loaded, try to play immediately for fastest start
+								adVideo.addEventListener('loadedmetadata', function onMeta(){ adVideo.removeEventListener('loadedmetadata', onMeta); try{ adVideo.play().catch(()=>{}); }catch{} });
 					
 				}else{
 					await setupAdaptivePlayback(entry);
@@ -1989,7 +2027,10 @@ function playCurrentInlineAd(){
 		startInlineProgress();
 		// Wait for actual playback to begin to start skip timer
 		adVideo.addEventListener('playing',()=>{ adStatus.textContent='Playing'; maybeStartSkipCountdown(); detectBlackFrameFallback(); startFrameMonitor(); // spatial audio waits for explicit unmute
-			if(!currentAdViewLogged){ currentAdViewLogged=true; logAdEvent('view'); } },{ once:true });
+			if(!currentAdViewLogged){ currentAdViewLogged=true; logAdEvent('view'); }
+			// Preload the next MP4 ad (if any) to reduce startup latency for the following ad
+			try{ preloadNextAdIfNeeded(); }catch(e){ /* non-fatal */ }
+		},{ once:true });
 		// If still not playing after 2s, try a gentle reload once
 		setTimeout(()=>{ if(adVideo.currentTime===0 && !adVideo._reloadOnce){ adVideo._reloadOnce=true; const s=adVideo.src; adVideo.load(); adVideo.src=s; tryPlay(); } },2000);
 		// If still blank after 4s, try fallback video
@@ -2118,20 +2159,40 @@ skipBtn.addEventListener('click',()=>{
 	try{ logAdEvent('skip',{watchSeconds: Math.round(adVideo.currentTime||0)}); }catch{} 
 	nextInlineAd(); 
 });
-muteBtn.addEventListener('click',()=>{
+// Debounce helper to avoid rapid repeated taps causing visual vibration or playback instability
+function debounceClick(fn, wait=250){
+	let last=0;
+	return function(ev){
+		const now=Date.now();
+		if(now-last < wait) { ev && ev.preventDefault && ev.preventDefault(); return; }
+		last = now;
+		try{ fn.apply(this, arguments); }catch(e){}
+	};
+}
+
+muteBtn.addEventListener('click', debounceClick(()=>{
 	const current=adList[currentAdIndex];
+	// Toggle mute only; do not change play/pause state
 	if(current.type==='mp4'){
-		adVideo.muted=!adVideo.muted; muteBtn.classList.toggle('active',!adVideo.muted); muteBtn.textContent= adVideo.muted? 'Unmute':'Mute'; if(!adVideo.paused) adStatus.textContent='Playing'; if(adSequenceActive) requestWakeLock();
-	}else if(current.type==='yt'){
+	adVideo.muted = !adVideo.muted;
+	// Persist the user's preference so following ads respect it
+	setPersistedMute(adVideo.muted ? 'muted' : 'unmuted');
+	muteBtn.classList.toggle('active', !adVideo.muted);
+	muteBtn.textContent = adVideo.muted ? 'Unmute' : 'Mute';
+		if(!adVideo.paused) adStatus.textContent='Playing';
+		if(adSequenceActive) requestWakeLock();
+	} else if(current.type==='yt'){
 		if(ytPlayerInstance && ytPlayerReady){
-			if(ytPlayerInstance.isMuted()){ ytPlayerInstance.unMute(); muteBtn.classList.remove('active'); muteBtn.textContent='Mute'; }
-			else { ytPlayerInstance.mute(); muteBtn.classList.add('active'); muteBtn.textContent='Unmute'; }
+			try{
+		if(ytPlayerInstance.isMuted()){ ytPlayerInstance.unMute(); setPersistedMute('unmuted'); muteBtn.classList.remove('active'); muteBtn.textContent='Mute'; }
+		else { ytPlayerInstance.mute(); setPersistedMute('muted'); muteBtn.classList.add('active'); muteBtn.textContent='Unmute'; }
+			}catch(e){}
 			if(adSequenceActive) requestWakeLock();
 		}
 	}
-});
+}));
 if(playPauseBtn){
-	playPauseBtn.addEventListener('click',()=>{
+	playPauseBtn.addEventListener('click', debounceClick(()=>{
 		const current=adList[currentAdIndex];
 		if(current.type==='mp4'){
 			if(adVideo.paused){ adVideo.play().catch(()=>{}); playPauseBtn.textContent='Pause'; playPauseBtn.setAttribute('aria-label','Pause ad'); }
@@ -2141,8 +2202,19 @@ if(playPauseBtn){
 			if(state===YT.PlayerState.PLAYING){ ytPlayerInstance.pauseVideo(); playPauseBtn.textContent='Play'; playPauseBtn.setAttribute('aria-label','Play ad'); }
 			else { ytPlayerInstance.playVideo(); playPauseBtn.textContent='Pause'; playPauseBtn.setAttribute('aria-label','Pause ad'); }
 		}
-	});
+	}));
+
+// Fullscreen stability: when entering fullscreen, reduce CSS transitions/animations to avoid visual jitter
+function applyStableForFullscreen(enable){
+	try{
+		if(enable) document.documentElement.classList.add('stable');
+		else document.documentElement.classList.remove('stable');
+	}catch(e){}
 }
+document.addEventListener('fullscreenchange', ()=>{ applyStableForFullscreen(!!document.fullscreenElement); });
+// Attach to fsBtn if present (prevent focus jumps)
+try{ if(fsBtn){ fsBtn.addEventListener('click', debounceClick(()=>{ try{ if(!document.fullscreenElement){ const el=adPlayer || document.documentElement; el.requestFullscreen && el.requestFullscreen().catch(()=>{}); applyStableForFullscreen(true); } else { document.exitFullscreen && document.exitFullscreen().catch(()=>{}); applyStableForFullscreen(false); } }catch{} },200)); fsBtn.addEventListener('mousedown',(e)=>{ e.preventDefault(); }); } }catch(e){}
+	}
 if(fsBtn){
 	fsBtn.addEventListener('click',()=>{
 		const container=adVideo.offsetParent?.querySelector('.video-shell')||adVideo.parentElement;
@@ -2257,9 +2329,12 @@ let activeWakeLock=null, wakeLockFallbackInterval=null, noSleepTinyVideo=null, w
 let hardWakeCanvas=null, hardWakeCtx=null, hardWakeRafId=null, hardWakeNudgeInterval=null, hardWakeAudioResumeInterval=null;
 const WAKELOCK_CHECK_INTERVAL=15000;
 const WAKELOCK_HEARTBEAT_INTERVAL=10000; // more aggressive periodic re-assert
-const HARD_WAKE_MODE=true; // enable extra aggressive anti-sleep techniques even when muted
-const ULTRA_WAKE_MODE=true; // ultra-aggressive (battery heavy) keep-awake even if muted / backgrounded briefly
-const EXTREME_WAKE_MODE=true; // reassert every second while video playing (very high battery usage)
+// Aggressive wake modes cause heavy RAF/interval usage and can make phones jitter/vibrate.
+// Detect touch devices and avoid enabling these modes there.
+function isTouchDevice(){ try{ return ('ontouchstart' in window) || (navigator.maxTouchPoints>0) || (navigator.msMaxTouchPoints>0); }catch(e){ return false; } }
+const HARD_WAKE_MODE = !isTouchDevice(); // enable extra aggressive anti-sleep on non-touch devices
+const ULTRA_WAKE_MODE = !isTouchDevice(); // ultra-aggressive (battery heavy) enabled only on non-touch
+const EXTREME_WAKE_MODE = false; // never enable extreme mode by default (too heavy)
 function isWakeLockSupported(){ return 'wakeLock' in navigator; }
 function isIOS(){ return /iP(ad|hone|od)/.test(navigator.userAgent); }
 async function requestWakeLock(){
@@ -2407,20 +2482,22 @@ function forceStartMobileKeepAwake(){
 	// Try play immediately and periodically ensure it stays playing
 	const tryPlay=()=> mobileKeepAwakeVid.play().catch(()=>{});
 	tryPlay();
-	if(!mobileKeepAwakeVid._keepInt){ mobileKeepAwakeVid._keepInt=setInterval(()=>{ if(mobileKeepAwakeVid.paused) tryPlay(); },15000); }
-	// Pulse: restart playback briefly every 60s to convince stubborn power managers
-	if(!mobileKeepAwakeVid._pulseInt){ mobileKeepAwakeVid._pulseInt=setInterval(()=>{
-		if(!mobileKeepAwakeVid) return;
-		try{ mobileKeepAwakeVid.pause(); }catch{}
-		setTimeout(()=>{ tryPlay(); },300);
-	},60000); }
+	if(!isTouchDevice()){
+		if(!mobileKeepAwakeVid._keepInt){ mobileKeepAwakeVid._keepInt=setInterval(()=>{ if(mobileKeepAwakeVid.paused) tryPlay(); },15000); }
+		// Pulse: restart playback briefly every 60s to convince stubborn power managers
+		if(!mobileKeepAwakeVid._pulseInt){ mobileKeepAwakeVid._pulseInt=setInterval(()=>{
+			if(!mobileKeepAwakeVid) return;
+			try{ mobileKeepAwakeVid.pause(); }catch{}
+			setTimeout(()=>{ tryPlay(); },300);
+		},60000); }
+	}
 }
 function stopMobileKeepAwake(){ if(mobileKeepAwakeVid){ try{ mobileKeepAwakeVid.pause(); }catch{} } }
 // Reacquire on visibility/orientation/fullscreen returns
 ['visibilitychange','orientationchange'].forEach(evt=>document.addEventListener(evt,()=>{ if(document.visibilityState==='visible' && wakeLockRequested){ if(isWakeLockSupported() && !activeWakeLock) requestWakeLock(); else if(!isWakeLockSupported()) startWakeLockFallback(); } }));
 document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && wakeLockRequested){ if(isWakeLockSupported() && !activeWakeLock) requestWakeLock(); }});
 // Mobile nudge: slight no-op scroll to keep some devices awake (Android Chrome sometimes dims despite video)
-let lastNudge=0; setInterval(()=>{ if(!adSequenceActive) return; const now=Date.now(); if(now-lastNudge>60000){ lastNudge=now; try{ window.scrollBy(0,1); window.scrollBy(0,-1); }catch{} } },15000);
+let lastNudge=0; if(!isTouchDevice()){ setInterval(()=>{ if(!adSequenceActive) return; const now=Date.now(); if(now-lastNudge>60000){ lastNudge=now; try{ window.scrollBy(0,1); window.scrollBy(0,-1); }catch{} } },15000); }
 // If device goes hidden and returns, immediately re-play tiny video fallback if needed
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && wakeLockRequested){ if(noSleepTinyVideo && noSleepTinyVideo.paused) noSleepTinyVideo.play().catch(()=>{}); } });
 // Inline MP4 events
@@ -2692,6 +2769,67 @@ function showVideoSurface(forceDecor=false){
 	}
 }
 
+// Preload the next MP4 ad to reduce startup latency for subsequent ads
+function preloadNextAdIfNeeded(){
+	try{
+		const nextIndex = currentAdIndex + 1;
+		if(!adList || nextIndex >= adList.length) return;
+		const next = adList[nextIndex];
+		if(!next || next.type!=='mp4' || !next.url) return;
+
+		// Avoid repeated churn: reuse existing preload link if same URL
+		const existing = document.querySelector('link[data-preload-next-ad]');
+		if(existing && existing.href === next.url) return;
+
+		if(existing) existing.remove();
+
+		const link = document.createElement('link');
+		link.rel = 'preload';
+		link.as = 'video';
+		link.href = next.url;
+		link.setAttribute('data-preload-next-ad', '1');
+		// Some CDNs require crossorigin to be set for preloads to work properly
+		try{ link.crossOrigin = 'anonymous'; }catch{}
+		document.head.appendChild(link);
+		console.log('[PRELOAD] Next ad preloaded:', next.url);
+		// Aggressive warming: attempt to fetch the first chunk (range) to warm TCP/TLS and CDNs
+		try{ partialFetchWarm(next.url, {bytes: 131072, timeoutMs: 3000}).catch(()=>{}); }catch(e){ /* non-fatal */ }
+	}catch(e){ console.warn('[PRELOAD-ERR]', e); }
+}
+
+// Try to fetch a small initial byte range to warm connections (non-blocking, tolerant)
+async function partialFetchWarm(url, opts){
+	opts = opts || {};
+	const bytes = opts.bytes || 65536; // default 64KB
+	const timeoutMs = opts.timeoutMs || 3000;
+	try{
+		if(!window.fetch) return;
+		const controller = new AbortController();
+		const id = setTimeout(()=>controller.abort(), timeoutMs);
+		const rangeHeader = 'bytes=0-'+(Math.max(1024, bytes)-1);
+		// Use CORS mode and request range; many CDNs honor Range on CORS requests
+		const res = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-cache', headers: { 'Range': rangeHeader }, signal: controller.signal });
+		clearTimeout(id);
+		if(!res || !res.ok) { console.warn('[WARM] ranged fetch failed', res && res.status); return; }
+		// Consume the body but don't store it: read a small chunk and then cancel if possible
+		try{
+			const reader = res.body && res.body.getReader && res.body.getReader();
+			if(reader){
+				// read one chunk then release
+				const { value, done } = await reader.read();
+				try{ reader.cancel(); }catch{};
+			} else {
+				// fallback: read as blob but we expect small size
+				await res.blob().catch(()=>{});
+			}
+		}catch(e){ /* ignore */ }
+		console.log('[WARM] Partial fetch succeeded for', url);
+	}catch(err){
+		if(err && err.name === 'AbortError') console.warn('[WARM] Partial fetch timed out');
+		else console.warn('[WARM] Partial fetch error', err && err.message);
+	}
+}
+
 // Detect persistent black video (audio only) and fallback to YouTube ad
 function detectBlackFrameFallback(){
 	const entry=adList[currentAdIndex];
@@ -2903,7 +3041,7 @@ function openDeleteModal(){
 	document.getElementById('deleteModalStatus').textContent='';
 	document.getElementById('deleteStepPassword').style.display='flex';
 	document.getElementById('deleteStepConfirm').style.display='none';
-	setTimeout(()=>{ const p=document.getElementById('del_pass'); if(p) p.focus(); },40);
+	setTimeout(()=>{ try{ const p=document.getElementById('del_pass'); if(p && !isTouchDevice()) p.focus(); }catch(e){} },40);
 }
 function closeDeleteModal(){
 	const m=document.getElementById('deleteModal'); if(!m) return;

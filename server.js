@@ -7,6 +7,8 @@ const os = require('os');
 console.log('Basic modules loaded');
 const XLSX = require('xlsx');
 console.log('XLSX loaded');
+const bcrypt = require('bcryptjs');
+console.log('bcrypt loaded');
 // Optional SQLite adapter (use USE_SQLITE=true in Render environment)
 let sqliteDB = null;
 if (process.env.USE_SQLITE === 'true') {
@@ -1917,12 +1919,14 @@ function saveUser(email, password, phone, firstName, surname, dob){
     const created = new Date();
     const createdISO = created.toISOString();
     const createdLocal = created.toLocaleString();
-    // Store masked password in XLSX to avoid keeping plaintext in legacy sheet
-    const maskPwdForSheet = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
+    // Store bcrypt password_hash in XLSX to allow long-term logins (migrate plaintext when using SQLite)
+    const passwordHash = bcrypt.hashSync(password, 10);
     data.push({
       email: origEmail || '',
       phone: normPhone || '',
-      password: maskPwdForSheet(password),
+      password_hash: passwordHash,
+      // Keep legacy 'password' column only for backward compatibility (do not store plaintext)
+      password: '<hashed>',
       firstName: firstName||'',
       surname: surname||'',
       dob: dob||'',
@@ -1935,7 +1939,7 @@ function saveUser(email, password, phone, firstName, surname, dob){
     wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizedData);
     
     try {
-  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
+      if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
         try {
         // Keep logging minimal; only show masked representation
         const maskPwd = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
@@ -1980,12 +1984,46 @@ function validateLogin(identifier, password){
   let user;
   if(identifier.includes('@')){
     const idEmail = String(identifier).trim().toLowerCase();
-    user = data.find(u=> (String(u.email||'').trim().toLowerCase()===idEmail) && u.password===password);
+    user = data.find(u=> (String(u.email||'').trim().toLowerCase()===idEmail));
+    if(user){
+      // Prefer bcrypt password_hash when present
+      if(user.password_hash){
+        try { if(bcrypt.compareSync(password, String(user.password_hash))) return true; } catch(e){}
+        return false;
+      }
+      // Legacy: plaintext password stored in 'password' column -> migrate to bcrypt hash
+      if(user.password && String(user.password)===password){
+        try {
+          user.password_hash = bcrypt.hashSync(password, 10);
+          user.password = '<migrated>';
+          wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
+          XLSX.writeFile(wb, DATA_FILE);
+        } catch(e) { console.warn('[LOGIN-MIGRATE-ERR]', e && e.message); }
+        return true;
+      }
+      return false;
+    }
   } else {
     const norm = normalizePhone(identifier);
-    user = data.find(u=>u.phone===norm && u.password===password);
+    user = data.find(u=>u.phone===norm);
+    if(user){
+      if(user.password_hash){
+        try { if(bcrypt.compareSync(password, String(user.password_hash))) return true; } catch(e){}
+        return false;
+      }
+      if(user.password && String(user.password)===password){
+        try {
+          user.password_hash = bcrypt.hashSync(password, 10);
+          user.password = '<migrated>';
+          wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
+          XLSX.writeFile(wb, DATA_FILE);
+        } catch(e) { console.warn('[LOGIN-MIGRATE-ERR]', e && e.message); }
+        return true;
+      }
+      return false;
+    }
   }
-  return !!user;
+  return false;
 }
 
 function findUserRecord(data, identifier){
@@ -2233,6 +2271,13 @@ app.post('/api/bundle/grant', (req,res)=>{
     const grantExpiry = Date.now() + (6 * 60 * 60 * 1000); // 6 hours
     try { tempFullAccess.set(entry.identifier, grantExpiry); } catch {}
     try { tempFullAccess.set(deviceFingerprint, grantExpiry); } catch {}
+
+    // Also set router-scoped temporary access so manual-proxy clients using this router can connect
+    try {
+      if (routerIdValue) {
+        routerTempAccess.set(routerIdValue, grantExpiry);
+      }
+    } catch (e) { console.warn('[ROUTER-TEMP-SET-ERR]', e && e.message); }
 
     // Ensure device is registered as active immediately so manual-proxy CONNECT sees it
     try {
@@ -3487,6 +3532,15 @@ function startProxy(){
       console.log('[HTTPS-CONNECT-ALLOWED-TEMP]', { device: deviceKey.slice(0,8), mappedIdentifier });
     }
 
+      // Router-level temporary access: allow any client on this router to CONNECT while routerTempAccess is valid
+      try {
+        const routerExpiry = routerTempAccess.get(routerId) || 0;
+        if (!allowConnect && routerExpiry > Date.now()){
+          allowConnect = true;
+          console.log('[HTTPS-CONNECT-ALLOWED-ROUTER]', { routerId, expiry: new Date(routerExpiry).toISOString() });
+        }
+      } catch(e) { /* non-fatal */ }
+
     // Allow portal and video-ad hosts always
     if (isPortalHost || isVideoAdHost) allowConnect = true;
   } catch (err) {
@@ -4530,6 +4584,8 @@ const socialUnlocked = new Set(); // identifier strings
 const fullAccessUnlocked = new Set(); // Keep the variable but don't auto-add users
 // Temporary immediate unlock after ad completion (identifier -> expiry timestamp ms)
 const tempFullAccess = new Map();
+// Router-scoped temporary access (routerId -> expiry timestamp ms) to allow manual-proxy clients on same router
+const routerTempAccess = new Map();
 // Regex patterns to match ANY Facebook / WhatsApp domains & subdomains (web, CDN, APIs, MQTT, media, regional edges)
 // ENHANCED: Now includes APK and mobile app specific domains
 const SOCIAL_GATED_PATTERNS = [

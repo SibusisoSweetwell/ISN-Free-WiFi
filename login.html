@@ -211,7 +211,7 @@
 	/* Forgot password code input alignment */
 	.code-box { display:flex; justify-content:center; gap:12px; margin:18px 0 8px; }
 	.code-box input.code-digit { width:54px; height:54px; padding:0; font-size:26px; text-align:center; background:var(--brand-red); color:#fff; border:none; border-radius:12px; font-weight:600; box-shadow:0 3px 8px rgba(0,0,0,.35); transition:transform .15s, background .25s; }
-	.code-box input.code-digit:focus { outline:none; transform:translateY(-2px) scale(1.03); box-shadow:0 6px 14px rgba(0,0,0,.4); }
+		.code-box input.code-digit:focus { outline:none; transform:none; box-shadow:0 6px 14px rgba(0,0,0,.4); }
 	@media (max-width:480px){ .code-box { gap:8px; } .code-box input.code-digit { width:46px; height:52px; font-size:22px; } }
 		/* Desktop / large screens: convert to two-column layout */
 		/* Desktop OR tablet landscape (>=760px wide) shows two-column grid */
@@ -377,6 +377,12 @@ if(location.port==='5500'){
 		.login-status.warn{background:#f59e0b;color:#000;}
 	</style>
 	<script>
+// Touch detection helper (used to avoid programmatic focus that can cause layout jumps on phones)
+function isTouchDevice(){ try{ return ('ontouchstart' in window) || (navigator.maxTouchPoints>0) || (navigator.msMaxTouchPoints>0); }catch(e){ return false; } }
+
+// If on touch device, reduce CSS transitions that can cause perceived vibration during typing
+try{ if(isTouchDevice()){ document.documentElement.classList.add('stable'); } }catch{}
+
 // ----- Helper (fallback) storage using localStorage -----
 const LS_KEY='isn_users';
 function normalizePhone(raw){
@@ -466,7 +472,7 @@ function openForgot(){
 	ov.classList.add('active');
 	ov.removeAttribute('aria-hidden');
 	document.body.style.overflow='hidden';
-	setTimeout(()=>document.getElementById('fp-email').focus(),50);
+	setTimeout(()=>{ try{ const el=document.getElementById('fp-email'); if(el && !isTouchDevice()) el.focus(); }catch{} },50);
 }
 function closeForgot(){
 	const ov=document.getElementById('forgotOverlay');
@@ -496,11 +502,11 @@ function buildCodeInputs(){
 		inp.inputMode='numeric';
 		inp.autocomplete='one-time-code';
 		inp.className='code-digit';
-		inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n) n.focus(); } else { inp.value=''; } });
-		inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p){ p.focus(); p.value=''; } } });
+	inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n && !isTouchDevice()) n.focus(); } else { inp.value=''; } });
+	inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p && !isTouchDevice()){ p.focus(); p.value=''; } } });
 		box.appendChild(inp);
 	}
-	box.firstChild && box.firstChild.focus();
+	try{ if(box.firstChild && !isTouchDevice()) box.firstChild.focus(); }catch{}
 }
 function pushToast(html,cls=''){ let stack=document.querySelector('.toast-stack'); if(!stack){ stack=document.createElement('div'); stack.className='toast-stack'; document.body.appendChild(stack);} const t=document.createElement('div'); t.className='toast '+cls; t.innerHTML=html; stack.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .4s, transform .4s'; t.style.opacity='0'; t.style.transform='translate(-50%,-6px)'; setTimeout(()=>t.remove(),420); },12000); }
 async function startResetSimple(){
@@ -559,7 +565,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeForgot(); });
 });
 
 // Registration modal logic
-function openRegister(){ const ov=document.getElementById('registerOverlay'); ov.classList.add('active'); ov.removeAttribute('aria-hidden'); document.body.style.overflow='hidden'; setTimeout(()=>document.getElementById('reg-first').focus(),50); }
+function openRegister(){ const ov=document.getElementById('registerOverlay'); ov.classList.add('active'); ov.removeAttribute('aria-hidden'); document.body.style.overflow='hidden'; setTimeout(()=>{ try{ const el=document.getElementById('reg-first'); if(el && !isTouchDevice()) el.focus(); }catch{} },50); }
 function closeRegister(){ const ov=document.getElementById('registerOverlay'); ov.classList.remove('active'); ov.setAttribute('aria-hidden','true'); if(!document.getElementById('forgotOverlay').classList.contains('active')) document.body.style.overflow=''; }
 function toggleFilled(el){ if(el.value.trim()) el.classList.add('filled'); else el.classList.remove('filled'); }
 ['reg-first','reg-surname','reg-dob','reg-email2','reg-phone','reg-password','reg-password2'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; ['input','change'].forEach(ev=>el.addEventListener(ev,()=>toggleFilled(el))); toggleFilled(el); });
@@ -609,7 +615,7 @@ async function submitRegister(e){
 				}
 				if(data && /weak password/i.test(msgServer)){ showMsg('Server says password weak. Include upper, lower, number & symbol.', 'error'); return false; }
 				showMsg(msgServer||`Registration failed (status ${res.status}).`, 'error');
-				if(data.field){ const fieldMap={ email:'reg-email2', phone:'reg-phone', firstName:'reg-first', surname:'reg-surname', dob:'reg-dob' }; const fld=fieldMap[data.field]; if(fld){ const el=document.getElementById(fld); el.classList.add('field-error'); el.focus(); }}
+				if(data.field){ const fieldMap={ email:'reg-email2', phone:'reg-phone', firstName:'reg-first', surname:'reg-surname', dob:'reg-dob' }; const fld=fieldMap[data.field]; if(fld){ const el=document.getElementById(fld); el.classList.add('field-error'); if(!isTouchDevice()) el.focus(); }}
 				return false;
 			}
 			// Success path: auto-login and redirect to My Account (home.html)
@@ -653,7 +659,7 @@ async function submitRegister(e){
 		} else {
 			emailInput.disabled=false;
 			emailInput.closest('#email-optional-wrap').style.opacity='1';
-			emailInput.focus();
+			if(!isTouchDevice()) emailInput.focus();
 			noEmailBtn.textContent="I don't have / want to use email";
 		}
 	});
