@@ -105,6 +105,31 @@ const adminLimiter = rateLimit({
 // admin user at startup so the account is always present. The seed values may
 // be overridden by environment variables in production.
 
+// Migrate any legacy XLSX file from repo root into DATA_DIR so user accounts
+// are preserved after deploys. This will move './logins.xlsx' to DATA_FILE if
+// present and the target file is missing.
+function migrateLegacyXLSX(){
+  try {
+    const legacy = path.join(__dirname, 'logins.xlsx');
+    if(!fs.existsSync(legacy)) return;
+    if(fs.existsSync(DATA_FILE)){
+      console.log('[MIGRATE] DATA_FILE already exists at', DATA_FILE, '- skipping legacy migration');
+      return;
+    }
+    // Attempt rename (fast), fallback to copy+unlink if different mount
+    try {
+      fs.renameSync(legacy, DATA_FILE);
+      console.log('[MIGRATE] moved legacy logins.xlsx ->', DATA_FILE);
+    } catch(e) {
+      try {
+        fs.copyFileSync(legacy, DATA_FILE);
+        fs.unlinkSync(legacy);
+        console.log('[MIGRATE] copied legacy logins.xlsx ->', DATA_FILE);
+      } catch(e2){ console.warn('[MIGRATE-ERR] failed to migrate legacy XLSX', e2 && e2.message); }
+    }
+  } catch(err){ console.warn('[MIGRATE-ERR]', err && err.message); }
+}
+
 // Enhanced per-device access control with MAC address tracking
 // Prevents one device from unlocking access for all other devices
 const deviceIsolation = require('./device-isolation-enhancement');
@@ -1458,6 +1483,33 @@ function markDeviceUnlocked(deviceId, identifier, bundleMB = 100, durationHours 
   }
 }
 
+// Helper: compute persisted aggregates from SQLite for an identifier (if sqlite active)
+function getSqliteAggregatesForIdentifier(identifier){
+  try{
+    if(!sqliteDB) return null;
+    const id = String(identifier||'').trim();
+    if(!id) return null;
+    // sqliteDB.getPurchasesByPhone and getUsageByPhone return arrays
+    const purchases = sqliteDB.getPurchasesByPhone ? sqliteDB.getPurchasesByPhone(id) : [];
+    const usage = sqliteDB.getUsageByPhone ? sqliteDB.getUsageByPhone(id) : [];
+
+    const totalBundleMB = (purchases || []).reduce((s,p)=> s + (Number(p.dataAmount||p.bundleMB||0)), 0);
+    const totalUsedMB = (usage || []).reduce((s,u)=> s + (Number(u.dataUsed||u.usedMB||0)), 0);
+    const remainingMB = Math.max(0, totalBundleMB - totalUsedMB);
+
+    // Normalize purchases shape for clients (bundleMB, usedMB, routerId, grantedAtISO, bundleType)
+    const normalizedPurchases = (purchases || []).map(r=>({
+      bundleMB: Number(r.dataAmount||r.bundleMB||0),
+      usedMB: Number(r.usedMB||0),
+      routerId: r.routerId || r.router_id || 'router',
+      grantedAtISO: r.timestamp || r.grantedAtISO || new Date().toISOString(),
+      bundleType: r.bundleType || r.purchaseType || 'sqlite'
+    })).sort((a,b)=> new Date(b.grantedAtISO) - new Date(a.grantedAtISO));
+
+    return { totalBundleMB, totalUsedMB, remainingMB, purchases: normalizedPurchases };
+  } catch(err){ console.warn('[SQLITE-AGG-ERR]', err && err.message); return null; }
+}
+
 // Start or update a session (ping) with enhanced device tracking
 function pingSession(identifier, routerId, ua, deviceId = null){
   const idLower=(identifier||'').trim().toLowerCase();
@@ -1584,6 +1636,9 @@ function buildAdminOverview(){
     if(missingInfo.length) flags.push('missing-info');
     if(profileUpdatedISO){ try { const ageDays = (Date.now()-Date.parse(profileUpdatedISO))/(86400000); if(ageDays>30) flags.push('profile-outdated'); } catch{}
     } else { flags.push('never-updated'); }
+    // Prefer sqlite aggregates when available for accurate persisted totals
+    let sqliteAgg = null;
+    try { sqliteAgg = sqliteDB ? getSqliteAggregatesForIdentifier(identifier) : null; } catch(e){ sqliteAgg = null; }
     return {
       identifier: identifier, // Keep for backend compatibility
       fullName: (u.firstName||'') + ' ' + (u.surname||''),
@@ -1595,7 +1650,9 @@ function buildAdminOverview(){
       dateCreated: u.dateCreatedISO,
       routersUsed: [...(summary.routers||[])],
       mbpsCurrent: null,
-      totalDataUnlockedMB: summary.bundleMB||0,
+      totalDataUnlockedMB: sqliteAgg ? sqliteAgg.totalBundleMB : (summary.bundleMB||0),
+      totalUsedMB: sqliteAgg ? sqliteAgg.totalUsedMB : (summary.usedMB||0),
+      remainingDataMB: sqliteAgg ? sqliteAgg.remainingMB : Math.max(0, (summary.bundleMB||0) - (summary.usedMB||0)),
       activeSessions: activeSessionsById[identifier]||0,
       lastLogin: lastLoginById[identifier]||null,
       profileUpdated: profileUpdatedISO,
@@ -1636,9 +1693,10 @@ function buildAdminOverview(){
       fullName: (u.firstName || '') + ' ' + (u.surname || ''),
       email: u.email || 'Not provided',
       phone: u.phone || 'Not provided',
+  dob: u.dob || null,
       firstName: u.firstName || 'Not provided',
       surname: u.surname || 'Not provided',
-      registrationDate: formatDate(u.dateCreatedISO) || 'Unknown',
+  registrationDate: formatDate(u.dateCreatedISO) || 'Unknown',
       loginCount: logins.length, 
       lastLogin: formatDate(logins[0]?.tsISO) || 'Never', 
       lastLoginIP: logins[0]?.ip || 'Unknown', 
@@ -2294,16 +2352,25 @@ function ensureAdminSeeded(){
 const resetCodes = new Map(); // email -> { code, expires }
 
 app.post('/api/forgot/start', (req,res)=>{
-  const { email } = req.body;
-  if(!email) return res.status(400).json({ ok:false, message:'Email required' });
+  const { email, phone, dob } = req.body;
+  if(!email || !phone || !dob) return res.status(400).json({ ok:false, message:'Email, phone and date of birth required' });
   const emailLower = String(email).trim().toLowerCase();
+  const normPhone = normalizePhone(phone);
+  if(!normPhone) return res.status(400).json({ ok:false, message:'Invalid phone number' });
   try {
+    let user;
     if (sqliteDB) {
-      const user = sqliteDB.findUser(emailLower);
-      if (!user) return res.status(404).json({ ok:false, message:'Email not found' });
+      user = sqliteDB.findUser(emailLower);
+      if (!user) return res.status(404).json({ ok:false, message:'Account not found' });
+      // validate phone and dob when present
+      if(user.phone && String(user.phone).trim() !== normPhone) return res.status(400).json({ ok:false, message:'Phone does not match our records' });
+      if(user.dob && String(user.dob).trim() !== String(dob).trim()) return res.status(400).json({ ok:false, message:'Date of birth does not match our records' });
     } else {
       const { data } = getUsers();
-      if(!data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower)) return res.status(404).json({ ok:false, message:'Email not found' });
+      user = data.find(u=> String(u.email||'').trim().toLowerCase()===emailLower);
+      if(!user) return res.status(404).json({ ok:false, message:'Account not found' });
+      if(user.phone && normalizePhone(user.phone) !== normPhone) return res.status(400).json({ ok:false, message:'Phone does not match our records' });
+      if(user.dob && String(user.dob).trim() !== String(dob).trim()) return res.status(400).json({ ok:false, message:'Date of birth does not match our records' });
     }
     const code = Math.floor(100000 + Math.random()*900000).toString();
     resetCodes.set(emailLower, { code, expires: Date.now()+10*60*1000 });
@@ -2404,6 +2471,18 @@ app.get('/_routes',(req,res)=>{
     const routes=stack.filter(l=>l.route && l.route.path).map(l=>({method:Object.keys(l.route.methods)[0], path:l.route.path}));
     res.json({ ok:true, count:routes.length, routes });
   } catch(err){ res.status(500).json({ ok:false, message:'route list error' }); }
+});
+
+// Storage debug endpoint: reports active storage mode and file paths
+app.get('/api/_debug/storage', (req, res) => {
+  try {
+    const storageMode = (process.env.USE_SQLITE === 'true') ? 'sqlite' : 'xlsx';
+    const sqlitePath = process.env.SQLITE_PATH || path.join(DATA_DIR, 'logins.db');
+    const xlsxPath = DATA_FILE;
+    const sqliteExists = fs.existsSync(sqlitePath);
+    const xlsxExists = fs.existsSync(xlsxPath);
+    res.json({ ok:true, storageMode, paths: { sqlite: sqlitePath, xlsx: xlsxPath }, exists: { sqlite: sqliteExists, xlsx: xlsxExists }, dataDir: DATA_DIR });
+  } catch(err){ res.status(500).json({ ok:false, message:'storage debug error' }); }
 });
 
 // Lightweight portal / proxy config discovery (used by frontend Help panel)
@@ -4373,14 +4452,16 @@ app.get('/api/me/usage', (req,res)=>{
       nextMilestone = { target: 15, reward: 'Max reached (500MB)', needed: 0 };
     }
     
+    // Prefer persisted sqlite aggregates when available for authoritative totals
+    const sqliteAgg = sqliteDB ? getSqliteAggregatesForIdentifier(idLower) : null;
     // Enhanced response with real data
     const response = {
       ok: true,
-      // Real-time usage data (no undefined values)
-      totalBundleMB: usageData.totalBundleMB || 0,
-      totalUsedMB: usageData.totalUsedMB || 0,
-      remainingMB: usageData.remainingMB || 0,
-      exhausted: usageData.exhausted || false,
+      // Prefer sqlite totals, fallback to real-time tracker
+      totalBundleMB: sqliteAgg ? sqliteAgg.totalBundleMB : (usageData.totalBundleMB || 0),
+      totalUsedMB: sqliteAgg ? sqliteAgg.totalUsedMB : (usageData.totalUsedMB || 0),
+      remainingMB: sqliteAgg ? sqliteAgg.remainingMB : (usageData.remainingMB || 0),
+      exhausted: sqliteAgg ? (sqliteAgg.remainingMB <= 0) : (usageData.exhausted || false),
       
       // Video tracking data
       videosWatched: videoCount,
@@ -4395,10 +4476,11 @@ app.get('/api/me/usage', (req,res)=>{
         remaining: usageData.remainingMB || 0
       },
       
-      // Device and session info
-      deviceId: deviceFingerprint,
-      strictMode: true,
-      purchases: myPurchases,
+  // Device and session info
+  deviceId: deviceFingerprint,
+  strictMode: true,
+  // If sqlite aggregates include normalized purchases, use them; otherwise use myPurchases
+  purchases: sqliteAgg && Array.isArray(sqliteAgg.purchases) && sqliteAgg.purchases.length ? sqliteAgg.purchases : myPurchases,
       
       // Real-time statistics
       realTimeStats: {
@@ -4640,10 +4722,11 @@ app.get('/api/admin/dashboard', adminLimiter, (req,res)=>{
         routerID: usage?.routerId || 'Unknown',
         downMbps: usage ? Number(usage.downMbps.toFixed(2)) : 0.00,
         upMbps: usage ? Number(usage.upMbps.toFixed(2)) : 0.00,
-        totalDataUsed: `${totalUsedMB.toFixed(2)} MB`,
-        totalDataBundle: `${totalBundleMB.toFixed(2)} MB`,
-        remainingData: `${remainingMB.toFixed(2)} MB`,
-        sessionUsage: `${sessionUsageMB.toFixed(2)} MB`,
+        // Numeric aggregate fields for frontend rendering
+        totalUsedMB: Number((totalUsedMB || 0).toFixed(2)),
+        totalDataMB: Number((totalBundleMB || 0).toFixed(2)),
+        remainingDataMB: Number((remainingMB || 0).toFixed(2)),
+        sessionUsageMB: Number((sessionUsageMB || 0).toFixed(2)),
         connectionDuration: durationFormatted,
         lastActivity: lastActivity,
         status: status,
@@ -6282,6 +6365,98 @@ app.get('/proxy.pac',(req,res)=>{
 });
 
 // Ensure the seeded admin account exists before binding the server
+// One-time importer: migrate Users sheet from XLSX into SQLite when enabled
+function importXlsxToSqliteOnce(){
+  try {
+    if (process.env.USE_SQLITE !== 'true' || !sqliteDB) {
+      console.log('[MIGRATE-SQLITE] SQLite not enabled; skipping XLSX->SQLite import');
+      return;
+    }
+    const marker = path.join(DATA_DIR, '.migrated_xlsx_to_sqlite');
+    if (fs.existsSync(marker)) {
+      console.log('[MIGRATE-SQLITE] marker present, skipping import');
+      return;
+    }
+
+    if (!fs.existsSync(DATA_FILE)) {
+      console.log('[MIGRATE-SQLITE] no XLSX file at', DATA_FILE, '- nothing to import');
+      return;
+    }
+
+    // Load users from the workbook (uses existing loadWorkbook/getUsers helpers)
+    const { wb, ws, data } = getUsers();
+    if (!Array.isArray(data) || data.length === 0) {
+      console.log('[MIGRATE-SQLITE] Users sheet empty; nothing to import');
+      // still create a marker so we don't keep checking on every restart
+      try { fs.writeFileSync(marker, 'no-users'); } catch(e){}
+      return;
+    }
+
+    let imported = 0, skipped = 0;
+    for (const r of data) {
+      try {
+        const email = (r.email||'').toString().trim().toLowerCase();
+        const phone = normalizePhone(r.phone || r.Phone || '');
+        if (!email && !phone) { skipped++; continue; }
+
+        // Skip if user already exists in SQLite
+        try {
+          if (email && sqliteDB.findUser(email)) { skipped++; continue; }
+          if (!email && phone && sqliteDB.findUser(phone)) { skipped++; continue; }
+        } catch(e) {
+          // If findUser fails for any reason, continue to next row
+          console.warn('[MIGRATE-SQLITE] findUser check failed for', email || phone, e && e.message);
+        }
+
+        // Prefer to preserve existing bcrypt password_hash if present
+        const pwHash = r.password_hash || r.passwordHash || null;
+        const firstName = r.firstName || r.firstname || r.first || '';
+        const surname = r.surname || r.lastName || r.surname || '';
+        const dob = r.dob || r.DOB || '';
+        const dateCreatedISO = r.dateCreatedISO || new Date().toISOString();
+        const dateCreatedLocal = r.dateCreatedLocal || new Date().toString();
+
+        if (pwHash) {
+          // Insert directly with preserved password_hash (avoid createUser which hashes plaintext)
+          try {
+            const stmt = sqliteDB._db().prepare(`INSERT INTO users (email,phone,password_hash,password,firstName,surname,dob,dateCreatedISO,dateCreatedLocal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run(email || null, phone || null, pwHash, null, firstName || null, surname || null, dob || null, dateCreatedISO, dateCreatedLocal);
+            imported++;
+            continue;
+          } catch(e) {
+            console.warn('[MIGRATE-SQLITE] direct insert failed for', email || phone, e && e.message);
+          }
+        }
+
+        // If no hash but plaintext password present (legacy), use createUser to hash it
+        if (r.password && String(r.password).length > 0 && String(r.password) !== '<hashed>') {
+          try {
+            const res = sqliteDB.createUser({ email: email || null, password: String(r.password), phone: phone || null, firstName: firstName || null, surname: surname || null, dob: dob || null });
+            if (res && res.ok) imported++; else skipped++;
+            continue;
+          } catch(e) { console.warn('[MIGRATE-SQLITE] createUser failed for', email||phone, e && e.message); }
+        }
+
+        // No password info - create a user record with a random temporary password so account exists
+        try {
+          const tempPw = 'changeme-' + crypto.randomBytes(6).toString('hex');
+          const res = sqliteDB.createUser({ email: email || null, password: tempPw, phone: phone || null, firstName: firstName || null, surname: surname || null, dob: dob || null });
+          if (res && res.ok) {
+            imported++;
+          } else skipped++;
+        } catch(e) { console.warn('[MIGRATE-SQLITE] fallback createUser failed for', email||phone, e && e.message); skipped++; }
+
+      } catch(e){ console.warn('[MIGRATE-SQLITE] row import error', e && e.message); skipped++; }
+    }
+
+    // Write marker to avoid re-running import
+    try { fs.writeFileSync(marker, `imported=${imported};skipped=${skipped};ts=${Date.now()}`); } catch(e){}
+    console.log('[MIGRATE-SQLITE] import complete: imported=', imported, 'skipped=', skipped, 'marker=', marker);
+  } catch(err){ console.warn('[MIGRATE-SQLITE-ERR]', err && err.message); }
+}
+
+try { importXlsxToSqliteOnce(); } catch(e){ console.warn('[MIGRATE-SQLITE-CALL-ERR]', e && e.message); }
+
 try { ensureAdminSeeded(); } catch(e){ console.warn('[ADMIN-SEED-CALL-ERR]', e && e.message); }
 startExpress(PORT, 5);
 

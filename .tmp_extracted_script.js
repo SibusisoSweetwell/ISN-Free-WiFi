@@ -1,18 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width,initial-scale=1" />
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<!-- Performance: warm up YouTube / image hosts for faster ad start -->
-	<link rel="preconnect" href="https://www.youtube.com">
-	<link rel="preconnect" href="https://i.ytimg.com">
-	<link rel="preconnect" href="https://i9.ytimg.com">
-	<link rel="preconnect" href="https://yt3.ggpht.com">
-	<!-- Google Analytics (gtag.js) -->
-	<script async src="https://www.googletagmanager.com/gtag/js?id=G-20BE5MDEEZ"></script>
-	<script>
+
 	  window.dataLayer = window.dataLayer || [];
 	  function gtag(){dataLayer.push(arguments);} 
 	  gtag('js', new Date());
@@ -3364,6 +3350,3 @@ if(!window._wakeAudioInit){
 		},{passive:true});
 	});
 }
-</script>
-</body>
-</html>

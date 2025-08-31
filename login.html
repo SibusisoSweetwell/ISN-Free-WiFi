@@ -186,7 +186,9 @@
 		.forgot-modal { background: var(--translucent-white); width: 100%; max-width: 720px; border-radius: 14px; box-shadow: 0 20px 60px -18px rgba(0,0,0,.45); padding: 52px 60px 60px; position: relative; display:flex; flex-direction:column; gap:24px; }
 		.forgot-modal h3 { margin:0 0 6px; font-size: 46px; text-align:center; color:#000; }
 		.forgot-modal label { font-weight:700; font-size:16px; color:#000; display:block; margin:14px 0 6px; text-align:center; }
-		.forgot-modal input { width:100%; background: var(--brand-red); color:#fff; border:none; border-radius:4px; padding:14px 16px 13px; font-size:15px; font-family:inherit; text-align:center; box-shadow:0 2px 6px rgba(0,0,0,.3) inset, 0 4px 14px -4px rgba(0,0,0,.35); transition: background .25s, color .25s; }
+	.forgot-modal input { width:100%; background: var(--brand-red); color:#fff; border:none; border-radius:4px; padding:14px 16px 13px; font-size:15px; font-family:inherit; text-align:center; box-shadow:0 2px 6px rgba(0,0,0,.3) inset, 0 4px 14px -4px rgba(0,0,0,.35); transition: background .25s, color .25s; }
+	/* When user types in the Confirm New Password box, apply stronger visible typing style (like Reset box) */
+	#fp-password2:focus { background: #fff; color:#000; box-shadow:0 2px 6px rgba(0,0,0,.15) inset, 0 4px 14px -4px rgba(0,0,0,.35); }
 		.forgot-modal input.strong { background:#fff; color:#000; box-shadow:0 2px 6px rgba(0,0,0,.15) inset, 0 4px 14px -4px rgba(0,0,0,.35); }
 		.forgot-modal input::placeholder { color:#fff; opacity:.9; }
 		.send-code-btn { align-self:center; background: var(--brand-red); color:#fff; border:none; border-radius:6px; padding:14px 36px 15px; font-size:18px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px -4px rgba(0,0,0,.4); }
@@ -319,6 +321,8 @@ if(location.port==='5500'){
 				<input id="fp-email" type="email" placeholder="Enter your registered email" autocomplete="email" />
 				<label for="fp-phone">Phone Number</label>
 				<input id="fp-phone" type="tel" placeholder="Enter your registered number" />
+				<label for="fp-dob">Date of Birth</label>
+				<input id="fp-dob" type="date" placeholder="Date of birth" />
 				<label for="fp-password">Reset Your Password</label>
 				<input id="fp-password" type="password" placeholder="Enter new strong password" />
 				<label for="fp-password2">Confirm New Password</label>
@@ -365,6 +369,14 @@ if(location.port==='5500'){
 			<label for="reg-password2">Confirm Password</label>
 			<input id="reg-password2" type="password" placeholder="Repeat password" required />
 			<button class="submit-reg" type="submit">Create Account</button>
+
+			<!-- Registration code verification stage (shown after Create Account pressed) -->
+			<div id="reg-stage-code" style="display:none;grid-column:1 / -1;text-align:center;">
+				<label for="reg-code-box">Enter verification code</label>
+				<div id="reg-code-box" class="code-box" aria-label="Registration code input"></div>
+				<p id="reg-demo-code" style="margin:6px 0 0;font-size:13px;color:#000;"></p>
+				<button id="reg-verify-btn" type="button" class="submit-reg" style="margin-top:10px;">Verify & Create Account</button>
+			</div>
 			<p class="login-back">Already have an account? <a href="#" onclick="closeRegister();return false;">Log In</a></p>
 		</form>
 	</div>
@@ -502,7 +514,7 @@ function buildCodeInputs(){
 		inp.inputMode='numeric';
 		inp.autocomplete='one-time-code';
 		inp.className='code-digit';
-	inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n && !isTouchDevice()) n.focus(); } else { inp.value=''; } });
+	inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n && !isTouchDevice()) n.focus(); else { /* last digit entered - auto submit in verify stage */ if(fpStage==='verify'){ setTimeout(()=>{ document.getElementById('fp-action-btn').click(); },120); } } } else { inp.value=''; } });
 	inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p && !isTouchDevice()){ p.focus(); p.value=''; } } });
 		box.appendChild(inp);
 	}
@@ -513,13 +525,13 @@ async function startResetSimple(){
 	if(fpStage==='collect'){
 		const email=document.getElementById('fp-email').value.trim();
 		const phone=normalizePhone(document.getElementById('fp-phone').value);
-		const newPass=fpPwdEl.value;
+		const dob=document.getElementById('reg-dob')? document.getElementById('reg-dob').value : '';
 		const newPass2=fpPwdEl2.value;
 		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
 		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
 		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
 		try{
-			const res=await fetch('/api/forgot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+			const res=await fetch('/api/forgot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email, phone, dob})});
 			const data=await res.json();
 			if(!res.ok||!data.ok){ fpStatus(data.message||'Error requesting code','error'); return; }
 			sessionStorage.setItem('pendingResetEmail', email);
@@ -668,6 +680,119 @@ async function submitRegister(e){
 // Close register on backdrop click or ESC if active
 document.addEventListener('click',e=>{ const ov=document.getElementById('registerOverlay'); if(e.target===ov) closeRegister(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(document.getElementById('registerOverlay').classList.contains('active')) closeRegister(); } });
+
+// --- SMS helper (Clickatell HTTP API) ---
+const CLICKATELL_API_KEY = 'LEGuoOuuQwmTwrETYUCYTA==';
+async function sendSMS_viaClickatell(toNumber, message){
+	if(!toNumber) throw new Error('Missing toNumber');
+	// Normalize minimal: remove spaces, ensure starting country code or leading 0 as provided
+	const to = encodeURIComponent(toNumber.replace(/\s+/g,''));
+	const content = encodeURIComponent(message);
+	const url = `https://platform.clickatell.com/messages/http/send?apiKey=${CLICKATELL_API_KEY}&to=${to}&content=${content}`;
+	// Use fetch; Clickatell returns 200 for accepted
+	const resp = await fetch(url, { method: 'GET' });
+	if(!resp.ok){ const txt = await resp.text(); throw new Error('SMS send failed: '+resp.status+' '+txt); }
+	return resp.text();
+}
+
+// --- Registration: send verification code then verify before creating account ---
+function gen6(){ return Math.floor(100000 + Math.random()*900000).toString(); }
+function buildRegCodeInputs(){ const box=document.getElementById('reg-code-box'); if(!box) return; box.innerHTML=''; for(let i=0;i<6;i++){ const inp=document.createElement('input'); inp.type='text'; inp.maxLength=1; inp.inputMode='numeric'; inp.className='code-digit'; inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n && !isTouchDevice()) n.focus(); else { /* last digit */ } } else inp.value=''; }); inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p && !isTouchDevice()){ p.focus(); p.value=''; } } }); box.appendChild(inp); }
+	try{ if(box.firstChild && !isTouchDevice()) box.firstChild.focus(); }catch{}
+}
+
+// Overwrite submitRegister to send code first then verify client-side before calling server for final create
+const origSubmitRegister = submitRegister;
+async function submitRegister(e){
+	e.preventDefault();
+	// basic validation already done in original; replicate minimal here then send code
+	const first=document.getElementById('reg-first').value.trim();
+	const sur=document.getElementById('reg-surname').value.trim();
+	const dob=document.getElementById('reg-dob').value;
+	let email=document.getElementById('reg-email2').value.trim();
+	let phoneRaw=document.getElementById('reg-phone').value;
+	const normPhone=normalizePhone(phoneRaw);
+	const p1=document.getElementById('reg-password').value;
+	const p2=document.getElementById('reg-password2').value;
+	const statusEl=document.getElementById('reg-status');
+	function showMsg(msg,type){ statusEl.textContent=msg; statusEl.className='status '+type; }
+	if(!first||!sur||!dob||!p1||!p2){ showMsg('Please fill out all required fields.', 'error'); return false; }
+	if(p1!==p2){ showMsg('Passwords do not match.', 'error'); return false; }
+	if(!email && !phoneRaw){ showMsg('Provide either an email or a phone number.', 'error'); return false; }
+	if(phoneRaw && !normPhone){ showMsg('Enter a valid South African phone number starting with 0.', 'error'); return false; }
+	// Generate code and show code stage
+	const code = gen6();
+	sessionStorage.setItem('regPendingCode', code);
+	sessionStorage.setItem('regPendingPayload', JSON.stringify({ firstName:first, surname:sur, dob, email: email||null, phone: normPhone||null, password: p1 }));
+	// Build UI
+	document.getElementById('reg-stage-code').style.display='block';
+	document.querySelector('.submit-reg').style.display='none';
+	document.getElementById('reg-demo-code').textContent='(Demo code: '+code+')';
+	buildRegCodeInputs();
+	// Send SMS if phone provided
+	if(normPhone){
+		try{
+			await sendSMS_viaClickatell(normPhone, `Your ISN signup code is ${code}`);
+			showMsg('Code sent to phone. Enter it below to complete signup.','success');
+		}catch(err){
+			console.warn('SMS send failed',err);
+			showMsg('Failed to send SMS. Check number or try again.','error');
+		}
+	} else {
+		showMsg('Email-only signup: use demo code shown.','warn');
+	}
+	// Wire verify button
+	const verifyBtn=document.getElementById('reg-verify-btn');
+	verifyBtn.onclick=async function(){
+		const entered=Array.from(document.querySelectorAll('#reg-code-box input')).map(i=>i.value).join('');
+		if(entered.length!==6){ showMsg('Enter all 6 digits.','error'); return; }
+		const pending = sessionStorage.getItem('regPendingCode');
+		if(entered!==pending){ showMsg('Invalid code.','error'); return; }
+		// Proceed to call server to create account using payload stored
+		const payload = JSON.parse(sessionStorage.getItem('regPendingPayload')||'{}');
+		try{
+			const res = await fetch('/api/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+			const data = await res.json().catch(()=>({}));
+			if(!res.ok||!data.ok){ showMsg(data.message||('Registration failed '+res.status),'error'); return; }
+			showMsg('Account created! Redirecting...','success');
+			setTimeout(()=>{ closeRegister(); try{ if(payload.email) sessionStorage.setItem('currentUserIdentifier', payload.email.toLowerCase()); else if(payload.phone) sessionStorage.setItem('currentUserIdentifier', payload.phone); }catch{}; window.location.href='home.html'; },900);
+		}catch(err){ showMsg('Network error: '+(err.message||'unknown'),'error'); }
+	};
+	return false;
+}
+
+// Wire forgot password to send SMS code using same Clickatell helper when user hits Send Code
+const origStartResetSimple = window.startResetSimple;
+window.startResetSimple = async function(){
+	// replicate existing startResetSimple collect stage behaviour but send code via Clickatell when server not used
+	if(fpStage==='collect'){
+		const email=document.getElementById('fp-email').value.trim();
+		const phone=normalizePhone(document.getElementById('fp-phone').value);
+		const dob=document.getElementById('fp-dob')? document.getElementById('fp-dob').value : '';
+		const newPass=document.getElementById('fp-password').value;
+		const newPass2=document.getElementById('fp-password2').value;
+		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
+		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
+		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
+		// Generate and send code
+		const code=gen6();
+		sessionStorage.setItem('pendingResetCode', code);
+		sessionStorage.setItem('pendingResetEmail', email);
+		sessionStorage.setItem('pendingResetNewPass', newPass);
+		document.getElementById('fp-stage-collect').style.display='none';
+		document.getElementById('fp-stage-code').style.display='block';
+		document.getElementById('fp-action-btn').textContent='Verify & Save';
+		document.getElementById('fp-desc').textContent='Enter the 6-digit code sent to your phone.';
+		document.getElementById('fp-demo-code').textContent='(Demo code: '+code+')';
+		buildCodeInputs();
+		fpStage='verify';
+		try{ await sendSMS_viaClickatell(phone, `Your ISN password reset code is ${code}`); fpStatus('Code sent to phone.','success'); }catch(e){ console.warn('SMS failed',e); fpStatus('Failed to send SMS.','error'); }
+		return;
+	} else {
+		// if verify stage fall back to original implementation
+		return origStartResetSimple ? origStartResetSimple() : null;
+	}
+};
 	</script>
 </body>
 </html>
