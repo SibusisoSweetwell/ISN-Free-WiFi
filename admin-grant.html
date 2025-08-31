@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Grant Data</title>
+<style>
+:root{--brand:#007bff;--panel:#f6f8fb;--radius:12px}
+body{font-family:Inter,Arial,Helvetica,sans-serif;background:#f1f3f6;margin:24px}
+.container{max-width:980px;margin:0 auto}
+.panel{background:#fff;border-radius:var(--radius);padding:18px;box-shadow:0 8px 20px rgba(0,0,0,.06)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.input{padding:10px;border-radius:8px;border:1px solid #e6e9ee;flex:1}
+.btn{background:var(--brand);color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+.small{font-size:13px;color:#666}
+.status{margin-top:12px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1 style="color:var(--brand)">Admin Grant</h1>
+  <div class="panel">
+    <div class="row">
+      <input id="identifier" class="input" placeholder="Email or Phone (optional)" />
+      <input id="deviceId" class="input" placeholder="Device ID (optional)" />
+    </div>
+    <div style="height:12px"></div>
+    <div class="row">
+      <input id="mb" class="input" placeholder="MB to grant (e.g. 100)" />
+      <input id="hours" class="input" placeholder="Duration hours (default 24)" />
+    </div>
+    <div style="height:12px"></div>
+    <div class="row">
+      <button id="grantBtn" class="btn">Grant</button>
+      <button id="diagBtn" class="btn" style="background:#6c757d">Diagnostics</button>
+      <button id="listBtn" class="btn" style="background:#28a745">View Temp Access</button>
+    </div>
+    <div class="status" id="status"></div>
+    <pre id="out" style="margin-top:12px;background:#f8f9fb;padding:12px;border-radius:8px;max-height:320px;overflow:auto"></pre>
+  </div>
+</div>
+<script>
+function adminAuth(){
+  // Try to pick admin token from localStorage if present
+  return localStorage.getItem('adminToken') || '';
+}
+function setStatus(t){ document.getElementById('status').textContent = t; }
+function showOut(o){ document.getElementById('out').textContent = typeof o === 'string' ? o : JSON.stringify(o, null, 2); }
+
+async function doGrant(){
+  const identifier = document.getElementById('identifier').value.trim();
+  const deviceId = document.getElementById('deviceId').value.trim();
+  const mb = Number(document.getElementById('mb').value) || 0;
+  const hours = Number(document.getElementById('hours').value) || 24;
+  if(!mb || (identifier==='' && deviceId==='')){ setStatus('Provide MB and identifier or deviceId'); return; }
+  setStatus('Sending grant...');
+  try{
+    const res = await fetch('/api/admin/grant',{ method:'POST', headers: {'Content-Type':'application/json', 'x-admin-token': adminAuth()}, body: JSON.stringify({ identifier, deviceId, mb, durationHours: hours }) });
+    const j = await res.json(); if(!j.ok) setStatus('Error: '+(j.message||res.status)); else setStatus('Granted'); showOut(j);
+  }catch(e){ setStatus('Request failed'); showOut(e.message||e); }
+}
+
+async function doDiag(){ setStatus('Fetching diagnostics...'); try{ const res=await fetch('/api/admin/diagnostics',{ headers:{ 'x-admin-token': adminAuth() }}); const j=await res.json(); showOut(j); setStatus(j.ok?'OK':'Error'); }catch(e){ setStatus('Err'); showOut(e.message||e); } }
+async function viewTemp(){ setStatus('Fetching temp access...'); try{ const res=await fetch('/api/admin/temp-access',{ headers:{ 'x-admin-token': adminAuth() }}); const j=await res.json(); showOut(j); setStatus(j.ok?'OK':'Error'); }catch(e){ setStatus('Err'); showOut(e.message||e); } }
+
+document.getElementById('grantBtn').addEventListener('click', doGrant);
+document.getElementById('diagBtn').addEventListener('click', doDiag);
+document.getElementById('listBtn').addEventListener('click', viewTemp);
+</script>
+</body>
+</html>

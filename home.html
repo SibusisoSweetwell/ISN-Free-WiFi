@@ -602,29 +602,7 @@
 					</div>
 				</div>
 
-				<!-- Temporary Unlocks Management (Admin -> My Usage) -->
-				<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
-					<h4 style="margin:0 0 16px;color:var(--brand);font-size:18px;">Temporary Unlocks (My Usage)</h4>
-					<div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-						<input id="adminSecretLocal" type="password" placeholder="Admin secret" style="padding:8px;border-radius:8px;border:1px solid #eee;" />
-						<button onclick="loadTempUnlocksAdmin()" style="background:var(--brand);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;">Load Unlocks</button>
-						<button onclick="bulkRevokeUnlocks()" style="background:#c30000;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;">Bulk Revoke Expired</button>
-					</div>
-					<div style="overflow:auto;max-height:260px;">
-						<table id="homeTempUnlocksTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px;">
-							<thead>
-								<tr style="background:var(--panel);">
-									<th style="text-align:left;padding:8px;font-weight:700;">ID</th>
-									<th style="text-align:left;padding:8px;font-weight:700;">Identifier</th>
-									<th style="text-align:left;padding:8px;font-weight:700;">Device ID</th>
-									<th style="text-align:left;padding:8px;font-weight:700;">Expiry</th>
-									<th style="text-align:left;padding:8px;font-weight:700;">Actions</th>
-								</tr>
-							</thead>
-							<tbody></tbody>
-						</table>
-					</div>
-				</div>
+				<!-- Admin-only Temporary Unlocks removed from user My Usage for clarity -->
 				
 				<!-- Regular User Usage Section -->
 				<div id="regularUsage" style="display:flex;flex-direction:column;gap:28px;max-height:60vh;overflow:auto;padding-right:6px;scrollbar-width:thin;">
@@ -1147,10 +1125,12 @@ async function loadAdminDashboard() {
 			`).join('');
 		}
 
-		// --- Temp unlocks admin functions for My Usage admin panel ---
+		// --- Temp unlocks admin functions for My Usage admin panel (guarded) ---
 		async function loadTempUnlocksAdmin() {
-			const secret = document.getElementById('adminSecretLocal').value;
+			const secretEl = document.getElementById('adminSecretLocal');
 			const tbody = document.querySelector('#homeTempUnlocksTable tbody');
+			if(!secretEl || !tbody){ console.warn('Admin temp unlock UI not present; loadTempUnlocksAdmin is a no-op.'); return; }
+			const secret = secretEl.value;
 			tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;">Loading...</td></tr>';
 			try {
 				const res = await fetch('/api/admin/temp-unlocks?secret=' + encodeURIComponent(secret));
@@ -1174,7 +1154,9 @@ async function loadAdminDashboard() {
 		}
 
 		async function revokeUnlockById(id) {
-			const secret = document.getElementById('adminSecretLocal').value;
+			const secretEl = document.getElementById('adminSecretLocal');
+			if(!secretEl){ console.warn('Admin temp unlock UI not present; revokeUnlockById is a no-op.'); return; }
+			const secret = secretEl.value;
 			if (!confirm('Revoke unlock ID ' + id + '?')) return;
 			try {
 				const res = await fetch('/api/admin/temp-unlocks/revoke', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, secret }) });
@@ -1186,8 +1168,9 @@ async function loadAdminDashboard() {
 		}
 
 		async function bulkRevokeUnlocks() {
-			// Simple convenience: remove expired rows from DB by calling admin revoke with each expired id
-			const secret = document.getElementById('adminSecretLocal').value;
+			const secretEl = document.getElementById('adminSecretLocal');
+			if(!secretEl){ console.warn('Admin temp unlock UI not present; bulkRevokeUnlocks is a no-op.'); return; }
+			const secret = secretEl.value;
 			const res = await fetch('/api/admin/temp-unlocks?secret=' + encodeURIComponent(secret));
 			if (!res.ok) return alert('Failed to load unlocks');
 			const data = await res.json(); if (!data.ok) return alert('Failed to load unlocks');
@@ -1897,9 +1880,56 @@ function startAdSequence(bundleSize){
 	try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=document.querySelector('#accessModal .lead'); if(l) l.style.display='none'; } }catch{}
 	adPlayer.classList.add('active');
 	playCurrentInlineAd();
+	// Ensure next ad is warmed immediately for smoother transitions
+	try{ preloadNextAdIfNeeded(); }catch{}
 	// Safeguard: if the video is unexpectedly paused after UI changes, try to resume once active
 	setTimeout(()=>{ try{ const v=adVideo; if(v && v.paused && adPlayer.classList.contains('active')){ v.play().catch(()=>{}); } }catch{} },350);
 }
+
+// Build an initial queued adList when the home page loads so ads are in-line and preloaded
+function initAdQueue() {
+	try{
+		// Default bundle size for pre-queue (small) so we don't consume too much data
+		const defaultCount = 5;
+				if(!adList || !adList.length){
+						// Try to fetch server-driven playlist first
+						try{
+								fetch(`/api/ads/playlist?count=${defaultCount}&routerId=${encodeURIComponent(detectRouterId())}`)
+									.then(r=>r.json())
+									.then(j=>{
+										if(j && j.ok && Array.isArray(j.playlist) && j.playlist.length){
+											adList = j.playlist;
+											currentAdIndex = 0;
+											console.log('[AD-QUEUE] Using server playlist', adList.length);
+											setTimeout(()=>{ try{ preloadNextAdIfNeeded(); }catch{} }, 200);
+											return;
+										}
+									}).catch(()=>{});
+						}catch{}
+
+						const basePool = USE_MP4_ONLY ? mp4Ads.map(u=>({type:'mp4',url:u})) : adPool;
+						const shuffled = [...basePool].sort(()=>Math.random()-0.5);
+						adList = shuffled.slice(0, defaultCount);
+			currentAdIndex = 0;
+			console.log('[AD-QUEUE] Initialized adQueue with', adList.length, 'items');
+			// Preload the next ad immediately
+			setTimeout(()=>{ try{ preloadNextAdIfNeeded(); }catch{} }, 200);
+		}
+	}catch(e){ console.warn('[AD-QUEUE-INIT-ERR]', e && e.message); }
+}
+
+function detectRouterId(){
+	try{
+		if(window && window.ROUTER_ID) return window.ROUTER_ID;
+		const m = location.search.match(/[?&]routerId=([^&]+)/);
+		if(m) return decodeURIComponent(m[1]);
+	}catch(e){}
+	return '';
+}
+
+// Initialize on DOM ready
+if(document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(initAdQueue, 120);
+else document.addEventListener('DOMContentLoaded', ()=>setTimeout(initAdQueue, 120));
 
 // Helper: ensure ad playback resumes when the player gains focus or becomes active
 function ensureAdPlaybackOnFocus(){
@@ -1919,6 +1949,7 @@ function playCurrentInlineAd(){
 	const imgFallback=document.getElementById('imgFallback');
 	adVideo.style.display='none'; yt.style.display='none';
 	// Apply persisted/global mute preference so subsequent ads follow user choice
+	// Expose helpers in a broader scope so event handlers can access them reliably
 	function getPersistedMute(){ try{ return localStorage.getItem('adMuted'); }catch(e){ return null; } }
 	function setPersistedMute(v){ try{ if(v===null) localStorage.removeItem('adMuted'); else localStorage.setItem('adMuted', v); }catch(e){} }
 	const persisted = getPersistedMute();
@@ -2070,43 +2101,55 @@ function playCurrentInlineAd(){
 function tryVideoFallback() {
 	console.log('[VIDEO-FALLBACK] Attempting video fallback');
 	adStatus.textContent = 'Trying alternative video...';
-	
-	// Get list of working fallback videos
+
+	// Get list of working fallback videos (prioritise Google CDN samples)
 	const fallbackVideos = [
 		'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
 		'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
 		'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'
 	];
-	
-	// Try a different video
-	const currentSrc = adVideo.src;
-	const alternatives = fallbackVideos.filter(url => url !== currentSrc);
-	
-	if(alternatives.length > 0) {
-		const fallbackUrl = alternatives[0];
+
+	// Prepare alternatives excluding the current source
+	const currentSrc = (adVideo && adVideo.src) ? adVideo.src : '';
+	const alternatives = fallbackVideos.filter(url => url && url !== currentSrc);
+
+	// Keep a retry counter on the video element to avoid infinite loops
+	adVideo._fallbackIndex = (adVideo._fallbackIndex || 0);
+
+	function attemptNextFallback(){
+		if(adVideo._fallbackIndex >= alternatives.length){
+			console.log('[VIDEO-FALLBACK] All fallbacks tried, skipping');
+			adStatus.textContent = 'Video unavailable - skipping';
+			// Small delay so UI updates are visible
+			setTimeout(nextInlineAd, 900);
+			return;
+		}
+
+		const fallbackUrl = alternatives[adVideo._fallbackIndex++];
 		console.log('[VIDEO-FALLBACK] Trying:', fallbackUrl);
-		
 		adVideo.src = fallbackUrl;
 		adVideo.load();
-		
-		// Try to play the fallback
-		setTimeout(async () => {
-			try {
+
+		// Try to play the fallback; if it fails within 800ms, try next
+		let played = false;
+		const playAttempt = async ()=>{
+			try{
 				await adVideo.play();
-				console.log('[VIDEO-FALLBACK] Success');
-			} catch(err) {
-				console.error('[VIDEO-FALLBACK] Failed:', err);
-				// Last resort: skip this video
-				adStatus.textContent = 'Video unavailable - skipping';
-				setTimeout(nextInlineAd, 1000);
+				played = true; console.log('[VIDEO-FALLBACK] Success'); adStatus.textContent='Playing';
+			}catch(err){ console.warn('[VIDEO-FALLBACK] play failed', err); }
+		};
+		playAttempt();
+
+		setTimeout(()=>{
+			if(!played){
+				console.warn('[VIDEO-FALLBACK] fallback did not start, trying next');
+				attemptNextFallback();
 			}
-		}, 500);
-	} else {
-		// No more alternatives, skip
-		console.log('[VIDEO-FALLBACK] No alternatives available');
-		adStatus.textContent = 'No working videos - skipping';
-		setTimeout(nextInlineAd, 1000);
+		}, 800);
 	}
+
+	// Start the fallback attempts
+	attemptNextFallback();
 }
 function maybeStartSkipCountdown(){ if(skipCountdownStarted) return; skipCountdownStarted=true; startSkipCountdown(10); }
 function startSkipCountdown(sec){
@@ -2171,25 +2214,33 @@ function debounceClick(fn, wait=250){
 }
 
 muteBtn.addEventListener('click', debounceClick(()=>{
-	const current=adList[currentAdIndex];
+	const current = adList[currentAdIndex] || {};
 	// Toggle mute only; do not change play/pause state
-	if(current.type==='mp4'){
-	adVideo.muted = !adVideo.muted;
-	// Persist the user's preference so following ads respect it
-	setPersistedMute(adVideo.muted ? 'muted' : 'unmuted');
-	muteBtn.classList.toggle('active', !adVideo.muted);
-	muteBtn.textContent = adVideo.muted ? 'Unmute' : 'Mute';
-		if(!adVideo.paused) adStatus.textContent='Playing';
-		if(adSequenceActive) requestWakeLock();
-	} else if(current.type==='yt'){
-		if(ytPlayerInstance && ytPlayerReady){
-			try{
-		if(ytPlayerInstance.isMuted()){ ytPlayerInstance.unMute(); setPersistedMute('unmuted'); muteBtn.classList.remove('active'); muteBtn.textContent='Mute'; }
-		else { ytPlayerInstance.mute(); setPersistedMute('muted'); muteBtn.classList.add('active'); muteBtn.textContent='Unmute'; }
-			}catch(e){}
-			if(adSequenceActive) requestWakeLock();
+	try{
+		if(current.type === 'yt'){
+			if(ytPlayerInstance && ytPlayerReady){
+				if(ytPlayerInstance.isMuted && ytPlayerInstance.isMuted()){
+					try{ ytPlayerInstance.unMute(); }catch{};
+					setPersistedMute('unmuted');
+					muteBtn.classList.remove('active');
+					muteBtn.textContent = 'Mute';
+				} else {
+					try{ ytPlayerInstance.mute(); }catch{};
+					setPersistedMute('muted');
+					muteBtn.classList.add('active');
+					muteBtn.textContent = 'Unmute';
+				}
+			}
+		} else {
+			// mp4/hls/dash/imgseq and default
+			adVideo.muted = !adVideo.muted;
+			setPersistedMute(adVideo.muted ? 'muted' : 'unmuted');
+			muteBtn.classList.toggle('active', !adVideo.muted);
+			muteBtn.textContent = adVideo.muted ? 'Unmute' : 'Mute';
 		}
-	}
+	}catch(e){ console.warn('mute toggle failed', e); }
+	if(!adVideo.paused) adStatus.textContent = adVideo.muted ? 'Muted' : 'Playing';
+	if(adSequenceActive) requestWakeLock();
 }));
 if(playPauseBtn){
 	playPauseBtn.addEventListener('click', debounceClick(()=>{

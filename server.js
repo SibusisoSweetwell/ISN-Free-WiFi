@@ -58,6 +58,11 @@ function sanitizeDataForExcel(data) {
 
 console.log('Booting portal server...');
 const app = express();
+// Simple request logger to help debug routing and verify incoming API calls
+app.use((req, res, next) => {
+  try { console.log('[REQ] %s %s from %s', req.method, req.path, req.ip || req.headers['x-forwarded-for'] || 'unknown'); } catch(e){}
+  next();
+});
 // Use environment PORT when provided (Render sets this) otherwise default to 3150
 let PORT = Number(process.env.PORT) || 3150; // Portal port (configurable via env)
 const PROXY_PORT = 8082; // Fixed port for proxy
@@ -659,6 +664,119 @@ function checkAdminAuth(req) {
   const token = req.headers['x-admin-token'] || req.query.secret || '';
   return token === ADMIN_TOKEN;
 }
+
+// --- Server-side ad pool & playlist API ---
+// Small curated pool (match client samples) - server can expand this list
+const SERVER_AD_POOL = {
+  mp4: [
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+    'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'
+  ],
+  yt: [ 'P9vKxPUFers','eUUmpBFoF7I','YlXHVIsxpO0' ]
+};
+
+function shuffleArray(arr){ return arr.slice().sort(()=>Math.random()-0.5); }
+
+// Return a curated playlist for a router or global pool
+app.get('/api/ads/playlist',(req,res)=>{
+  try{
+    const count = Math.max(1, Math.min(25, Number(req.query.count) || 5));
+    const routerId = (req.query.routerId||req.headers['x-router-id']||'global').toString();
+    // For now we use a simple per-router randomness seed; later you can store per-router campaigns
+    const pool = [];
+    // prefer MP4 clips for faster startup
+    const mp4s = shuffleArray(SERVER_AD_POOL.mp4).slice(0, Math.ceil(count*0.7));
+    mp4s.forEach(u=>pool.push({ type:'mp4', url:u }));
+    const yts = shuffleArray(SERVER_AD_POOL.yt).slice(0, Math.max(0, count - pool.length));
+    yts.forEach(id=>pool.push({ type:'yt', id }));
+    // If still short, repeat some mp4s
+    while(pool.length < count){ const u = SERVER_AD_POOL.mp4[pool.length % SERVER_AD_POOL.mp4.length]; pool.push({ type:'mp4', url:u }); }
+    res.json({ ok:true, routerId, count: pool.length, playlist: pool });
+  }catch(err){ res.status(500).json({ ok:false, message:'playlist error' }); }
+});
+
+// --- Admin monitoring endpoints: temp access maps and device bundles ---
+app.get('/api/admin/temp-access', (req,res)=>{
+  try{
+    const requester = (req.headers['x-user-identifier']||'').toString().trim().toLowerCase();
+    if(!checkAdminAuth(req) && !isAdminIdentifier(requester)) return res.status(403).json({ ok:false, message:'Forbidden' });
+    // Serialize maps into arrays
+    const tempFull = Array.from(tempFullAccess.entries()).map(([k,v])=>({ key:k, expires: v }));
+    const routerTemp = Array.from(routerTempAccess.entries()).map(([k,v])=>({ routerId:k, expires:v }));
+    const deviceMap = Array.from(deviceBundlesGranted.entries()).map(([k,s])=>({ deviceId:k, bundles: Array.from(s) }));
+    res.json({ ok:true, tempFull, routerTemp, deviceMap, time: Date.now() });
+  }catch(e){ res.status(500).json({ ok:false, message:'error' }); }
+});
+
+app.get('/api/admin/diagnostics', (req,res)=>{
+  try{
+    if(!checkAdminAuth(req)) return res.status(403).json({ ok:false, message:'Forbidden' });
+    const diagnostics = {
+      tempFullAccessSize: tempFullAccess.size || 0,
+      routerTempAccessSize: routerTempAccess.size || 0,
+      deviceBundlesCount: deviceBundlesGranted.size || 0,
+      activeClients: Array.from(activeClients.keys()).slice(0,200),
+      deviceSessionsCount: deviceSessions.size || 0,
+      now: Date.now()
+    };
+    res.json({ ok:true, diagnostics });
+  }catch(e){ res.status(500).json({ ok:false, message:'error' }); }
+});
+
+// Admin: grant data to an identifier (email/phone) or deviceId
+app.post('/api/admin/grant', (req, res) => {
+  try {
+    if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
+    const { identifier, email, phone, mb, deviceId, routerId, durationHours } = req.body || {};
+    const targetId = (identifier || email || phone || '').toString().trim();
+    const mbNum = Number(mb) || 0;
+    if (!targetId && !deviceId) return res.status(400).json({ ok: false, message: 'Provide identifier or deviceId' });
+    if (mbNum <= 0) return res.status(400).json({ ok: false, message: 'Invalid MB value' });
+
+    // Determine grant expiry
+    const hours = Number(durationHours) || 24; // default 24 hours
+    const grantExpiry = Date.now() + Math.max(1, hours) * 60 * 60 * 1000;
+
+    // Prefer explicit deviceId if provided; otherwise try to locate a device session for the identifier
+    let resolvedDeviceId = deviceId || null;
+    try {
+      if (!resolvedDeviceId && targetId) {
+        const ds = deviceSessions.get(targetId) || deviceSessions.get(targetId.toLowerCase());
+        if (ds && ds.deviceId) resolvedDeviceId = ds.deviceId;
+      }
+    } catch (e) { /* ignore */ }
+
+    // If we have a deviceId, record a purchase for tracking; otherwise record only identifier temp access
+    let purchase = null;
+    try {
+      if (resolvedDeviceId) {
+        purchase = recordPurchase(targetId || ('admin@grant'), mbNum, resolvedDeviceId, routerId || 'admin-grant', req.headers['user-agent'] || 'admin', 'admin_grant');
+        // update deviceBundlesGranted
+        try {
+          const cur = deviceBundlesGranted.get(resolvedDeviceId) || new Set(); cur.add(mbNum); deviceBundlesGranted.set(resolvedDeviceId, cur);
+        } catch (e) {}
+      }
+    } catch (e) { console.warn('[ADMIN-GRANT-RECORD-ERR]', e && e.message); }
+
+    // Set temporary full access for identifier and device
+    try { if (targetId) tempFullAccess.set(targetId, grantExpiry); } catch (e) {}
+    try { if (resolvedDeviceId) tempFullAccess.set(resolvedDeviceId, grantExpiry); } catch (e) {}
+
+    // Optionally open router-scoped access so devices on same router can connect immediately
+    try { if (routerId) routerTempAccess.set(routerId, grantExpiry); } catch (e) {}
+
+    // Register active client so CONNECT sees it immediately
+    try { if (targetId) registerActiveClient({ headers: req.headers, ip: req.ip }, targetId, Math.max(1, hours)); } catch (e) {}
+
+    console.log('[ADMIN-GRANT] Admin granted', mbNum, 'MB to', targetId || resolvedDeviceId, 'device=', resolvedDeviceId, 'router=', routerId);
+    return res.json({ ok: true, grantedTo: targetId || resolvedDeviceId, deviceId: resolvedDeviceId, mb: mbNum, expires: grantExpiry, purchase });
+  } catch (err) {
+    console.error('[ADMIN-GRANT-ERR]', err && err.message);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
 
 app.get('/api/admin/purchases', (req, res) => {
   if (!checkAdminAuth(req)) return res.status(403).json({ ok: false, message: 'Forbidden' });
@@ -3616,6 +3734,19 @@ function startProxy(){
           
           // Only grant internet access if videos watched AND notification received
           if (notificationReceived && videoCount >= 1) {
+            // Adaptive strategy: if the device session already shows recent internet unlock,
+            // prefer router-scoped temporary access so manual-proxy clients on same router can
+            // connect immediately without re-issuing device-level full unlocks (avoids duplication).
+            const recentWindowMs = 24 * 60 * 60 * 1000; // 24 hours
+            const deviceSession = deviceSessions.get(deviceFingerprint) || deviceSessions.get(mappedIdentifier);
+            const recentUnlock = deviceSession && deviceSession.lastVideoCompletion && ((Date.now() - deviceSession.lastVideoCompletion) < recentWindowMs);
+            if (recentUnlock) {
+              // ensure routerTempAccess exists for this router so manual-proxy clients can connect
+              try { routerTempAccess.set(routerId, Date.now() + (60*60*1000)); } catch(e){}
+              console.log('[ADAPTIVE-STRATEGY] recent device unlock detected; using routerTempAccess for', routerId);
+              // grant a small progressive allowance for the session but avoid marking device-level permanent unlock here
+              // determine videoAccessMB as below but do not set fullAccess flags
+            }
             // Progressive access based on videos watched (after notification)
             if (videoCount >= 15) {
               videoAccessMB = 500; // 500MB for 15+ videos
