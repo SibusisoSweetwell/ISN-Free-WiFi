@@ -4,7 +4,8 @@ const crypto = require('crypto');
 // Check existing users
 console.log('=== Checking User Database ===');
 try {
-    const wb = XLSX.readFile('logins.xlsx');
+    const df = process.env.DATA_FILE || path.join(__dirname, 'logins.xlsx');
+    const wb = XLSX.readFile(df);
     
     if (wb.Sheets['Users']) {
         const data = XLSX.utils.sheet_to_json(wb.Sheets['Users']);
@@ -53,7 +54,7 @@ try {
         
         // Write back to Excel
         wb.Sheets['Users'] = XLSX.utils.json_to_sheet(data);
-        XLSX.writeFile(wb, 'logins.xlsx');
+    XLSX.writeFile(wb, df);
         
     console.log('✅ Test user created:');
     console.log('   Email: test@test.com');

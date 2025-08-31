@@ -8,7 +8,8 @@ try {
     
     // Try to load existing workbook, or create new one
     try {
-        wb = XLSX.readFile('logins.xlsx');
+    const df = process.env.DATA_FILE || process.env.DATA_PATH || path.join(__dirname, 'logins.xlsx');
+    wb = XLSX.readFile(df);
     } catch (e) {
         wb = XLSX.utils.book_new();
     }
@@ -58,7 +59,7 @@ try {
         
         // Write back to Excel
         wb.Sheets['Users'] = XLSX.utils.json_to_sheet(allData);
-        XLSX.writeFile(wb, 'logins.xlsx');
+    XLSX.writeFile(wb, df);
         
         console.log(`✅ Added ${newUsers.length} new user(s)`);
         newUsers.forEach(user => {

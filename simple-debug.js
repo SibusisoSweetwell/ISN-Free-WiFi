@@ -3,7 +3,8 @@ const XLSX = require('xlsx');
 console.log('=== BONGILINDIWE DATA DEBUG ===');
 
 try {
-  const wb = XLSX.readFile('logins.xlsx');
+  const df = process.env.DATA_FILE || path.join(__dirname, 'logins.xlsx');
+  const wb = XLSX.readFile(df);
   
   // Check purchases
   if (wb.Sheets['Purchases']) {

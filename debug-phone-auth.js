@@ -18,7 +18,8 @@ console.log('Generated Device Fingerprint:', deviceFingerprint);
 // Check if this device fingerprint exists in the Excel data
 const XLSX = require('xlsx');
 try {
-  const wb = XLSX.readFile('logins.xlsx');
+  const df = process.env.DATA_FILE || path.join(__dirname, 'logins.xlsx');
+  const wb = XLSX.readFile(df);
   if (wb.SheetNames.includes('AdEvents')) {
     const ws = wb.Sheets['AdEvents'];
     const data = XLSX.utils.sheet_to_json(ws, {header: 1});

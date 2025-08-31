@@ -35,6 +35,12 @@ const url = require('url');
 const crypto = require('crypto');
 // Rate limiting for admin endpoints
 const rateLimit = require('express-rate-limit');
+
+// Persistent storage directory. On Render and similar hosts use '/data'
+// for durable storage. Allow override via DATA_DIR env var.
+const DEFAULT_DATA_DIR = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, 'data'));
+const DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
+try { if(!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e){ console.warn('[DATA-DIR] failed to ensure data dir', DATA_DIR, e && e.message); }
 console.log('All modules loaded successfully');
 
 // Data sanitization to prevent Excel 32,767 character cell limit errors
@@ -70,7 +76,7 @@ let PORT = Number(process.env.PORT) || 3150; // Portal port (configurable via en
 const PROXY_PORT = 8082; // Fixed port for proxy
 const RENDER_HOST = (process.env.RENDER_HOST || 'isn-free-wifi.onrender.com').toLowerCase();
 const PORTAL_SECRET = process.env.PORTAL_SECRET || 'isn_portal_secret_dev';
-const DATA_FILE = path.join(__dirname, 'logins.xlsx');
+const DATA_FILE = path.join(DATA_DIR, 'logins.xlsx');
 // Default admin identity - configure via env in production
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'sbusisosweetwell15@gmail.com';
 const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
@@ -2896,7 +2902,7 @@ function startProxy(){
         // Find the identifier from ad events
         try {
           const XLSX = require('xlsx');
-          const wb = XLSX.readFile('logins.xlsx');
+          const wb = XLSX.readFile(DATA_FILE);
           if (wb.SheetNames.includes('AdEvents')) {
             const ws = wb.Sheets['AdEvents'];
             const data = XLSX.utils.sheet_to_json(ws, {header: 1});
@@ -3658,7 +3664,7 @@ function startProxy(){
       // Find the identifier from ad events
       try {
         const XLSX = require('xlsx');
-        const wb = XLSX.readFile('logins.xlsx');
+  const wb = XLSX.readFile(DATA_FILE);
         if (wb.SheetNames.includes('AdEvents')) {
           const ws = wb.Sheets['AdEvents'];
           const data = XLSX.utils.sheet_to_json(ws, {header: 1});

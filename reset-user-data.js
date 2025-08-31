@@ -7,7 +7,8 @@ const phoneNumber = '0796694562';
 
 try {
   // Load the Excel workbook
-  const workbook = XLSX.readFile('logins.xlsx');
+  const df = process.env.DATA_FILE || path.join(__dirname, 'logins.xlsx');
+  const workbook = XLSX.readFile(df);
   console.log('📊 Loaded logins.xlsx successfully');
   
   // Get all sheet names

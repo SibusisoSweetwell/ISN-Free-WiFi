@@ -7,9 +7,10 @@ let DB = null;
 
 function init(dbPath) {
   try {
-    const Database = require('better-sqlite3');
-    // default DB filename used by scripts in this repo is 'logins.db'
-    const file = dbPath || path.join(__dirname, 'logins.db');
+  const Database = require('better-sqlite3');
+  // default DB filename used by scripts in this repo is 'logins.db'
+  // Prefer an env-provided persistent path (e.g., /data/logins.db) when available
+  const file = dbPath || process.env.SQLITE_PATH || path.join(__dirname, 'logins.db');
     const dir = path.dirname(file);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     DB = new Database(file);
