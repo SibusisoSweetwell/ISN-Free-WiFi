@@ -575,7 +575,7 @@ function fpStatus(msg,type){ const el=document.getElementById('fp-status'); el.s
 	const box=document.getElementById('fp-code-box');
 	box.className='code-box'; // Use consistent styling with registration
 	box.innerHTML='';
-	for(let i=0;i<5;i++){
+	for(let i=0;i<6;i++){ // FIXED: Generate 6 inputs for 6-digit code
 		const inp=document.createElement('input');
 		inp.type='text';
 		inp.maxLength=1;
@@ -605,48 +605,7 @@ function fpStatus(msg,type){ const el=document.getElementById('fp-status'); el.s
 	try{ if(box.firstChild) box.firstChild.focus(); }catch{}
 }
 function pushToast(html,cls=''){ let stack=document.querySelector('.toast-stack'); if(!stack){ stack=document.createElement('div'); stack.className='toast-stack'; document.body.appendChild(stack);} const t=document.createElement('div'); t.className='toast '+cls; t.innerHTML=html; stack.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .4s, transform .4s'; t.style.opacity='0'; t.style.transform='translate(-50%,-6px)'; setTimeout(()=>t.remove(),420); },12000); }
-async function startResetSimple(){
-	if(fpStage==='collect'){
-		const email=document.getElementById('fp-email').value.trim();
-		const phone=normalizePhone(document.getElementById('fp-phone').value);
-		const dob=document.getElementById('reg-dob')? document.getElementById('reg-dob').value : '';
-		const newPass2=fpPwdEl2.value;
-		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
-		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
-		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
-		try{
-			const res=await fetch('/api/forgot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email, phone, dob})});
-			const data=await res.json();
-			if(!res.ok||!data.ok){ fpStatus(data.message||'Error requesting code','error'); return; }
-			sessionStorage.setItem('pendingResetEmail', email);
-			sessionStorage.setItem('pendingResetNewPass', newPass);
-			sessionStorage.setItem('pendingResetCode', data.code); // demo
-			document.getElementById('fp-stage-collect').style.display='none';
-			document.getElementById('fp-stage-code').style.display='block';
-			document.getElementById('fp-action-btn').textContent='Verify & Save';
-			document.getElementById('fp-desc').textContent='Enter the 6-digit code sent to your email.';
-			document.getElementById('fp-demo-code').textContent='(Demo code: '+data.code+')';
-			buildCodeInputs();
-			fpStage='verify';
-			fpStatus('Code sent. Check inbox (demo shows code).','success');
-		}catch{ fpStatus('Network error requesting code','error'); }
-	} else if(fpStage==='verify'){
-		const email=sessionStorage.getItem('pendingResetEmail');
-		const newPass=sessionStorage.getItem('pendingResetNewPass');
-		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
-		if(codeEntered.length!==6){ fpStatus('Enter all 6 digits.','error'); return; }
-		try{
-			const res=await fetch('/api/forgot/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code:codeEntered,newPassword:newPass})});
-			const data=await res.json();
-			if(!res.ok||!data.ok){ fpStatus(data.message||'Invalid code','error'); return; }
-			fpStatus('Password updated. You can log in now.','success');
-			let remain=10; pushToast('Password updated.<small>Returning to login in <span id="fpCountdown">'+remain+'</span>s</small>','success');
-			fpStatus('Password updated. Redirecting in '+remain+'s...','success');
-			const tmr=setInterval(()=>{ remain--; const c=document.getElementById('fpCountdown'); if(c) c.textContent=remain; fpStatus('Password updated. Redirecting in '+remain+'s...','success'); if(remain<=0){ clearInterval(tmr); closeForgot(); } },1000);
-			fpStage='done';
-		}catch{ fpStatus('Network error verifying code','error'); }
-	}
-}
+// REMOVED DUPLICATE - Using enhanced version below
 
 // Close on backdrop click / ESC
 document.addEventListener('click',e=>{ const ov=document.getElementById('forgotOverlay'); if(e.target===ov) closeForgot(); });
@@ -867,71 +826,48 @@ async function confirmRegVerify(){
 	try{ const res = await fetch('/api/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const data = await res.json().catch(()=>({})); if(!res.ok||!data.ok){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent = data.message||('Registration failed '+res.status); return; } document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Account created! Redirecting...'; setTimeout(()=>{ closeRegVerify(); closeRegister(); try{ if(payload.email) sessionStorage.setItem('currentUserIdentifier', payload.email.toLowerCase()); else if(payload.phone) sessionStorage.setItem('currentUserIdentifier', payload.phone); }catch{}; window.location.href='home.html'; },900); }catch(err){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Network error: '+(err.message||'unknown'); }
 }
 
-// Enhanced forgot password with JavaScript-generated codes (NO SMS) + 5-minute expiry
+// Enhanced forgot password with server-generated 6-digit codes + 10-minute expiry
 async function startResetSimple(){
 	if(fpStage==='collect'){
 		const email=document.getElementById('fp-email').value.trim();
 		const phone=normalizePhone(document.getElementById('fp-phone').value);
-		const dob=document.getElementById('fp-dob')? document.getElementById('fp-dob').value : '';
+		const dob=document.getElementById('fp-dob').value; // Fixed: use fp-dob not reg-dob
 		const newPass=document.getElementById('fp-password').value;
 		const newPass2=document.getElementById('fp-password2').value;
 		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
 		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
 		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
 		
-		// Generate JavaScript 5-digit code with 5-minute expiry
-		const code=gen5();
-		const expiryTime = Date.now() + (5 * 60 * 1000); // 5 minutes from now
-		
-		sessionStorage.setItem('pendingResetCode', code);
-		sessionStorage.setItem('pendingResetCodeExpiry', expiryTime.toString());
-		sessionStorage.setItem('pendingResetEmail', email);
-		sessionStorage.setItem('pendingResetNewPass', newPass);
-		
-		document.getElementById('fp-stage-collect').style.display='none';
-		document.getElementById('fp-stage-code').style.display='block';
-		document.getElementById('fp-action-btn').textContent='Verify & Save';
-		document.getElementById('fp-desc').textContent='Enter the 5-digit verification code shown below (expires in 5 minutes).';
-		document.getElementById('fp-demo-code').textContent='Your verification code: '+code+' (expires in 5 minutes)';
-		buildCodeInputs();
-		fpStage='verify';
-		fpStatus('Verification code generated! Enter the code shown above. Code expires in 5 minutes.','success');
-		
-		// Start countdown timer
-		startForgotPasswordCountdown();
+		try{
+			// Use server API to generate and validate the code
+			const res=await fetch('/api/forgot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email, phone, dob})});
+			const data=await res.json();
+			if(!res.ok||!data.ok){ fpStatus(data.message||'Error requesting code','error'); return; }
+			
+			sessionStorage.setItem('pendingResetEmail', email);
+			sessionStorage.setItem('pendingResetNewPass', newPass);
+			
+			document.getElementById('fp-stage-collect').style.display='none';
+			document.getElementById('fp-stage-code').style.display='block';
+			document.getElementById('fp-action-btn').textContent='Verify & Save';
+			document.getElementById('fp-desc').textContent='Enter the 6-digit verification code (expires in 10 minutes).';
+			document.getElementById('fp-demo-code').textContent='Your verification code: '+data.code+' (expires in 10 minutes)';
+			buildCodeInputs();
+			fpStage='verify';
+			fpStatus('Verification code generated! Enter the 6-digit code shown above.','success');
+		}catch{ fpStatus('Network error requesting code','error'); }
 		return;
 	} else if(fpStage==='verify'){
 		const email=sessionStorage.getItem('pendingResetEmail');
 		const newPass=sessionStorage.getItem('pendingResetNewPass');
 		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
-		if(codeEntered.length!==5){ fpStatus('Enter all 5 digits.','error'); return; }
-		
-		// Check if code has expired
-		const expiryTime = parseInt(sessionStorage.getItem('pendingResetCodeExpiry') || '0');
-		const currentTime = Date.now();
-		
-		if (currentTime > expiryTime) {
-			fpStatus('Verification code has expired. Please request a new code.','error');
-			// Reset to collect stage
-			document.getElementById('fp-stage-code').style.display='none';
-			document.getElementById('fp-stage-collect').style.display='block';
-			document.getElementById('fp-action-btn').textContent='Send Code';
-			document.getElementById('fp-desc').textContent='Fill the details below to generate a verification code.';
-			fpStage='collect';
-			clearForgotPasswordCountdown();
-			return;
-		}
-		
-		// Verify JavaScript-generated code
-		const pendingCode = sessionStorage.getItem('pendingResetCode');
-		if(codeEntered!==pendingCode){ fpStatus('Invalid verification code. Please check the code shown above.','error'); return; }
+		if(codeEntered.length!==6){ fpStatus('Enter all 6 digits.','error'); return; }
 		
 		try{
 			const res=await fetch('/api/forgot/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code:codeEntered,newPassword:newPass})});
 			const data=await res.json();
-			if(!res.ok||!data.ok){ fpStatus(data.message||'Password reset failed','error'); return; }
+			if(!res.ok||!data.ok){ fpStatus(data.message||'Invalid or expired code','error'); return; }
 			fpStatus('Password updated. You can log in now.','success');
-			clearForgotPasswordCountdown();
 			let remain=10; pushToast('Password updated.<small>Returning to login in <span id="fpCountdown">'+remain+'</span>s</small>','success');
 			fpStatus('Password updated. Redirecting in '+remain+'s...','success');
 			const tmr=setInterval(()=>{ remain--; const c=document.getElementById('fpCountdown'); if(c) c.textContent=remain; fpStatus('Password updated. Redirecting in '+remain+'s...','success'); if(remain<=0){ clearInterval(tmr); closeForgot(); } },1000);
@@ -940,35 +876,7 @@ async function startResetSimple(){
 	}
 }
 
-// Countdown timer for forgot password code expiry
-let forgotPasswordTimer = null;
-function startForgotPasswordCountdown() {
-	clearForgotPasswordCountdown();
-	
-	forgotPasswordTimer = setInterval(() => {
-		const expiryTime = parseInt(sessionStorage.getItem('pendingResetCodeExpiry') || '0');
-		const currentTime = Date.now();
-		const timeLeft = expiryTime - currentTime;
-		
-		if (timeLeft <= 0) {
-			clearForgotPasswordCountdown();
-			fpStatus('Verification code has expired. Please request a new code.','error');
-			document.getElementById('fp-demo-code').textContent='Code expired. Please request a new code.';
-		} else {
-			const minutesLeft = Math.floor(timeLeft / 60000);
-			const secondsLeft = Math.floor((timeLeft % 60000) / 1000);
-			const timeDisplay = minutesLeft + ':' + (secondsLeft < 10 ? '0' : '') + secondsLeft;
-			document.getElementById('fp-demo-code').textContent='Your verification code: '+sessionStorage.getItem('pendingResetCode')+' (expires in '+timeDisplay+')';
-		}
-	}, 1000);
-}
-
-function clearForgotPasswordCountdown() {
-	if (forgotPasswordTimer) {
-		clearInterval(forgotPasswordTimer);
-		forgotPasswordTimer = null;
-	}
-}
+// Server-side validation handles expiry - no client-side countdown needed
 	</script>
 </body>
 </html>

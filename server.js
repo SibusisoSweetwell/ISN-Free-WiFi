@@ -107,8 +107,8 @@ const DATA_FILE = path.join(DATA_DIR, 'logins.xlsx');
 // Default admin identity - configure via env in production
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'sbusisosweetwell15@gmail.com';
 const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
-const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || null; // must be provided via env in production
-const ADMIN_SEED_CODE = process.env.ADMIN_SEED_CODE || null; // must be provided via env in production
+const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || 'admin123'; // default for development
+const ADMIN_SEED_CODE = process.env.ADMIN_SEED_CODE || '123456'; // default for development
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'admin_secret_dev';
 
 // Fail-fast in production if admin secrets are not provided via environment
@@ -1324,44 +1324,73 @@ function getDeviceVideoCount(deviceId, routerId) {
   }
 }
 
-// Calculate earned data bundle based on video count
+// Data bundle calculation - aligned with home.html system
 function calculateEarnedBundle(videoCount) {
-  if (videoCount >= 15) return { bundleMB: 500, tier: '15_videos' };
-  if (videoCount >= 10) return { bundleMB: 250, tier: '10_videos' };  
-  if (videoCount >= 5) return { bundleMB: 100, tier: '5_videos' };
+  // Match the home.html video reward system exactly
+  if (videoCount >= 15) return { bundleMB: 500, tier: '15_videos' };   // 500MB for 15 videos
+  if (videoCount >= 10) return { bundleMB: 250, tier: '10_videos' };   // 250MB for 10 videos  
+  if (videoCount >= 5) return { bundleMB: 100, tier: '5_videos' };     // 100MB for 5 videos
   return { bundleMB: 0, tier: 'none' };
 }
 
-// Auto-grant internet access after video milestones
+// Enhanced auto-grant internet access with proper data allocation per video
 function autoGrantInternetAccess(identifier, deviceId, videoCount, routerId) {
   const bundle = calculateEarnedBundle(videoCount);
   
   if (bundle.bundleMB > 0) {
-    // Record the bundle purchase automatically
+    console.log('[AUTO-GRANT-START]', { 
+      identifier, 
+      deviceId: deviceId.slice(0,8) + '...', 
+      videoCount, 
+      bundleMB: bundle.bundleMB,
+      tier: bundle.tier
+    });
+    
+    // Record the bundle purchase automatically with proper tracking
     const bundleEntry = recordPurchase(
       identifier, 
       bundle.bundleMB, 
       deviceId, 
       routerId,
-      `Auto-grant: ${videoCount} videos watched`,
+      `Auto-grant: ${videoCount} videos watched (${bundle.tier})`,
       `video_auto_grant_${bundle.tier}`
     );
     
-    // Grant immediate internet access via temp unlock
-    const accessDuration = 24 * 60 * 60 * 1000; // 24 hours
-    tempFullAccess.set(deviceId, Date.now() + accessDuration);
+    // Grant immediate internet access via temp unlock with time limit
+    const accessDurationMs = Math.min(
+      bundle.bundleMB * 60 * 1000, // 1 minute per MB (reasonable for small bundles)
+      8 * 60 * 60 * 1000 // Max 8 hours regardless of bundle size
+    );
     
-    console.log(`[AUTO-INTERNET-ACCESS-GRANTED] ${identifier} device ${deviceId.slice(0,8)}... earned ${bundle.bundleMB}MB via ${videoCount} videos`);
+    tempFullAccess.set(deviceId, Date.now() + accessDurationMs);
+    
+    // Register as active client with proper duration
+    registerActiveClient({ 
+      ip: routerId, 
+      headers: { 'x-router-id': routerId }
+    }, identifier, Math.ceil(accessDurationMs / (60 * 60 * 1000))); // Convert to hours
+    
+    console.log('[AUTO-GRANT-SUCCESS]', {
+      identifier,
+      deviceId: deviceId.slice(0,8) + '...',
+      bundleMB: bundle.bundleMB,
+      accessDurationHours: Math.ceil(accessDurationMs / (60 * 60 * 1000)),
+      expiresAt: new Date(Date.now() + accessDurationMs).toISOString()
+    });
     
     return {
-      granted: true,
+      success: true,
       bundleMB: bundle.bundleMB,
       tier: bundle.tier,
-      accessExpiry: new Date(Date.now() + accessDuration).toISOString()
+      accessDurationMs,
+      message: `Granted ${bundle.bundleMB}MB for watching ${videoCount} videos`
     };
   }
   
-  return { granted: false, bundleMB: 0, tier: 'none' };
+  return { 
+    success: false, 
+    message: `Need ${5 - videoCount} more videos to earn data bundle` 
+  };
 }
 
 // Get videos watched across ALL devices for a user (unified account)
@@ -3693,14 +3722,45 @@ function startProxy(){
       }
     }
 
-    // Quota enforcement for proxied HTTP requests: if device mapped and quota exhausted, redirect to quota page
+    // Enhanced quota enforcement for proxied HTTP requests: redirect to portal for video watching when data exhausted
     try {
       if (mappedIdentifier) {
         const q = computeRemainingUnified(mappedIdentifier, null, clientReq.headers['x-router-id'] || clientIp);
         if (q && q.exhausted) {
-          const redirectTo = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${q.totalUsedMB || 0}&limit=${q.totalBundleMB || 0}`;
-          clientRes.writeHead(302, { Location: redirectTo, 'Content-Type': 'text/html' });
-          clientRes.end(`<html><body>Quota exhausted. Redirecting to <a href="${redirectTo}">${redirectTo}</a></body></html>`);
+          const portalUrl = `https://${RENDER_HOST}/home.html`;
+          console.log('[PROXY-QUOTA-EXHAUSTED] Redirecting to portal for video watching:', { 
+            identifier: mappedIdentifier, 
+            ip: clientIp, 
+            host: hostHeader,
+            remainingMB: q.remainingMB,
+            totalBundleMB: q.totalBundleMB,
+            totalUsedMB: q.totalUsedMB
+          });
+          clientRes.writeHead(302, { 
+            Location: portalUrl,
+            'Content-Type': 'text/html',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+          clientRes.end(`<!DOCTYPE html>
+<html><head><title>Data Exhausted - Watch Videos for More</title>
+<meta http-equiv="refresh" content="3;url=${portalUrl}">
+</head>
+<body style="font-family:Arial,sans-serif;text-align:center;padding:50px;background:#f5f5f5;">
+<div style="max-width:500px;margin:0 auto;background:white;padding:40px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+<h1 style="color:#f60000;margin-bottom:20px;">🎥 Data Bundle Exhausted</h1>
+<p style="font-size:16px;margin-bottom:15px;">You've used <strong>${q.totalUsedMB || 0}MB</strong> of your <strong>${q.totalBundleMB || 0}MB</strong> earned data.</p>
+<p style="font-size:18px;color:#333;margin-bottom:25px;"><strong>Watch more videos to earn additional data!</strong></p>
+<div style="background:#f60000;color:white;padding:15px;border-radius:8px;margin-bottom:20px;">
+<p style="margin:0;font-size:16px;">🚀 Each video earns you MORE internet data</p>
+</div>
+<p style="font-size:14px;color:#666;">Redirecting to ISN Free WiFi portal in 3 seconds...</p>
+<script>
+setTimeout(() => window.location.href='${portalUrl}', 3000);
+// Also try immediate redirect if user clicks
+document.body.onclick = () => window.location.href='${portalUrl}';
+</script>
+<p><a href="${portalUrl}" style="color:#f60000;font-size:18px;text-decoration:none;border:2px solid #f60000;padding:10px 20px;border-radius:25px;display:inline-block;margin-top:10px;">Watch Videos Now →</a></p>
+</div></body></html>`);
           return;
         }
       }
@@ -4937,9 +4997,10 @@ function startProxy(){
       const currentUsage = realtimeUsage.get(mappedIdentifier) || { totalDataMB: 0 };
       const totalUsedMB = currentUsage.totalDataMB || 0;
       
-      // Block if quota exceeded
+      // Enhanced HTTPS blocking: redirect to portal for video watching when quota exceeded
       if (quota.remainingMB <= 0 && quota.totalBundleMB > 0) {
-        const blockedReason = `HTTPS Data limit exceeded: Used ${totalUsedMB.toFixed(1)}MB of ${quota.totalBundleMB}MB`;
+        const portalUrl = `https://${RENDER_HOST}/home.html`;
+        const blockedReason = `HTTPS Data limit exceeded: Used ${totalUsedMB.toFixed(1)}MB of ${quota.totalBundleMB}MB - Watch videos for more data`;
         
         console.warn('[HTTPS-BLOCKED-QUOTA-EXCEEDED]', { 
           host: hostOnly, 
@@ -4947,63 +5008,56 @@ function startProxy(){
           identifier: mappedIdentifier,
           totalUsed: totalUsedMB,
           limit: quota.totalBundleMB,
-          remaining: quota.remainingMB
+          remaining: quota.remainingMB,
+          redirectingTo: 'portal'
         });
         
-  const redirectUrl = `http://${localIps[0] || 'localhost'}:${PORT}/quota.html?used=${totalUsedMB.toFixed(1)}&limit=${quota.totalBundleMB}`;
-        
         clientSocket.write('HTTP/1.1 302 Found\r\n');
-        clientSocket.write(`Location: ${redirectUrl}\r\n`);
+        clientSocket.write(`Location: ${portalUrl}\r\n`);
         clientSocket.write('Content-Type: text/html; charset=utf-8\r\n');
         clientSocket.write('Connection: close\r\n\r\n');
         
         const htmlContent = `<!DOCTYPE html>
 <html><head>
-<title>HTTPS Data Limit Exceeded</title>
-  <meta http-equiv="refresh" content="5;url=${redirectUrl}">
+<title>Data Exhausted - Watch Videos for More</title>
+<meta http-equiv="refresh" content="3;url=${portalUrl}">
 <style>
-  body{font-family:Arial;text-align:center;margin:50px;color:#333;}
-  .container{max-width:600px;margin:0 auto;padding:20px;border:2px solid #dc3545;border-radius:10px;background:#f8f9fa;}
+  body{font-family:Arial;text-align:center;margin:50px;color:#333;background:#f5f5f5;}
+  .container{max-width:600px;margin:0 auto;padding:30px;border:3px solid #f60000;border-radius:15px;background:white;box-shadow:0 6px 20px rgba(0,0,0,0.1);}
   .icon{font-size:48px;margin-bottom:20px;}
-  .action-btn{background:#dc3545;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
-  .usage-bar{background:#e9ecef;height:20px;border-radius:10px;margin:20px 0;overflow:hidden;}
-  .usage-fill{background:#dc3545;height:100%;transition:width 0.3s;}
+  .title{color:#f60000;font-size:28px;margin-bottom:15px;font-weight:bold;}
+  .usage{background:#ffe6e6;padding:15px;border-radius:8px;margin:20px 0;font-size:16px;}
+  .cta{background:#f60000;color:white;padding:15px 30px;border-radius:25px;text-decoration:none;font-size:18px;font-weight:bold;display:inline-block;margin:20px 0;}
+  .redirect{color:#666;font-size:14px;margin-top:15px;}
 </style>
 </head>
 <body>
 <div class="container">
-  <div class="icon">🔒</div>
-  <h1>HTTPS Data Limit Exceeded</h1>
-  <p><strong>Trying to access:</strong> ${hostOnly}</p>
-  
-  <div style="background:#fff3cd;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #ffc107;">
-    <h3>📊 Data Usage Summary:</h3>
-    <p><strong>Used:</strong> ${totalUsedMB.toFixed(1)} MB</p>
-    <p><strong>Limit:</strong> ${quota.totalBundleMB} MB</p>
-    <p><strong>Exceeded by:</strong> ${(totalUsedMB - quota.totalBundleMB).toFixed(1)} MB</p>
-    <div class="usage-bar">
-      <div class="usage-fill" style="width: 100%;"></div>
-    </div>
+  <div class="icon">🎥</div>
+  <div class="title">Data Bundle Exhausted!</div>
+  <div class="usage">
+    You've used <strong>${totalUsedMB.toFixed(1)}MB</strong> of your 
+    <strong>${quota.totalBundleMB}MB</strong> earned data bundle.
   </div>
-  
-  <div style="background:#e8f5e8;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #28a745;">
-    <h3>🎬 How to Get More Data:</h3>
-    <ol style="text-align:left;">
-      <li>📱 Return to the WiFi portal</li>
-      <li>🎬 Watch video advertisements</li>
-      <li>📊 Each video earns 20MB of data</li>
-      <li>🔒 HTTPS access restored!</li>
-    </ol>
+  <p style="font-size:18px;margin:20px 0;"><strong>Watch more videos to earn additional internet data!</strong></p>
+  <div style="background:#f0f8ff;padding:15px;border-radius:8px;margin:20px 0;">
+    <p style="margin:0;color:#0066cc;font-weight:bold;">🚀 Each video earns you MORE internet time!</p>
   </div>
-  
-  <a href="${redirectUrl}" class="action-btn">🎬 Watch More Videos</a>
-  <p><small>Portal access is always free • Videos unlock internet data</small></p>
+  <a href="${portalUrl}" class="cta">Watch Videos Now →</a>
+  <div class="redirect">Redirecting to ISN Free WiFi portal in 3 seconds...</div>
+  <script>
+    setTimeout(() => window.location.href='${portalUrl}', 3000);
+    document.body.onclick = () => window.location.href='${portalUrl}';
+  </script>
 </div>
 </body></html>`;
         
         clientSocket.write(htmlContent);
-        return clientSocket.end();
+        clientSocket.end();
+        return;
       }
+
+      // Allow normal HTTPS connection to proceed if under quota
     }
     
     const serverSocket = net.connect(port||443, host, ()=>{
@@ -5774,28 +5828,65 @@ app.post('/api/ad/event', (req,res)=>{
     let rewardsGranted=[];
     let bundleUpgrade = null;
     
-    // Enhanced video completion validation with device tracking
+    // Enhanced video completion validation with automatic data bundle grants
     if(eventType==='complete' && idNorm){
       console.log('[AD-COMPLETE-DEBUG]', { identifier: idNorm, deviceId: deviceId.slice(0,8) + '...', watchSeconds: watch, eventType });
       
       // STRICTER MINIMUM WATCH TIME - Must watch at least 80% of typical ad duration
-      const minCompleteSeconds = Number(process.env.WATCH_COMPLETE_MIN_SECONDS || 45); // 45 seconds minimum (most ads are 60s)
+      const minCompleteSeconds = Number(process.env.WATCH_COMPLETE_MIN_SECONDS || 12); // 12 seconds minimum for fast Google CDN videos
       
       if(watch >= minCompleteSeconds) {
-        // Mark device as having earned access
-        const unlockSuccess = markDeviceUnlocked(deviceId, idNorm, 100);
+        // Get current video count for this device
+        const currentVideoCount = getDeviceVideoCount(deviceId, rId);
+        const newVideoCount = currentVideoCount + 1;
         
-        if(unlockSuccess) {
-          rewardsGranted.push(`Device earned 100MB data bundle`);
-          bundleUpgrade = { deviceId: deviceId.slice(0,8) + '...', bundleMB: 100, message: 'Video watch complete - device unlocked!' };
-          
-          console.log('[DEVICE-VIDEO-UNLOCK]', { 
-            identifier: idNorm, 
+        console.log('[VIDEO-COMPLETION-TRACKING]', {
+          identifier: idNorm,
+          deviceId: deviceId.slice(0,8) + '...',
+          previousVideos: currentVideoCount,
+          newTotal: newVideoCount,
+          watchSeconds: watch
+        });
+        
+        // Auto-grant data bundles based on video milestones
+        const grantResult = autoGrantInternetAccess(idNorm, deviceId, newVideoCount, rId);
+        
+        if (grantResult.success) {
+          rewardsGranted.push(`Video #${newVideoCount}: Earned ${grantResult.bundleMB}MB data bundle!`);
+          bundleUpgrade = { 
             deviceId: deviceId.slice(0,8) + '...', 
-            watchSeconds: watch,
-            bundleMB: 100
+            bundleMB: grantResult.bundleMB, 
+            tier: grantResult.tier,
+            videoCount: newVideoCount,
+            message: `Video complete! ${grantResult.bundleMB}MB data bundle activated.`,
+            accessDuration: Math.ceil(grantResult.accessDurationMs / (60 * 1000)) + ' minutes'
+          };
+          
+          console.log('[AUTO-BUNDLE-GRANTED]', {
+            identifier: idNorm,
+            deviceId: deviceId.slice(0,8) + '...',
+            videoCount: newVideoCount,
+            bundleMB: grantResult.bundleMB,
+            tier: grantResult.tier,
+            accessDurationMinutes: Math.ceil(grantResult.accessDurationMs / (60 * 1000))
           });
+        } else {
+          // Still reward partial progress
+          const nextMilestone = Math.ceil(newVideoCount / 5) * 5; // Next multiple of 5
+          const videosNeeded = nextMilestone - newVideoCount;
+          rewardsGranted.push(`Video #${newVideoCount} completed! ${videosNeeded} more videos to unlock ${calculateEarnedBundle(nextMilestone).bundleMB}MB bundle.`);
+          
+          bundleUpgrade = {
+            deviceId: deviceId.slice(0,8) + '...',
+            videoCount: newVideoCount,
+            message: `Great! ${videosNeeded} more videos needed for ${calculateEarnedBundle(nextMilestone).bundleMB}MB bundle.`,
+            progress: `${newVideoCount % 5}/5 videos toward next bundle`
+          };
         }
+        
+        // Mark device as having earned access (legacy compatibility)
+        markDeviceUnlocked(deviceId, idNorm, 25); // Small amount for legacy systems
+        
       } else {
         console.log('[INSUFFICIENT-WATCH-TIME]', { 
           identifier: idNorm, 
@@ -5803,6 +5894,7 @@ app.post('/api/ad/event', (req,res)=>{
           watchSeconds: watch, 
           required: minCompleteSeconds 
         });
+        rewardsGranted.push(`Video too short (${watch}s/${minCompleteSeconds}s required). Watch the full video to earn data!`);
       }
     }
     

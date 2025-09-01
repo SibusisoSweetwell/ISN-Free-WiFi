@@ -2769,6 +2769,27 @@ function playCurrentInlineAd(){
 		adVideo.volume = 1; 
 		adVideo.style.display = 'block'; 
 		adVideo.classList.remove('visible');
+		// FULLY DISABLE BROWSER MEDIA CONTROLS (Spotify Free style)
+		adVideo.removeAttribute('controls'); // Remove controls attribute
+		adVideo.setAttribute('tabindex', '-1'); // Prevent focus
+		adVideo.setAttribute('disableRemotePlayback', 'true'); // Block remote playback
+		adVideo.setAttribute('controlsList', 'nodownload nofullscreen noremoteplayback noplaybackrate'); // Block extra controls
+		adVideo.addEventListener('contextmenu', e => e.preventDefault()); // Block right-click menu
+		adVideo.addEventListener('keydown', e => {
+			// Block space, arrows, media keys
+			if ([32,37,38,39,40,179,176,177,178].includes(e.keyCode)) {
+				e.preventDefault();
+				return false;
+			}
+		});
+		adVideo.addEventListener('play', () => {
+			if (navigator.mediaSession) {
+				navigator.mediaSession.setActionHandler('seekbackward', null);
+				navigator.mediaSession.setActionHandler('seekforward', null);
+				navigator.mediaSession.setActionHandler('previoustrack', null);
+				navigator.mediaSession.setActionHandler('nexttrack', null);
+			}
+		});
 		
 		// Essential properties for fast Google CDN playback
 		adVideo.setAttribute('playsinline',''); 
