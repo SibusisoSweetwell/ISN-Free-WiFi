@@ -1279,7 +1279,7 @@ function computeRemaining(identifier, deviceFingerprint, routerId){
   };
 }
 
-// Video-based data earning system
+// Enhanced video-based data earning system with automatic internet access
 function getVideosWatched(identifier, deviceId) {
   try {
     const wb = loadWorkbookWithTracking();
@@ -1287,7 +1287,7 @@ function getVideosWatched(identifier, deviceId) {
       // Create sheet if it doesn't exist
       const ws = XLSX.utils.json_to_sheet([]);
       XLSX.utils.book_append_sheet(wb, ws, SHEET_ADEVENTS);
-  if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
+      if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
       return [];
     }
     
@@ -1301,6 +1301,67 @@ function getVideosWatched(identifier, deviceId) {
     console.error('[VIDEO-TRACKING-ERROR]', error.message);
     return [];
   }
+}
+
+// Get device-specific video count for access control
+function getDeviceVideoCount(deviceId, routerId) {
+  try {
+    const wb = loadWorkbookWithTracking();
+    if (!wb.Sheets[SHEET_ADEVENTS]) return 0;
+    
+    const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
+    const deviceVideos = videoViews.filter(v => 
+      v.deviceId === deviceId && 
+      (v.routerId === routerId || !routerId) &&
+      (v.event === 'video_completed' || v.completedAt)
+    );
+    
+    console.log(`[DEVICE-VIDEO-COUNT] Device ${deviceId.slice(0,8)}... has ${deviceVideos.length} completed videos`);
+    return deviceVideos.length;
+  } catch (error) {
+    console.error('[DEVICE-VIDEO-COUNT-ERROR]', error.message);
+    return 0;
+  }
+}
+
+// Calculate earned data bundle based on video count
+function calculateEarnedBundle(videoCount) {
+  if (videoCount >= 15) return { bundleMB: 500, tier: '15_videos' };
+  if (videoCount >= 10) return { bundleMB: 250, tier: '10_videos' };  
+  if (videoCount >= 5) return { bundleMB: 100, tier: '5_videos' };
+  return { bundleMB: 0, tier: 'none' };
+}
+
+// Auto-grant internet access after video milestones
+function autoGrantInternetAccess(identifier, deviceId, videoCount, routerId) {
+  const bundle = calculateEarnedBundle(videoCount);
+  
+  if (bundle.bundleMB > 0) {
+    // Record the bundle purchase automatically
+    const bundleEntry = recordPurchase(
+      identifier, 
+      bundle.bundleMB, 
+      deviceId, 
+      routerId,
+      `Auto-grant: ${videoCount} videos watched`,
+      `video_auto_grant_${bundle.tier}`
+    );
+    
+    // Grant immediate internet access via temp unlock
+    const accessDuration = 24 * 60 * 60 * 1000; // 24 hours
+    tempFullAccess.set(deviceId, Date.now() + accessDuration);
+    
+    console.log(`[AUTO-INTERNET-ACCESS-GRANTED] ${identifier} device ${deviceId.slice(0,8)}... earned ${bundle.bundleMB}MB via ${videoCount} videos`);
+    
+    return {
+      granted: true,
+      bundleMB: bundle.bundleMB,
+      tier: bundle.tier,
+      accessExpiry: new Date(Date.now() + accessDuration).toISOString()
+    };
+  }
+  
+  return { granted: false, bundleMB: 0, tier: 'none' };
 }
 
 // Get videos watched across ALL devices for a user (unified account)
@@ -1340,6 +1401,7 @@ function calculateVideoEarnedData(videosWatched) {
   return 0;                          // No data until 5 videos watched
 }
 
+// Enhanced video completion tracking with automatic bundle grants
 function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
   try {
     const wb = loadWorkbookWithTracking();
@@ -1350,76 +1412,109 @@ function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
     
     const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
     
+    // Only record if video was watched for minimum duration (30+ seconds)
+    const isCompleted = duration >= 30;
+    const earnedMB = isCompleted ? 20 : 0; // 20MB per completed video
+    
     const newView = {
       id: guid(),
       identifier: identifier,
       deviceId: deviceId,
-      event: duration >= 30 ? 'video_completed' : 'video_partial',
+      event: isCompleted ? 'video_completed' : 'video_partial',
       videoUrl: videoUrl,
       duration: duration,
-      earnedMB: duration >= 30 ? 20 : 0, // 20MB per completed video
+      earnedMB: earnedMB,
       routerId: routerId || 'default-router',
       timestampISO: new Date().toISOString(),
       timestampLocal: new Date().toLocaleString(),
       ip: '', // Will be filled by caller
-      userAgent: ''
+      userAgent: '',
+      completedAt: isCompleted ? new Date().toISOString() : null
     };
     
     videoViews.push(newView);
     wb.Sheets[SHEET_ADEVENTS] = XLSX.utils.json_to_sheet(videoViews);
     XLSX.writeFile(wb, DATA_FILE);
     
-    // Check for milestone rewards and prevent duplicates
-    const totalVideos = videoViews.filter(v => 
-      v.identifier === identifier && 
-      v.event === 'video_completed'
-    ).length;
-    
-    let bundleCreated = false;
-    
-    // Create bundles only at specific milestones (prevent duplicates)
-    if (totalVideos === 5) {
-      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 5, 100, '5_video_bundle');
-    } else if (totalVideos === 10) {
-      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 10, 250, '10_video_bundle');
-    } else if (totalVideos === 15) {
-      bundleCreated = dataTracker.createBundleIfNotExists(identifier, 15, 500, '15_video_bundle');
-    }
-    
-    if (bundleCreated) {
-      console.log(`[MILESTONE-REWARD] ${identifier} reached ${totalVideos} videos - bundle created!`);
-      // Ensure sqlite-created bundle is visible immediately to runtime quota checks
-      try {
-        if (typeof dataTracker.clearCache === 'function') dataTracker.clearCache(identifier.toLowerCase());
-        if (sqliteDB) {
-          // Update in-memory device quota so proxy checks see this device as having bundleMB
+    // AUTO-GRANT INTERNET ACCESS: Check for milestone rewards after each completed video
+    if (isCompleted) {
+      const deviceVideoCount = getDeviceVideoCount(deviceId, routerId);
+      console.log(`[VIDEO-MILESTONE-CHECK] Device ${deviceId.slice(0,8)}... now has ${deviceVideoCount} completed videos`);
+      
+      // Auto-grant internet access at milestones: 5, 10, 15 videos
+      if (deviceVideoCount === 5 || deviceVideoCount === 10 || deviceVideoCount === 15) {
+        const accessGrant = autoGrantInternetAccess(identifier, deviceId, deviceVideoCount, routerId);
+        
+        if (accessGrant.granted) {
+          console.log(`[MILESTONE-INTERNET-ACCESS] ${identifier} automatically granted ${accessGrant.bundleMB}MB internet access (${accessGrant.tier})`);
+          
+          // Update device quota immediately for proxy access
           let dq = deviceQuotas.get(deviceId) || { bundleMB: 0, usedMB: 0, unlockEarned: false };
-          dq.bundleMB = (Number(dq.bundleMB) || 0) + (totalVideos === 5 ? 100 : totalVideos === 10 ? 250 : totalVideos === 15 ? 500 : 0);
+          dq.bundleMB = accessGrant.bundleMB;
           dq.unlockEarned = true;
+          dq.videoWatchComplete = true;
+          dq.lastGrantedAt = new Date().toISOString();
           deviceQuotas.set(deviceId, dq);
+          
+          // Notify client of internet access grant
+          return {
+            videoRecorded: true,
+            milestoneReached: true,
+            internetAccessGranted: true,
+            bundleMB: accessGrant.bundleMB,
+            tier: accessGrant.tier,
+            totalVideos: deviceVideoCount,
+            message: `Congratulations! You've earned ${accessGrant.bundleMB}MB of internet access by watching ${deviceVideoCount} videos.`
+          };
         }
-      } catch(e){ console.warn('[BUNDLE-PROPAGATION-ERR]', e && e.message); }
-      // Map milestones to time-based unlocks as well
-      try {
-        let durationHours = 2; // default for 5 videos
-        if (totalVideos === 5) durationHours = 2;
-        else if (totalVideos === 10) durationHours = 3;
-        else if (totalVideos === 15) durationHours = 4;
-
-        // Mark device unlocked for the milestone with both MB and duration
-        const unlockOk = markDeviceUnlocked(deviceId, identifier, (totalVideos === 5?100: totalVideos === 10?250: totalVideos === 15?500:100), durationHours);
-        if (unlockOk) {
-          console.log(`[MILESTONE-UNLOCKED] ${identifier} device ${deviceId.slice(0,8)}... unlocked for ${durationHours}h due to reaching ${totalVideos} videos`);
-        }
-      } catch(err){ console.warn('[MILESTONE-UNLOCK-ERROR]', err?.message); }
+      }
+      
+      // Return standard video completion response
+      return {
+        videoRecorded: true,
+        milestoneReached: false,
+        internetAccessGranted: false,
+        earnedMB: earnedMB,
+        totalVideos: deviceVideoCount,
+        nextMilestone: deviceVideoCount < 5 ? 5 : deviceVideoCount < 10 ? 10 : deviceVideoCount < 15 ? 15 : null,
+        message: `Video completed! ${earnedMB}MB earned. ${deviceVideoCount} total videos watched.`
+      };
     }
     
-    console.log(`[VIDEO-EARNED] ${identifier} earned ${newView.earnedMB}MB by watching video (${duration}s) - Total videos: ${totalVideos}`);
-    return newView.earnedMB;
+    return {
+      videoRecorded: true,
+      milestoneReached: false,
+      internetAccessGranted: false,
+      earnedMB: 0,
+      message: 'Video must be watched for at least 30 seconds to earn data.'
+    };
+    
   } catch (error) {
     console.error('[VIDEO-RECORD-ERROR]', error.message);
-    return 0;
+    return {
+      videoRecorded: false,
+      error: 'Failed to record video view'
+    };
   }
+  
+  try {
+    // Map milestones to time-based unlocks as well
+    let durationHours = 2; // default for 5 videos
+    if (totalVideos === 5) durationHours = 2;
+    else if (totalVideos === 10) durationHours = 3;
+    else if (totalVideos === 15) durationHours = 4;
+
+    // Mark device unlocked for the milestone with both MB and duration
+    const unlockOk = markDeviceUnlocked(deviceId, identifier, (totalVideos === 5?100: totalVideos === 10?250: totalVideos === 15?500:100), durationHours);
+    if (unlockOk) {
+      console.log(`[MILESTONE-UNLOCKED] ${identifier} device ${deviceId.slice(0,8)}... unlocked for ${durationHours}h due to reaching ${totalVideos} videos`);
+    }
+  } catch(err){ 
+    console.warn('[MILESTONE-UNLOCK-ERROR]', err?.message); 
+  }
+    
+  console.log(`[VIDEO-EARNED] ${identifier} earned ${newView.earnedMB}MB by watching video (${duration}s) - Total videos: ${totalVideos}`);
+  return newView.earnedMB;
 }
 
 // Unified (email + phone) quota for a user with enhanced data tracking
@@ -2204,10 +2299,12 @@ function normalizePhone(raw){
   return s;
 }
 
-function saveUser(email, password, phone, firstName, surname, dob){
+function saveUser(email, password, phone, firstName, surname, dob, metadata = {}){
   try {
     const origEmail = (email||'').trim().toLowerCase();
     const normPhone = normalizePhone(phone);
+    const now = new Date();
+    
     // Basic validation (shared for both XLSX and SQLite flows)
     if(!origEmail && !normPhone){
       return { ok:false, field:'email', message:'Provide email or phone (at least one)' };
@@ -2219,6 +2316,25 @@ function saveUser(email, password, phone, firstName, surname, dob){
     if(!dob) return { ok:false, field:'dob', message:'Date of birth required' };
     if(new Date(dob) > new Date()) return { ok:false, field:'dob', message:'Date of birth cannot be in the future' };
     if(phone && !normPhone) return { ok:false, field:'phone', message:'Valid South African phone required' };
+
+    // Enhanced user data with metadata
+    const userData = {
+      email: origEmail || null,
+      phone: normPhone || null,
+      password_hash: bcrypt.hashSync(password, 10),
+      firstName: firstName?.trim() || '',
+      surname: surname?.trim() || '',
+      dob: dob || '',
+      dateCreatedISO: metadata.registrationTime || now.toISOString(),
+      dateCreatedLocal: metadata.registrationTimeLocal || now.toLocaleString(),
+      registrationIP: metadata.registrationIP || 'unknown',
+      userAgent: metadata.userAgent || 'unknown',
+      deviceId: metadata.deviceInfo?.deviceId || 'unknown',
+      registrationSource: 'portal',
+      status: 'active',
+      lastLoginISO: null,
+      loginCount: 0
+    };
 
     // If SQLite adapter is enabled, use it (and skip Excel writes)
     if (sqliteDB) {
@@ -2232,24 +2348,32 @@ function saveUser(email, password, phone, firstName, surname, dob){
         console.warn('[SAVEUSER-SQLITE-CHECK-ERR]', e && e.message);
       }
 
-      const createResult = sqliteDB.createUser({ email: origEmail || null, password, phone: normPhone || null, firstName, surname, dob });
+      const createResult = sqliteDB.createUser(userData);
       if (!createResult || !createResult.ok) {
         return { ok:false, message: createResult && createResult.message ? createResult.message : 'SQLite create user failed' };
       }
+      
       // Fetch stored row to log masked hash
       try {
         const row = sqliteDB.findUser(origEmail || normPhone);
         const ph = row && row.password_hash ? String(row.password_hash) : '';
         const mask = h => { if(!h) return '<none>'; if(h.length<=12) return h.slice(0,4)+'...'; return h.slice(0,6)+'...'+h.slice(-4); };
-        console.log('[REGISTRATION] sqlite user created:', { identifier: (origEmail||normPhone), password_hash_mask: mask(ph) });
+        console.log('[REGISTRATION] sqlite user created:', { 
+          identifier: (origEmail||normPhone), 
+          password_hash_mask: mask(ph),
+          registrationIP: userData.registrationIP,
+          deviceId: userData.deviceId?.slice(0,8) + '...'
+        });
       } catch (loge) { console.warn('[REGISTRATION-LOG-ERR]', loge && loge.message); }
 
       return { ok:true, identifier: (origEmail || normPhone).toLowerCase() };
     }
-    // Fallback Excel/XLSX storage path (existing behavior)
+    
+    // Fallback Excel/XLSX storage path (existing behavior enhanced)
     const wb = loadWorkbook();
     const ws = wb.Sheets['Users'];
     const data = XLSX.utils.sheet_to_json(ws);
+    
     // Duplicate checks for XLSX path
     if(origEmail && data.find(u=> (u.email||'').toLowerCase()===origEmail)){
       return { ok:false, field:'email', message:'Email already registered' };
@@ -2257,23 +2381,28 @@ function saveUser(email, password, phone, firstName, surname, dob){
     if(normPhone && data.find(u=> u.phone===normPhone)){
       return { ok:false, field:'phone', message:'Phone already registered' };
     }
-    const created = new Date();
-    const createdISO = created.toISOString();
-    const createdLocal = created.toLocaleString();
-    // Store bcrypt password_hash in XLSX to allow long-term logins (migrate plaintext when using SQLite)
-    const passwordHash = bcrypt.hashSync(password, 10);
-    data.push({
-      email: origEmail || '',
-      phone: normPhone || '',
-      password_hash: passwordHash,
-      // Keep legacy 'password' column only for backward compatibility (do not store plaintext)
-      password: '<hashed>',
-      firstName: firstName||'',
-      surname: surname||'',
-      dob: dob||'',
-      dateCreatedISO: createdISO,
-      dateCreatedLocal: createdLocal
-    });
+    
+    // Enhanced user record for XLSX
+    const userRecord = {
+      email: userData.email || '',
+      phone: userData.phone || '',
+      password_hash: userData.password_hash,
+      password: '<hashed>', // Keep legacy column for backward compatibility
+      firstName: userData.firstName,
+      surname: userData.surname,
+      dob: userData.dob,
+      dateCreatedISO: userData.dateCreatedISO,
+      dateCreatedLocal: userData.dateCreatedLocal,
+      registrationIP: userData.registrationIP,
+      userAgent: userData.userAgent?.substring(0, 200) || 'unknown', // Limit length for Excel
+      deviceId: userData.deviceId?.substring(0, 50) || 'unknown',
+      registrationSource: userData.registrationSource,
+      status: userData.status,
+      lastLoginISO: userData.lastLoginISO,
+      loginCount: userData.loginCount
+    };
+    
+    data.push(userRecord);
     
     // Sanitize data before writing to Excel to prevent character limit errors
     const sanitizedData = sanitizeDataForExcel(data);
@@ -2281,10 +2410,15 @@ function saveUser(email, password, phone, firstName, surname, dob){
     
     try {
       if (process.env.USE_SQLITE !== 'true') XLSX.writeFile(wb, DATA_FILE);
-        try {
+      try {
         // Keep logging minimal; only show masked representation
         const maskPwd = p => { if(!p) return '<none>'; if(p.length<=4) return p[0]+'***'; return p[0]+p[1]+'***'+p.slice(-2); };
-        console.log('[REGISTRATION] xlsx user created:', { identifier: (origEmail || normPhone), password_mask: maskPwd(password) });
+        console.log('[REGISTRATION] xlsx user created:', { 
+          identifier: (origEmail || normPhone), 
+          password_mask: maskPwd(password),
+          registrationIP: userData.registrationIP,
+          deviceId: userData.deviceId?.slice(0,8) + '...'
+        });
       } catch(e){ /* best-effort logging */ }
     } catch (writeError) {
       console.error('[XLSX-WRITE-ERROR] Failed to write user data:', writeError.message);
@@ -2295,15 +2429,21 @@ function saveUser(email, password, phone, firstName, surname, dob){
           identifier: (user.identifier || '').substring(0, 100),
           email: (user.email || '').substring(0, 100),
           phone: (user.phone || '').substring(0, 20),
-          password: (user.password || '').substring(0, 100),
+          password_hash: (user.password_hash || '').substring(0, 100),
+          password: '<hashed>',
           firstName: (user.firstName || '').substring(0, 50),
           surname: (user.surname || '').substring(0, 50),
           dob: (user.dob || '').substring(0, 10),
           dateCreatedISO: (user.dateCreatedISO || '').substring(0, 30),
-          dateCreatedLocal: (user.dateCreatedLocal || '').substring(0, 30)
+          dateCreatedLocal: (user.dateCreatedLocal || '').substring(0, 30),
+          registrationIP: (user.registrationIP || '').substring(0, 50),
+          deviceId: (user.deviceId || '').substring(0, 50),
+          status: 'active'
         }));
         wb.Sheets['Users'] = XLSX.utils.json_to_sheet(essentialData);
         XLSX.writeFile(wb, DATA_FILE);
+      } else {
+        throw writeError;
       }
     }
     return { ok:true, identifier: (origEmail || normPhone).toLowerCase() };
@@ -2313,6 +2453,52 @@ function saveUser(email, password, phone, firstName, surname, dob){
       return { ok:false, message:'Data file is open or locked. Close logins.xlsx and try again.' };
     }
     return { ok:false, message:'Server error saving user ('+(err.code||'unknown')+')' };
+  }
+}
+
+// Update user login statistics (login count and last login time)
+function updateUserLoginStats(identifier, loginTime, loginIP) {
+  try {
+    if (sqliteDB) {
+      // Update SQLite user record
+      const user = sqliteDB.findUser(identifier);
+      if (user) {
+        const newLoginCount = (user.loginCount || 0) + 1;
+        const db = sqliteDB._db();
+        if (db) {
+          db.prepare(`UPDATE users SET lastLoginISO = ?, loginCount = ? WHERE id = ?`)
+            .run(loginTime, newLoginCount, user.id);
+          
+          console.log(`[LOGIN-STATS-UPDATED] ${identifier}: login count ${newLoginCount}, last login ${loginTime}`);
+        }
+      }
+    } else {
+      // Update XLSX user record
+      const wb = loadWorkbook();
+      const ws = wb.Sheets['Users'];
+      const data = XLSX.utils.sheet_to_json(ws);
+      
+      const userIndex = data.findIndex(u => 
+        (u.email && u.email.toLowerCase() === identifier) || 
+        (u.phone && normalizePhone(u.phone) === normalizePhone(identifier))
+      );
+      
+      if (userIndex !== -1) {
+        data[userIndex].lastLoginISO = loginTime;
+        data[userIndex].loginCount = (data[userIndex].loginCount || 0) + 1;
+        
+        const sanitizedData = sanitizeDataForExcel(data);
+        wb.Sheets['Users'] = XLSX.utils.json_to_sheet(sanitizedData);
+        
+        if (process.env.USE_SQLITE !== 'true') {
+          XLSX.writeFile(wb, DATA_FILE);
+        }
+        
+        console.log(`[LOGIN-STATS-UPDATED] ${identifier}: login count ${data[userIndex].loginCount}`);
+      }
+    }
+  } catch (error) {
+    console.warn('[UPDATE-LOGIN-STATS-ERR]', error && error.message);
   }
 }
 
@@ -2531,6 +2717,9 @@ app.post('/api/forgot/verify', (req,res)=>{
 
 app.post('/api/register', (req,res)=>{
   const { email, password, phone, firstName, surname, dob } = req.body||{};
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  
   const debugCtx = {
     hasEmail: !!email,
     hasPhoneRaw: !!phone,
@@ -2539,32 +2728,201 @@ app.post('/api/register', (req,res)=>{
     firstNamePresent: !!firstName,
     surnamePresent: !!surname,
     dobPresent: !!dob,
-    bodyKeys: Object.keys(req.body||{})
+    bodyKeys: Object.keys(req.body||{}),
+    registrationIP: clientIp,
+    registrationTime: new Date().toISOString()
   };
+  
   console.log('Incoming register:', { email, phone, firstName, surname, dob, ...debugCtx });
+  
   if(!password || (!email && !phone)){
     return res.status(400).json({ ok:false, message:'Password and (email or phone) required', debug: debugCtx });
   }
-  const result = saveUser(email, password, phone, firstName, surname, dob);
+  
+  // Enhanced user registration with additional metadata
+  const registrationData = {
+    email: email ? email.toLowerCase().trim() : null,
+    password: password,
+    phone: normalizePhone(phone) || null,
+    firstName: firstName ? firstName.trim() : null,
+    surname: surname ? surname.trim() : null,
+    dob: dob || null,
+    registrationIP: clientIp,
+    registrationTime: new Date().toISOString(),
+    registrationTimeLocal: new Date().toLocaleString(),
+    userAgent: userAgent,
+    deviceInfo: generateDeviceFingerprint(req)
+  };
+  
+  const result = saveUser(
+    registrationData.email, 
+    registrationData.password, 
+    registrationData.phone, 
+    registrationData.firstName, 
+    registrationData.surname, 
+    registrationData.dob,
+    registrationData // Pass additional metadata
+  );
+  
   if(!result.ok){
     const status = /already|weak|future|required|valid|provide|password/i.test(result.message)?409:400;
     console.log('Registration rejected:', { result, debugCtx });
     return res.status(status).json({ ...result, debug: debugCtx });
   }
-  try { appendAccessEvent({ identifier: (result.identifier|| (email||phone||'')).toLowerCase(), type:'registration', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] }); } catch {}
+  
+  try { 
+    appendAccessEvent({ 
+      identifier: (result.identifier|| (email||phone||'')).toLowerCase(), 
+      type:'registration', 
+      tsISO: registrationData.registrationTime, 
+      ip: clientIp, 
+      ua: userAgent 
+    }); 
+  } catch {}
+  
   // Also log a signup_success event to SQLite events table when available
   try {
     if (sqliteDB) {
-      sqliteDB.appendAccessEvent({ identifier: (result.identifier|| (email||phone||'')).toLowerCase(), type:'signup_success', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'], data: { email: (email||'').toLowerCase() } });
+      sqliteDB.appendAccessEvent({ 
+        identifier: (result.identifier|| (email||phone||'')).toLowerCase(), 
+        type:'signup_success', 
+        tsISO: registrationData.registrationTime, 
+        ip: clientIp, 
+        ua: userAgent, 
+        data: { 
+          email: (email||'').toLowerCase(),
+          firstName: registrationData.firstName,
+          surname: registrationData.surname,
+          phone: registrationData.phone,
+          registrationSource: 'portal'
+        } 
+      });
       console.log('[REGISTRATION] signup_success logged to sqlite events for', (result.identifier|| (email||phone||'')).toLowerCase());
     }
   } catch (e) { console.warn('[REG-LOG-SIGNUP-ERR]', e && e.message); }
+  
+  console.log(`[USER-REGISTERED] ${result.identifier} from ${clientIp}`);
   res.json({ ok:true, identifier: result.identifier, debug: debugCtx });
 });
 
 // Simple ping for frontend to verify backend availability
 app.get('/api/ping', (req,res)=>{
   res.json({ ok:true, time:new Date().toISOString(), port:PORT });
+});
+
+// Admin endpoint: Get all registered users (requires admin access)
+app.get('/api/admin/registrations', (req, res) => {
+  try {
+    // Simple admin auth check (you can enhance this with proper authentication)
+    const authHeader = req.headers.authorization;
+    const adminKey = req.query.adminKey || req.headers['x-admin-key'];
+    
+    // Basic admin key check (enhance this for production)
+    if (!adminKey || adminKey !== 'isn_admin_2024') {
+      return res.status(401).json({ 
+        ok: false, 
+        message: 'Admin access required. Provide adminKey parameter.' 
+      });
+    }
+    
+    let registrations = [];
+    
+    if (sqliteDB) {
+      // Get users from SQLite
+      try {
+        const users = sqliteDB.getAllUsers();
+        registrations = users.map(user => ({
+          id: user.id,
+          email: user.email || '',
+          phone: user.phone || '',
+          firstName: user.firstName || '',
+          surname: user.surname || '',
+          fullName: `${user.firstName || ''} ${user.surname || ''}`.trim(),
+          dob: user.dob || '',
+          registrationDate: user.dateCreatedISO || user.created_at,
+          registrationDateLocal: user.dateCreatedLocal || 
+            (user.created_at ? new Date(user.created_at).toLocaleString() : ''),
+          registrationIP: user.registrationIP || 'unknown',
+          userAgent: user.userAgent || 'unknown',
+          deviceId: user.deviceId ? user.deviceId.substring(0, 12) + '...' : 'unknown',
+          status: user.status || 'active',
+          lastLogin: user.lastLoginISO,
+          loginCount: user.loginCount || 0,
+          source: user.registrationSource || 'portal'
+        }));
+      } catch (e) {
+        console.warn('[ADMIN-SQLITE-ERR]', e && e.message);
+      }
+    } else {
+      // Get users from XLSX
+      try {
+        const wb = loadWorkbook();
+        const ws = wb.Sheets['Users'];
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        registrations = data.map((user, index) => ({
+          id: index + 1,
+          email: user.email || '',
+          phone: user.phone || '',
+          firstName: user.firstName || '',
+          surname: user.surname || '',
+          fullName: `${user.firstName || ''} ${user.surname || ''}`.trim(),
+          dob: user.dob || '',
+          registrationDate: user.dateCreatedISO || '',
+          registrationDateLocal: user.dateCreatedLocal || '',
+          registrationIP: user.registrationIP || 'unknown',
+          userAgent: user.userAgent ? user.userAgent.substring(0, 100) + '...' : 'unknown',
+          deviceId: user.deviceId ? user.deviceId.substring(0, 12) + '...' : 'unknown',
+          status: user.status || 'active',
+          lastLogin: user.lastLoginISO || null,
+          loginCount: user.loginCount || 0,
+          source: user.registrationSource || 'portal'
+        }));
+      } catch (e) {
+        console.warn('[ADMIN-XLSX-ERR]', e && e.message);
+      }
+    }
+    
+    // Sort by registration date (newest first)
+    registrations.sort((a, b) => {
+      const dateA = new Date(a.registrationDate || 0);
+      const dateB = new Date(b.registrationDate || 0);
+      return dateB - dateA;
+    });
+    
+    const stats = {
+      totalRegistrations: registrations.length,
+      registrationsToday: registrations.filter(r => {
+        const regDate = new Date(r.registrationDate);
+        const today = new Date();
+        return regDate.toDateString() === today.toDateString();
+      }).length,
+      registrationsThisWeek: registrations.filter(r => {
+        const regDate = new Date(r.registrationDate);
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        return regDate >= weekAgo;
+      }).length,
+      activeUsers: registrations.filter(r => r.status === 'active').length,
+      uniqueDevices: new Set(registrations.map(r => r.deviceId)).size
+    };
+    
+    console.log(`[ADMIN-ACCESS] Registration data requested from ${req.ip}`);
+    
+    res.json({
+      ok: true,
+      stats,
+      registrations,
+      dataSource: sqliteDB ? 'sqlite' : 'xlsx',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[ADMIN-REGISTRATIONS-ERROR]', error.message);
+    res.status(500).json({ 
+      ok: false, 
+      message: 'Failed to retrieve registration data' 
+    });
+  }
 });
 
 // Simple health endpoint (plain text) for quick curl/browser test without JSON parsing
@@ -3076,16 +3434,18 @@ function startProxy(){
       // Continue processing - do not trigger manual/auto blocking for ad hosts
     }
     
-    // AUTO-AUTHENTICATION: Check if unauthenticated user has earned data bundles
+    // AUTO-AUTHENTICATION: Check if unauthenticated user has earned data bundles via video watching
     if (!mappedIdentifier && !isPortalHost) {
       // Try to find user by device fingerprint who has earned data bundles
       const userAgent = clientReq.headers['user-agent'] || '';
       const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
       const deviceFingerprint = crypto.createHash('md5').update(userAgent + routerId).digest('hex').slice(0,16);
       
-      // Check if this device fingerprint has earned data bundles
-      const videosWatched = getVideosWatchedForUser(null, deviceFingerprint, routerId);
-      if (videosWatched >= 5) { // User has watched enough videos to earn data
+      // Check device-specific video count for automatic access
+      const deviceVideoCount = getDeviceVideoCount(deviceFingerprint, routerId);
+      console.log(`[AUTO-AUTH-CHECK] Device ${deviceFingerprint.slice(0,8)}... has ${deviceVideoCount} videos for ${hostHeader}`);
+      
+      if (deviceVideoCount >= 5) { // User has watched enough videos to earn data
         // Find the identifier from ad events
         try {
           const XLSX = require('xlsx');
@@ -3104,23 +3464,35 @@ function startProxy(){
             }
             
             if (foundIdentifier) {
-              console.log('[AUTO-AUTH] Auto-authenticating user with data bundles:', { 
+              console.log('[AUTO-AUTH-VIDEO-EARNED] Auto-authenticating user with video-earned data bundles:', { 
                 identifier: foundIdentifier,
                 deviceFingerprint,
-                videosWatched,
+                videosWatched: deviceVideoCount,
                 ip: clientIp,
                 host: hostHeader
               });
               
-              // Register as active client for 24 hours
-              registerActiveClient(clientReq, foundIdentifier, 24);
-              mappedIdentifier = resolveActiveClient(clientIp, clientReq);
-              
-              console.log('[AUTO-AUTH-SUCCESS] User authenticated:', foundIdentifier);
+              // Calculate earned bundle based on video count
+              const earnedBundle = calculateEarnedBundle(deviceVideoCount);
+              if (earnedBundle.bundleMB > 0) {
+                // Grant immediate temporary access for video-earned data
+                tempFullAccess.set(deviceFingerprint, Date.now() + (24 * 60 * 60 * 1000)); // 24 hours
+                
+                // Register as active client for proper quota tracking
+                registerActiveClient(clientReq, foundIdentifier, 24);
+                mappedIdentifier = resolveActiveClient(clientIp, clientReq);
+                
+                console.log('[AUTO-AUTH-VIDEO-SUCCESS] User authenticated with video-earned access:', {
+                  identifier: foundIdentifier,
+                  bundleMB: earnedBundle.bundleMB,
+                  tier: earnedBundle.tier,
+                  deviceVideoCount
+                });
+              }
             }
           }
         } catch (err) {
-          console.warn('[AUTO-AUTH-ERROR]', err.message);
+          console.warn('[AUTO-AUTH-VIDEO-ERROR]', err.message);
         }
       }
     }
@@ -3149,8 +3521,8 @@ function startProxy(){
       });
       // Continue processing - allow video ad access for video watching
     }
-    // MANUAL PROXY: Allow manual-proxy users who have watched videos on THIS device
-    // to get temporary access without forcing a full login. Otherwise require login.
+    // MANUAL PROXY: Enhanced video-based access for users who have watched videos on THIS device
+    // Allow manual-proxy users who have watched videos on THIS device to get automatic access
     else if (isManualProxy && !mappedIdentifier && !isPortalHost) {
       try {
         const userAgent = clientReq.headers['user-agent'] || '';
@@ -3158,97 +3530,185 @@ function startProxy(){
         const deviceInfo = generateDeviceFingerprint(clientReq);
         const deviceId = deviceInfo.deviceId;
 
-        // Attempt to get videos watched for this specific device fingerprint
-        const videosWatched = typeof getVideosWatchedForUser === 'function'
-          ? getVideosWatchedForUser(null, deviceId, routerId)
-          : (typeof getVideosWatched === 'function' ? (getVideosWatched(null, deviceId, routerId) || []).length : 0);
+        // Get device-specific video count for accurate tracking
+        const deviceVideoCount = getDeviceVideoCount(deviceId, routerId);
+        console.log(`[MANUAL-PROXY-VIDEO-CHECK] Device ${deviceId.slice(0,8)}... has ${deviceVideoCount} videos watched`);
 
-        let videoCount = 0;
-        if (Array.isArray(videosWatched)) videoCount = videosWatched.length;
-        else videoCount = Number(videosWatched) || 0;
-
-        let videoAccessMB = 0;
-        if (videoCount >= 15) videoAccessMB = 500;
-        else if (videoCount >= 10) videoAccessMB = 250;
-        else if (videoCount >= 5) videoAccessMB = 100;
-
-        if (videoAccessMB > 0) {
-          // Grant a temporary device-scoped unlock so the proxy code later in the pipeline
-          // recognises this device as entitled to consume the video-earned allowance.
-          const expiry = Date.now() + (4 * 60 * 60 * 1000); // 4 hours
+        // Calculate earned data bundle based on video milestone system
+        const earnedBundle = calculateEarnedBundle(deviceVideoCount);
+        
+        if (earnedBundle.bundleMB > 0) {
+          // Grant a temporary device-scoped unlock so the proxy recognises this device
+          // as entitled to consume the video-earned allowance
+          const expiry = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
           tempFullAccess.set(deviceId, expiry);
-          console.log('[MANUAL-PROXY-VIDEO-ACCESS-GRANTED]', { deviceId: deviceId.slice(0,8), videoCount, videoAccessMB });
-          // Do not return here; allow the request to continue and be processed normally.
+          
+          console.log('[MANUAL-PROXY-VIDEO-ACCESS-GRANTED]', { 
+            deviceId: deviceId.slice(0,8) + '...', 
+            videoCount: deviceVideoCount, 
+            earnedMB: earnedBundle.bundleMB,
+            tier: earnedBundle.tier,
+            expiry: new Date(expiry).toISOString()
+          });
+          
+          // Do not return here; allow the request to continue and be processed normally
         } else {
-          console.log('[MANUAL-PROXY-BLOCKED] Manual proxy user must login first:', { host: hostHeader, ip: clientIp, videos: videoCount });
+          const videosNeeded = 5 - deviceVideoCount;
+          console.log('[MANUAL-PROXY-BLOCKED] Manual proxy user must watch videos first:', { 
+            host: hostHeader, 
+            ip: clientIp, 
+            deviceVideos: deviceVideoCount,
+            videosNeeded: videosNeeded > 0 ? videosNeeded : 0
+          });
+          
           clientRes.writeHead(302, {
-            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
+            'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}&videos_needed=${videosNeeded}`,
             'Content-Type': 'text/html; charset=utf-8'
           });
           clientRes.end(`<!DOCTYPE html>
 <html><head>
-<title>Manual Proxy - Login Required</title>
+<title>Manual Proxy - Watch Videos Required</title>
 <meta http-equiv="refresh" content="3;url=http://${localIps[0] || 'localhost'}:${PORT}/login.html">
-<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;}</style>
+<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;background:#f8f9fa;}
+.container{max-width:600px;margin:0 auto;padding:30px;border:2px solid #007bff;border-radius:10px;background:#fff;}
+.icon{font-size:48px;margin-bottom:20px;}
+.btn{background:#007bff;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+.progress{background:#e9ecef;height:20px;border-radius:10px;margin:20px 0;overflow:hidden;}
+.progress-fill{background:#007bff;height:100%;transition:width 0.3s;width:${(deviceVideoCount/5)*100}%;}
+</style>
 </head>
 <body>
-<h1>🔐 Manual Proxy Login Required</h1>
-<p><strong>Blocked:</strong> ${hostHeader}</p>
-<p>You are using <strong>Manual Proxy</strong> configuration.</p>
-<p>Please log in to the portal first to access the internet.</p>
-<p><strong>Your Proxy Settings:</strong> 10.5.48.94:8082</p>
-<hr>
-<p><a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" style="background:#007bff;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Login to Portal</a></p>
-<p><small>Redirecting in 3 seconds...</small></p>
+<div class="container">
+  <div class="icon">📺</div>
+  <h1>🔐 Manual Proxy - Watch Videos to Access Internet</h1>
+  <p><strong>Blocked Host:</strong> ${hostHeader}</p>
+  <p><strong>Your Proxy:</strong> 10.5.48.94:8082</p>
+  
+  <div style="background:#e3f2fd;padding:20px;margin:20px 0;border-radius:8px;border:2px solid #2196f3;">
+    <h3>📊 Video Progress:</h3>
+    <p><strong>Videos Watched:</strong> ${deviceVideoCount} / 5</p>
+    <p><strong>Videos Needed:</strong> ${videosNeeded > 0 ? videosNeeded : 0}</p>
+    <div class="progress">
+      <div class="progress-fill"></div>
+    </div>
+    <p><strong>Earn:</strong> 100MB internet access after 5 videos</p>
+  </div>
+  
+  <div style="background:#f0f8ff;padding:15px;margin:20px 0;border-radius:5px;border:2px solid #4caf50;">
+    <h3>🎯 Bundle System:</h3>
+    <ul style="text-align:left;max-width:300px;margin:0 auto;">
+      <li>🎥 <strong>5 videos = 100MB</strong></li>
+      <li>🎥 <strong>10 videos = 250MB</strong></li>
+      <li>🎥 <strong>15 videos = 500MB</strong></li>
+    </ul>
+  </div>
+  
+  <a href="http://${localIps[0] || 'localhost'}:${PORT}/login.html" class="btn">🎬 Watch Videos Now</a>
+  <p><small>Each device must watch videos individually • Redirecting in 3 seconds...</small></p>
+</div>
 </body></html>`);
           return;
         }
       } catch (err) {
-        console.warn('[MANUAL-PROXY-ERROR]', err && err.message);
+        console.warn('[MANUAL-PROXY-VIDEO-ERROR]', err && err.message);
         clientRes.writeHead(302, {
           'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=manual_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
           'Content-Type': 'text/html; charset=utf-8'
         });
-        clientRes.end(`<html><body>Redirecting to login...</body></html>`);
+        clientRes.end(`<html><body>Redirecting to portal to watch videos...</body></html>`);
         return;
       }
     }
     
-    // AUTO PROXY: Block everything except portal until user watches videos AND has active data bundles
+    // AUTO PROXY: Enhanced video-based access - Block everything except portal until user watches videos AND has active data bundles
     else if (isAutoProxy && !mappedIdentifier) {
-      console.log('[AUTO-PROXY-BLOCKED] Auto proxy user must watch videos:', { 
+      const userAgent = clientReq.headers['user-agent'] || '';
+      const routerId = clientReq.headers['x-router-id'] || clientIp || 'unknown';
+      const deviceInfo = generateDeviceFingerprint(clientReq);
+      const deviceId = deviceInfo.deviceId;
+
+      // Check device-specific video count for automatic access
+      const deviceVideoCount = getDeviceVideoCount(deviceId, routerId);
+      const earnedBundle = calculateEarnedBundle(deviceVideoCount);
+      
+      console.log('[AUTO-PROXY-VIDEO-CHECK]', { 
         host: hostHeader, 
-        ip: clientIp 
+        ip: clientIp,
+        deviceId: deviceId.slice(0,8) + '...',
+        deviceVideoCount,
+        earnedMB: earnedBundle.bundleMB
       });
-      clientRes.writeHead(302, { 
-        'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=auto_proxy&blocked_host=${encodeURIComponent(hostHeader)}`,
-        'Content-Type': 'text/html; charset=utf-8'
-      });
-      clientRes.end(`<!DOCTYPE html>
+
+      if (earnedBundle.bundleMB > 0) {
+        // Auto-grant temporary access for devices that have earned data via videos
+        const expiry = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+        tempFullAccess.set(deviceId, expiry);
+        
+        console.log('[AUTO-PROXY-VIDEO-ACCESS-GRANTED]', {
+          deviceId: deviceId.slice(0,8) + '...',
+          videoCount: deviceVideoCount,
+          earnedMB: earnedBundle.bundleMB,
+          tier: earnedBundle.tier
+        });
+        
+        // Allow the request to continue with earned access
+      } else {
+        const videosNeeded = 5 - deviceVideoCount;
+        console.log('[AUTO-PROXY-BLOCKED] Auto proxy user must watch videos:', { 
+          host: hostHeader, 
+          ip: clientIp,
+          deviceVideoCount,
+          videosNeeded: videosNeeded > 0 ? videosNeeded : 0
+        });
+        
+        clientRes.writeHead(302, { 
+          'Location': `http://${localIps[0] || 'localhost'}:${PORT}/login.html?source=auto_proxy&blocked_host=${encodeURIComponent(hostHeader)}&videos_watched=${deviceVideoCount}&videos_needed=${videosNeeded}`,
+          'Content-Type': 'text/html; charset=utf-8'
+        });
+        clientRes.end(`<!DOCTYPE html>
 <html><head>
 <title>Auto Proxy - Watch Videos Required</title>
 <meta http-equiv="refresh" content="5;url=http://${localIps[0] || 'localhost'}:${PORT}/login.html">
-<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;}</style>
+<style>body{font-family:Arial;text-align:center;margin:50px;color:#333;background:#f8f9fa;}
+.container{max-width:600px;margin:0 auto;padding:30px;border:2px solid #ff6b35;border-radius:10px;background:#fff;}
+.icon{font-size:48px;margin-bottom:20px;}
+.btn{background:#ff6b35;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;margin:20px 0;}
+.progress{background:#e9ecef;height:20px;border-radius:10px;margin:20px 0;overflow:hidden;}
+.progress-fill{background:#ff6b35;height:100%;transition:width 0.3s;width:${(deviceVideoCount/5)*100}%;}
+</style>
 </head>
 <body>
-<h1>📺 Watch Videos to Access Internet</h1>
-<p><strong>Blocked:</strong> ${hostHeader}</p>
-<p>You are using <strong>Auto Proxy (PAC)</strong> configuration.</p>
-<p>You must watch videos to earn internet access bundles.</p>
-<div style="background:#f0f0f0;padding:15px;margin:20px;border-radius:5px;">
-<h3>📊 Bundle System:</h3>
-<ul style="list-style:none;padding:0;">
-<li>🎥 <strong>5 videos = 100MB</strong> bundle</li>
-<li>🎥 <strong>10 videos = 250MB</strong> bundle</li>
-<li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
-</ul>
+<div class="container">
+  <div class="icon">📺</div>
+  <h1>📺 Watch Videos to Access Internet</h1>
+  <p><strong>Blocked Host:</strong> ${hostHeader}</p>
+  <p><strong>Your PAC URL:</strong> http://10.5.48.94:${PORT}/proxy.pac</p>
+  
+  <div style="background:#fff3e0;padding:20px;margin:20px 0;border-radius:8px;border:2px solid #ff9800;">
+    <h3>📊 Video Progress:</h3>
+    <p><strong>Videos Watched:</strong> ${deviceVideoCount} / 5</p>
+    <p><strong>Videos Needed:</strong> ${videosNeeded > 0 ? videosNeeded : 0}</p>
+    <div class="progress">
+      <div class="progress-fill"></div>
+    </div>
+    <p><strong>Earn:</strong> 100MB internet access after 5 videos</p>
+  </div>
+  
+  <div style="background:#f0f0f0;padding:15px;margin:20px;border-radius:5px;">
+    <h3>📊 Bundle System:</h3>
+    <ul style="list-style:none;padding:0;">
+      <li>🎥 <strong>5 videos = 100MB</strong> bundle</li>
+      <li>🎥 <strong>10 videos = 250MB</strong> bundle</li>
+      <li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
+    </ul>
+  </div>
+  
+  <a href="http://10.5.48.94:${PORT}/login.html" class="btn">🎬 Start Watching Videos</a>
+  <p><small>Each device earns access individually • Redirecting in 5 seconds...</small></p>
 </div>
-<p><strong>Your PAC URL:</strong> http://10.5.48.94:${PORT}/proxy.pac</p>
-<hr>
-<p><a href="http://10.5.48.94:${PORT}/login.html" style="background:#ff6b35;color:white;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;">🎬 Start Watching Videos</a></p>
-<p><small>Redirecting in 5 seconds...</small></p>
 </body></html>`);
-      return;
+        return;
+      }
     }
     
     // AUTO PROXY WITH AUTHENTICATION: Must have valid data bundles (no free access)
@@ -5428,6 +5888,7 @@ app.post('/api/emergency/unlock', (req, res) => {
   }
 });
 
+// Enhanced video completion API with automatic internet access
 app.post('/api/video/complete', (req, res) => {
   try {
     const { identifier, videoUrl, duration, deviceId: providedDeviceId } = req.body || {};
@@ -5440,185 +5901,91 @@ app.post('/api/video/complete', (req, res) => {
     const deviceInfo = generateDeviceFingerprint(req);
     const deviceId = providedDeviceId || deviceInfo.deviceId;
     const routerId = req.headers['x-router-id'] || detectRouterId(req) || 'default-router';
+    const clientIp = req.ip || req.connection.remoteAddress;
     
-    // Record the video view
-    const earnedMB = recordVideoView(identifier, deviceId, videoUrl, duration, routerId);
+    console.log(`[VIDEO-COMPLETION-REQUEST] ${identifier} device ${deviceId.slice(0,8)}... watched ${videoUrl} for ${duration}s`);
     
-    // Get updated video count and total earned data
-  const videosWatched = getVideosWatched(identifier, deviceId);
-  const totalVideoEarnedMB = calculateVideoEarnedData(videosWatched);
-
-  // Ensure we have a numeric count for videos watched (some helpers return arrays or numbers)
-  const count = Array.isArray(videosWatched) ? videosWatched.length : (Number(videosWatched) || 0);
-
-  // Setup bundle/milestone tracking variables
-  let milestone = null;
-  let bundleAmount = 0;
-  let newBundleCreated = false;
+    // Record the video view with enhanced tracking
+    const videoResult = recordVideoView(identifier, deviceId, videoUrl, duration, routerId);
     
-    // CRITICAL: Set video notification received flag to unlock internet access
-    let deviceSession = deviceSessions.get(deviceId) || deviceSessions.get(identifier);
-    if (!deviceSession) {
-      deviceSession = {
-        sessionToken: `video_session_${Date.now()}`,
+    if (!videoResult.videoRecorded) {
+      return res.status(500).json({ 
+        ok: false, 
+        message: videoResult.error || 'Failed to record video view' 
+      });
+    }
+    
+    // If milestone reached and internet access granted, set up immediate access
+    if (videoResult.internetAccessGranted) {
+      console.log(`[AUTO-INTERNET-ACCESS] ${identifier} reached milestone: ${videoResult.tier} (${videoResult.bundleMB}MB)`);
+      
+      // Register active client for immediate proxy access  
+      const clientInfo = {
+        identifier: identifier,
+        ip: clientIp,
+        lastSeen: Date.now(),
+        expires: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
+        deviceFingerprint: deviceId,
+        macAddress: deviceInfo.mac,
+        sessionToken: `auto_video_${Date.now()}`,
+        bundleMB: videoResult.bundleMB,
+        source: 'video_milestone'
+      };
+      
+      // Register with multiple keys for instant recognition by proxy
+      activeClients.set(deviceId, clientInfo);
+      activeClients.set(identifier, clientInfo);
+      if (deviceInfo.mac) activeClients.set(deviceInfo.mac, clientInfo);
+      activeClients.set(clientIp, clientInfo);
+      
+      // Set device session for enhanced access control
+      const deviceSession = {
+        sessionToken: clientInfo.sessionToken,
         voucher: null,
         unlockTimestamp: Date.now(),
         revalidationRequired: false,
         lastActivity: Date.now(),
-        videoNotificationReceived: false
+        videoNotificationReceived: true,
+        lastVideoCompletion: Date.now(),
+        totalVideosWatched: videoResult.totalVideos,
+        internetAccessGranted: true,
+        bundleMB: videoResult.bundleMB
       };
+      
+      deviceSessions.set(deviceId, deviceSession);
+      deviceSessions.set(identifier, deviceSession);
+      
+      console.log(`[IMMEDIATE-ACCESS-GRANTED] ${identifier} device ${deviceId.slice(0,8)}... has instant internet access for ${videoResult.bundleMB}MB`);
     }
     
-    // Mark that the user has received video completion notification
-    deviceSession.videoNotificationReceived = true;
-    deviceSession.lastVideoCompletion = Date.now();
-    deviceSession.totalVideosWatched = count;
-    
-    // Store the session for both device ID and identifier
-    deviceSessions.set(deviceId, deviceSession);
-    deviceSessions.set(identifier, deviceSession);
-    
-    console.log(`[VIDEO-NOTIFICATION-SET] ${identifier} device ${deviceId.slice(0,8)}... marked as notified - INTERNET ACCESS UNLOCKED`);
-    
-    // Create actual data bundles at milestones - CRITICAL FIX!
-    if (count === 5 && totalVideoEarnedMB >= 100) {
-      milestone = { message: 'Great progress!', data: '100MB bundle unlocked' };
-      bundleAmount = 100;
-      newBundleCreated = true;
-    } else if (count === 10 && totalVideoEarnedMB >= 250) {
-      milestone = { message: 'Keep watching!', data: '250MB bundle unlocked' };
-      bundleAmount = 250;
-      newBundleCreated = true;
-    } else if (count === 15 && totalVideoEarnedMB >= 500) {
-      milestone = { message: 'Excellent!', data: '500MB bundle unlocked' };
-      bundleAmount = 500;
-      newBundleCreated = true;
-    } else if (count === 1) {
-      milestone = { message: 'Social media access unlocked!', data: '20MB earned' };
-    } else if (count === 25) {
-      milestone = { message: 'Power user!', data: '1GB total earned' };
-    }
-    
-    // CRITICAL: Actually create the data bundle purchase record
-    if (newBundleCreated && bundleAmount > 0) {
-      try {
-        // Create bundle using enhanced data tracker to prevent duplicates
-        const bundleCreated = dataTracker.createBundleIfNotExists(identifier, count, bundleAmount, `${count}_video_bundle`);
-        
-        if (bundleCreated) {
-          console.log(`[VIDEO-BUNDLE-CREATED] ${identifier} earned ${bundleAmount}MB data bundle at ${count} videos`);
-          
-          // CRITICAL FIX: Grant device-specific access immediately with MAC binding
-          const deviceInfo = generateDeviceFingerprint(req);
-          const deviceAccessGranted = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, count, bundleAmount);
-          
-          if (deviceAccessGranted) {
-            console.log(`[DEVICE-ACCESS-GRANTED] Device ${deviceInfo.deviceId.slice(0,8)}... (MAC:${deviceInfo.mac?.slice(0,6) || 'unknown'}) earned ${bundleAmount}MB access for user ${identifier}`);
-            
-            // Clear any blocking for this device
-            deviceIsolation.clearDeviceBlock(identifier, deviceInfo.deviceId);
-            
-            // Create MAC-bound access token for strict device isolation
-            if (deviceInfo.macVerified) {
-              const accessToken = deviceIsolation.createDeviceAccessToken(deviceInfo.deviceId, deviceInfo.mac, identifier, bundleAmount, count);
-              console.log(`[MAC-ACCESS-TOKEN-CREATED] Device ${deviceInfo.mac.slice(0,6)}... bound to ${bundleAmount}MB access`);
-            }
-            
-            // Register as active client to ensure immediate internet access
-            const clientInfo = {
-              identifier: identifier,
-              ip: req.ip || req.connection.remoteAddress,
-              lastSeen: Date.now(),
-              expires: Date.now() + (6 * 60 * 60 * 1000), // 6 hours
-              deviceFingerprint: deviceInfo.deviceId,
-              macAddress: deviceInfo.mac,
-              sessionToken: deviceAccessGranted.accessToken || `video_token_${Date.now()}`
-            };
-            
-            // Register with multiple keys for instant recognition
-            activeClients.set(deviceInfo.deviceId, clientInfo);
-            activeClients.set(identifier, clientInfo);
-            if (deviceInfo.mac) {
-              activeClients.set(deviceInfo.mac, clientInfo);
-            }
-            activeClients.set(req.ip || req.connection.remoteAddress, clientInfo);
-            
-            console.log(`[IMMEDIATE-ACCESS] ${identifier} device ${deviceInfo.deviceId.slice(0,8)}... granted immediate internet access`);
-            
-            // INSTANT ACCESS FIX: Clear any stale usage data and refresh quota immediately
-            realtimeUsage.delete(identifier);
-            console.log(`[QUOTA-REFRESHED] Cleared stale usage data for ${identifier} - fresh bundle access enabled`);
-            
-            // Force immediate activeClients recognition by multiple keys
-            console.log(`[MULTI-KEY-ACCESS] Registered ${identifier} with device/MAC/IP keys for instant recognition`);
-            
-          } else {
-            console.error(`[DEVICE-ACCESS-FAILED] Could not grant device access for ${identifier}`);
-          }
-          
-        } else {
-          console.log(`[BUNDLE-EXISTS] Bundle already exists for ${identifier} at ${count} videos - access should already be granted`);
-          
-          // Even if bundle exists, ensure device has access
-          const deviceInfo = {
-            deviceId: deviceId,
-            ip: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent'] || '',
-            identifier: identifier
-          };
-          
-          const deviceAccessGranted = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, count, bundleAmount);
-          if (deviceAccessGranted) {
-            console.log(`[EXISTING-BUNDLE-ACCESS] Re-granted access for ${identifier} device ${deviceId.slice(0,8)}...`);
-          }
-        }
-      } catch (error) {
-        console.error('[VIDEO-BUNDLE-CREATION-ERROR]', error.message);
-      }
-    } else if (count >= 1) {
-      // Even for first video, grant some access to allow continued watching
-      try {
-        const deviceInfo = {
-          deviceId: deviceId,
-          ip: req.ip || req.connection.remoteAddress,
-          userAgent: req.headers['user-agent'] || '',
-          identifier: identifier
-        };
-        
-        const minimalAccess = deviceIsolation.deviceEarnAccess(identifier, deviceInfo, routerId, 1, 20); // 20MB for first video
-        if (minimalAccess) {
-          console.log(`[FIRST-VIDEO-ACCESS] ${identifier} device ${deviceId.slice(0,8)}... granted 20MB access for video watching`);
-        }
-      } catch (error) {
-        console.error('[FIRST-VIDEO-ACCESS-ERROR]', error.message);
-      }
-    }
-    
-    console.log(`[VIDEO-COMPLETION] ${identifier} watched video ${count}, earned ${earnedMB}MB (total: ${totalVideoEarnedMB}MB)`);
-    
-    res.json({
+    // Return comprehensive response
+    const response = {
       ok: true,
-      earnedMB: earnedMB,
-      totalVideos: count,
-      totalEarnedMB: totalVideoEarnedMB,
-      milestone: milestone,
-      bundleCreated: newBundleCreated,
-      bundleAmount: bundleAmount,
-      internetUnlocked: true, // Always true after video completion
-      socialUnlocked: true,   // Always true after video completion
-      notification: {
-        title: '🎉 Internet Access Unlocked!',
-        message: count === 1 ? 
-          'You watched your first video! Internet and social media access is now unlocked.' :
-          `Great! You've watched ${count} videos. Your internet access has been refreshed.`,
-        type: 'success',
-        showFor: 8000 // Show for 8 seconds
+      message: videoResult.message,
+      data: {
+        videoRecorded: videoResult.videoRecorded,
+        earnedMB: videoResult.earnedMB || 0,
+        totalVideos: videoResult.totalVideos,
+        milestoneReached: videoResult.milestoneReached,
+        internetAccessGranted: videoResult.internetAccessGranted,
+        bundleMB: videoResult.bundleMB || 0,
+        tier: videoResult.tier || 'none',
+        nextMilestone: videoResult.nextMilestone,
+        accessExpiry: videoResult.accessExpiry,
+        deviceId: deviceId,
+        routerId: routerId
       }
-    });
+    };
+    
+    console.log(`[VIDEO-API-RESPONSE] ${identifier}: ${JSON.stringify(response.data)}`);
+    res.json(response);
     
   } catch (error) {
-    console.error('[VIDEO-COMPLETE-ERROR]', error.message);
-    res.status(500).json({ ok: false, message: 'Video completion tracking failed' });
+    console.error('[VIDEO-COMPLETE-API-ERROR]', error.message);
+    res.status(500).json({ 
+      ok: false, 
+      message: 'Internal server error processing video completion' 
+    });
   }
 });
 
@@ -5859,16 +6226,33 @@ app.get('/api/admin/router/usage', adminLimiter, (req,res)=>{
 
 app.post('/api/login', (req,res)=>{
   const { email, password } = req.body; // "email" may be phone or email identifier
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  const loginTime = new Date().toISOString();
+  
   if(!email || !password){ return res.status(400).json({ ok:false, message:'Missing fields'}); }
   
-  if(validateLogin(email.trim(), password)){
+  const identifier = email.trim().toLowerCase();
+  
+  if(validateLogin(identifier, password)){
     try { 
-  const evt = { identifier: email.trim().toLowerCase(), type:'login', tsISO:new Date().toISOString(), ip:(req.ip||''), ua:req.headers['user-agent'] };
-  if (sqliteDB) sqliteDB.appendAccessEvent(evt); else appendAccessEvent(evt);
+      const evt = { 
+        identifier: identifier, 
+        type:'login', 
+        tsISO: loginTime, 
+        ip: clientIp, 
+        ua: userAgent 
+      };
+      if (sqliteDB) sqliteDB.appendAccessEvent(evt); else appendAccessEvent(evt);
     } catch {}
     
+    // Update user login statistics
+    updateUserLoginStats(identifier, loginTime, clientIp);
+    
     // Enhanced device registration on successful login
-    const deviceRegistration = registerActiveClient(req, email.trim().toLowerCase(), 6);
+    const deviceRegistration = registerActiveClient(req, identifier, 6);
+    
+    console.log(`[LOGIN-SUCCESS] ${identifier} from ${clientIp}`);
     
     if (deviceRegistration) {
       return res.json({ 
@@ -5883,6 +6267,8 @@ app.post('/api/login', (req,res)=>{
       return res.json({ ok: true, deviceRegistered: false });
     }
   }
+  
+  console.log(`[LOGIN-FAILED] ${identifier} from ${clientIp}`);
   res.status(401).json({ ok:false, message:'Invalid credentials' });
 });
 
@@ -6165,6 +6551,114 @@ app.get('/api/me/profile', (req,res)=>{
     console.error('Profile load error', err);
     res.status(500).json({ ok:false, message:'Error loading profile'});
   }
+});
+
+// ===========================================
+// PROXY ENDPOINT FOR UNRESTRICTED AD ACCESS
+// ===========================================
+// Proxy endpoint to provide unrestricted access to ad content
+// This allows ads to be accessible even when users have no data or limited access
+app.get('/proxy', async (req, res) => {
+  const targetUrl = req.query.url;
+  
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing URL parameter' });
+  }
+
+  try {
+    console.log('[PROXY] Proxying request to:', targetUrl);
+    
+    // Determine if we need http or https
+    const isHttps = targetUrl.startsWith('https://');
+    const httpModule = isHttps ? https : http;
+    
+    // Parse the target URL
+    const urlParts = new URL(targetUrl);
+    
+    // Set up request options
+    const options = {
+      hostname: urlParts.hostname,
+      port: urlParts.port || (isHttps ? 443 : 80),
+      path: urlParts.pathname + urlParts.search,
+      method: req.method,
+      headers: {
+        'User-Agent': 'ISN-Free-WiFi-Proxy/1.0',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    };
+
+    // Forward specific headers if present
+    if (req.headers.range) options.headers.Range = req.headers.range;
+    if (req.headers.referer) options.headers.Referer = req.headers.referer;
+
+    const proxyReq = httpModule.request(options, (proxyRes) => {
+      // Set CORS headers for unrestricted access
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+        'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges'
+      });
+
+      // Forward response headers
+      Object.keys(proxyRes.headers).forEach(key => {
+        if (key.toLowerCase() !== 'set-cookie') { // Skip set-cookie for security
+          res.set(key, proxyRes.headers[key]);
+        }
+      });
+
+      // Set status code
+      res.status(proxyRes.statusCode);
+
+      // Stream the response
+      proxyRes.pipe(res);
+      
+      console.log('[PROXY] Response:', proxyRes.statusCode, 'for', targetUrl);
+    });
+
+    // Handle proxy request errors
+    proxyReq.on('error', (err) => {
+      console.error('[PROXY] Request error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Proxy request failed', details: err.message });
+      }
+    });
+
+    // Handle timeouts
+    proxyReq.setTimeout(30000, () => {
+      console.error('[PROXY] Request timeout for:', targetUrl);
+      proxyReq.destroy();
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'Proxy request timeout' });
+      }
+    });
+
+    // Forward request body if present (for POST requests)
+    if (req.method === 'POST' && req.body) {
+      proxyReq.write(JSON.stringify(req.body));
+    }
+
+    proxyReq.end();
+
+  } catch (err) {
+    console.error('[PROXY] General error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Proxy error', details: err.message });
+    }
+  }
+});
+
+// Handle preflight OPTIONS requests for CORS
+app.options('/proxy', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+    'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization'
+  });
+  res.status(204).send();
 });
 
 // Serve static files (mounted after API routes so routes are not overridden by files)
@@ -6566,6 +7060,136 @@ function importXlsxToSqliteOnce(){
 try { importXlsxToSqliteOnce(); } catch(e){ console.warn('[MIGRATE-SQLITE-CALL-ERR]', e && e.message); }
 
 try { ensureAdminSeeded(); } catch(e){ console.warn('[ADMIN-SEED-CALL-ERR]', e && e.message); }
+
+// ===========================================
+// PROXY SERVER ON PORT 8082 FOR AD UNBLOCKING
+// ===========================================
+// Start dedicated proxy server on port 8082 for unrestricted ad access
+const proxyApp = express();
+
+// Enable JSON parsing for proxy
+proxyApp.use(express.json({ limit: '10mb' }));
+
+// CORS middleware for all proxy requests
+proxyApp.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+  next();
+});
+
+// Main proxy endpoint - mirrors the one on main server but optimized for unrestricted access
+proxyApp.get('/proxy', async (req, res) => {
+  const targetUrl = req.query.url;
+  
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing URL parameter' });
+  }
+
+  try {
+    console.log('[PROXY-8082] Unrestricted access to:', targetUrl);
+    
+    const isHttps = targetUrl.startsWith('https://');
+    const httpModule = isHttps ? https : http;
+    const urlParts = new URL(targetUrl);
+    
+    const options = {
+      hostname: urlParts.hostname,
+      port: urlParts.port || (isHttps ? 443 : 80),
+      path: urlParts.pathname + urlParts.search,
+      method: req.method,
+      headers: {
+        'User-Agent': 'ISN-Free-WiFi-Unrestricted-Proxy/1.0',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=3600',
+        'Connection': 'keep-alive'
+      }
+    };
+
+    // Forward essential headers
+    if (req.headers.range) options.headers.Range = req.headers.range;
+    if (req.headers.referer) options.headers.Referer = req.headers.referer;
+    if (req.headers.accept) options.headers.Accept = req.headers.accept;
+
+    const proxyReq = httpModule.request(options, (proxyRes) => {
+      // Set aggressive CORS and caching headers
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+        'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Proxy-Cache': 'UNRESTRICTED'
+      });
+
+      // Forward all response headers except security-sensitive ones
+      Object.keys(proxyRes.headers).forEach(key => {
+        const lowerKey = key.toLowerCase();
+        if (!['set-cookie', 'x-frame-options', 'content-security-policy'].includes(lowerKey)) {
+          res.set(key, proxyRes.headers[key]);
+        }
+      });
+
+      res.status(proxyRes.statusCode);
+      proxyRes.pipe(res);
+      
+      console.log('[PROXY-8082] SUCCESS:', proxyRes.statusCode, 'for', targetUrl);
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[PROXY-8082] Request error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Proxy request failed', details: err.message });
+      }
+    });
+
+    proxyReq.setTimeout(60000, () => {
+      console.error('[PROXY-8082] Request timeout for:', targetUrl);
+      proxyReq.destroy();
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'Proxy request timeout' });
+      }
+    });
+
+    if (req.method === 'POST' && req.body) {
+      proxyReq.write(JSON.stringify(req.body));
+    }
+
+    proxyReq.end();
+
+  } catch (err) {
+    console.error('[PROXY-8082] General error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Proxy error', details: err.message });
+    }
+  }
+});
+
+// Root endpoint for proxy server health check
+proxyApp.get('/', (req, res) => {
+  res.json({ 
+    status: 'ISN Free WiFi Proxy Server', 
+    port: 8082, 
+    purpose: 'Unrestricted ad content access',
+    endpoints: ['/proxy?url=<target_url>']
+  });
+});
+
+// Start proxy server on port 8082
+try {
+  proxyApp.listen(PROXY_PORT, () => {
+    console.log(`[PROXY-SERVER] Unrestricted ad proxy running on port ${PROXY_PORT}`);
+    console.log(`[PROXY-SERVER] Usage: http://localhost:${PROXY_PORT}/proxy?url=<target_url>`);
+  });
+} catch (err) {
+  console.error(`[PROXY-SERVER] Failed to start proxy on port ${PROXY_PORT}:`, err.message);
+}
+
 startExpress(PORT, 5);
 
 // Global diagnostics to avoid silent exits

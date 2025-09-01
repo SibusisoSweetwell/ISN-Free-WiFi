@@ -123,20 +123,136 @@
 		/* Inline ad player inside bundle modal */
 		.ad-player{display:none;flex-direction:column;gap:18px;}
 		.ad-player.active{display:flex;}
-		.video-shell{position:relative;width:100%;aspect-ratio:16/9;background:#111;border-radius:22px;overflow:hidden;box-shadow:0 18px 42px -12px rgba(0,0,0,.55);}
-		.video-shell video,.video-shell iframe{width:100%;height:100%;object-fit:contain;display:block;background:#000;border:0;}
+		/* VIDEO STABILIZATION - YouTube/Facebook/Spotify Style */
+		.video-shell{
+			position:relative;
+			width:100%;
+			aspect-ratio:16/9;
+			background:#000;
+			border-radius:22px;
+			overflow:hidden;
+			box-shadow:0 18px 42px -12px rgba(0,0,0,.55);
+			/* STABLE FOUNDATION - No vibrations, no conflicts */
+			isolation:isolate;
+			contain:layout style;
+			will-change:auto;
+			backface-visibility:hidden;
+			-webkit-backface-visibility:hidden;
+			transform:translateZ(0);
+			-webkit-transform:translateZ(0);
+		}
+
+		/* VIDEO ELEMENTS - Stable positioning like YouTube/Facebook */
+		.video-shell video,
+		.video-shell iframe{
+			width:100%;
+			height:100%;
+			object-fit:contain;
+			display:block;
+			background:#000;
+			border:0;
+			/* PREVENT VIBRATIONS & CONFLICTS */
+			position:absolute;
+			top:0;
+			left:0;
+			transform:translateZ(0);
+			-webkit-transform:translateZ(0);
+			will-change:auto;
+			backface-visibility:hidden;
+			-webkit-backface-visibility:hidden;
+		}
 		/* Always show video surface immediately to avoid persistent black (audio-only) perception on some devices.
 		   We no longer fade it in; JS black-frame detection will swap source/fallback if needed. */
 		.video-shell video{opacity:1;transition:none;}
 		.video-shell video.visible{opacity:1;}
-		.img-fallback{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#111;color:#fff;font-weight:600;font-size:20px;overflow:hidden;}
+		/* STABLE IMAGE FALLBACK - No vibrations */
+		.img-fallback{
+			position:absolute;
+			inset:0;
+			display:none;
+			align-items:center;
+			justify-content:center;
+			background:#000;
+			color:#fff;
+			font-weight:600;
+			font-size:20px;
+			overflow:hidden;
+			/* STABLE RENDERING */
+			transform:translateZ(0);
+			-webkit-transform:translateZ(0);
+			will-change:auto;
+			backface-visibility:hidden;
+		}
 		.img-fallback.active{display:flex;}
-		.img-fallback img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease;}
+		.img-fallback img{
+			position:absolute;
+			inset:0;
+			width:100%;
+			height:100%;
+			object-fit:cover;
+			opacity:0;
+			transition:opacity .6s ease;
+			/* STABLE IMAGE RENDERING */
+			transform:translateZ(0);
+			-webkit-transform:translateZ(0);
+			image-rendering:auto;
+		}
 		.img-fallback img.active{opacity:1;}
-		#adThumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
+
+		/* STABLE THUMBNAIL */
+		#adThumb{
+			position:absolute;
+			inset:0;
+			width:100%;
+			height:100%;
+			object-fit:cover;
+			display:none;
+			/* STABLE THUMBNAIL RENDERING */
+			transform:translateZ(0);
+			-webkit-transform:translateZ(0);
+			image-rendering:auto;
+		}
 		.video-shell.loading-thumb #adThumb{display:block;}
-		.video-overlay-btn{position:absolute;top:12px;right:12px;display:flex;gap:10px;}
-	.video-overlay-btn button{background:rgba(0,0,0,.55);color:#fff;border:none;padding:8px 16px;border-radius:30px;font-size:13px;font-weight:600;cursor:not-allowed;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px;}
+
+		/* STABLE OVERLAY CONTROLS - Like YouTube/Facebook */
+		.video-overlay-btn{
+			position:absolute;
+			top:12px;
+			right:12px;
+			display:flex;
+			gap:10px;
+			/* STABLE OVERLAY - No conflicts */
+			z-index:15;
+			isolation:isolate;
+			contain:layout;
+			pointer-events:auto;
+		}
+	/* STABLE VIDEO CONTROL BUTTONS - Like YouTube/Facebook/Spotify */
+	.video-overlay-btn button{
+		background:rgba(0,0,0,.65);
+		color:#fff;
+		border:none;
+		padding:8px 16px;
+		border-radius:30px;
+		font-size:13px;
+		font-weight:600;
+		cursor:not-allowed;
+		backdrop-filter:blur(6px);
+		display:flex;
+		align-items:center;
+		gap:6px;
+		/* STABLE BUTTON RENDERING */
+		position:relative;
+		isolation:isolate;
+		contain:layout style;
+		transform:translateZ(0);
+		-webkit-transform:translateZ(0);
+		will-change:auto;
+		backface-visibility:hidden;
+		-webkit-backface-visibility:hidden;
+		/* SMOOTH TRANSITIONS - No jerky movements */
+		transition:all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+	}
 		.video-overlay-btn button#playPauseBtn,
 		.video-overlay-btn button#fsBtn{cursor:pointer;background:rgba(0,0,0,.55);}
 		.video-overlay-btn button#playPauseBtn:hover,
@@ -192,6 +308,158 @@
 		.status-msg{font-size:13px;font-weight:600;}
 		.status-msg.error{color:#c30000;}
 		.status-msg.success{color:#059669;}
+
+	/* STABLE USAGE MODAL - Perfect on phones and desktops */
+	.stable-usage-modal {
+		/* STABLE FOUNDATION */
+		position:relative;
+		isolation:isolate;
+		contain:layout style;
+		will-change:auto;
+		backface-visibility:hidden;
+		-webkit-backface-visibility:hidden;
+		transform:translateZ(0);
+		-webkit-transform:translateZ(0);
+	}
+
+	/* STABLE TABLES - No vibrations on mobile */
+	.stable-usage-modal table {
+		width:100%;
+		border-collapse:collapse;
+		font-size:12px;
+		min-width:0;
+		/* STABLE TABLE RENDERING */
+		isolation:isolate;
+		contain:layout;
+		transform:translateZ(0);
+		-webkit-transform:translateZ(0);
+	}
+
+	/* STABLE TABLE CELLS */
+	.stable-usage-modal table th,
+	.stable-usage-modal table td {
+		padding:8px 12px;
+		text-align:left;
+		border-bottom:1px solid #eee;
+		word-wrap:break-word;
+		overflow-wrap:break-word;
+		/* PREVENT CELL VIBRATIONS */
+		contain:layout;
+	}
+
+	/* MOBILE RESPONSIVE TABLES - Stack on phones */
+	@media (max-width: 768px) {
+		.stable-usage-modal {
+			width:98%;
+			max-height:92vh;
+			margin:2vh auto;
+		}
+		
+		.stable-usage-modal h2 {
+			font-size:24px !important;
+		}
+		
+		/* STACK TABLE CONTENT ON MOBILE */
+		.stable-usage-modal table,
+		.stable-usage-modal thead,
+		.stable-usage-modal tbody,
+		.stable-usage-modal th,
+		.stable-usage-modal td,
+		.stable-usage-modal tr {
+			display:block;
+		}
+		
+		.stable-usage-modal thead tr {
+			position:absolute;
+			top:-9999px;
+			left:-9999px;
+		}
+		
+		.stable-usage-modal tr {
+			border:1px solid #ccc;
+			margin-bottom:8px;
+			padding:8px;
+			border-radius:8px;
+			background:#fff;
+		}
+		
+		.stable-usage-modal td {
+			border:none;
+			border-bottom:1px solid #eee;
+			position:relative;
+			padding-left:30% !important;
+			padding-top:8px;
+			padding-bottom:8px;
+		}
+		
+		.stable-usage-modal td:before {
+			content:attr(data-label);
+			position:absolute;
+			left:6px;
+			width:25%;
+			padding-right:10px;
+			white-space:nowrap;
+			font-weight:600;
+			font-size:11px;
+			color:#666;
+		}
+	}
+
+	/* STABLE ADMIN TABLES - Mobile responsive */
+	.stable-admin-table {
+		/* STABLE TABLE FOUNDATION */
+		isolation:isolate;
+		contain:layout;
+		transform:translateZ(0);
+		-webkit-transform:translateZ(0);
+	}
+
+	/* MOBILE ADMIN TABLE RESPONSIVENESS */
+	@media (max-width: 768px) {
+		.stable-admin-table {
+			font-size:11px !important;
+			min-width:0 !important;
+		}
+		
+		.stable-admin-table th,
+		.stable-admin-table td {
+			padding:6px 8px !important;
+			font-size:10px;
+			white-space:nowrap;
+			overflow:hidden;
+			text-overflow:ellipsis;
+			max-width:120px;
+		}
+		
+		/* Hide less important columns on very small screens */
+		.stable-admin-table th:nth-child(n+6),
+		.stable-admin-table td:nth-child(n+6) {
+			display:none;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.stable-admin-table th:nth-child(n+4),
+		.stable-admin-table td:nth-child(n+4) {
+			display:none;
+		}
+		
+		.stable-admin-table th,
+		.stable-admin-table td {
+			max-width:80px;
+		}
+	}
+
+	/* DESKTOP OPTIMIZATION */
+	@media (min-width: 769px) {
+		.stable-usage-modal {
+			min-width:800px;
+		}
+		
+		.stable-usage-modal table {
+			font-size:13px;
+		}
+	}
 
 	/* Usage panel */
 	.usage-panel{position:fixed;top:120px;right:24px;width:380px;max-width:92vw;background:#ffffff;border-radius:26px;padding:22px 24px;box-shadow:0 22px 60px -10px rgba(0,0,0,.45);display:none;flex-direction:column;gap:14px;z-index:65;max-height:70vh;overflow:auto;}
@@ -481,14 +749,17 @@
 		</div>
 
 		<!-- New Blurred Usage Overlay -->
-		<div id="usageOverlay" class="modal-overlay" aria-hidden="true" style="backdrop-filter:blur(12px) saturate(160%);">
-			<div class="access-modal" id="usageModal" role="dialog" aria-label="Usage" style="max-width:880px;display:flex;flex-direction:column;gap:30px;">
-				<button class="modal-close" aria-label="Close" onclick="closeUsage()">&times;</button>
-				<h2 id="usageHeading" style="margin:0;font-size:34px;">My Usage</h2>
-				<div id="usageScroll" style="display:flex;flex-direction:column;gap:30px;">
-				
-				<!-- Admin Dashboard Section (only shown for admin users) -->
-				<div id="adminDashboard" style="display:none;flex-direction:column;gap:24px;">
+	<!-- STABLE USAGE MODAL - Works perfectly on phones and desktops -->
+	<div id="usageOverlay" class="modal-overlay" aria-hidden="true" style="backdrop-filter:blur(12px) saturate(160%);">
+		<div class="access-modal stable-usage-modal" id="usageModal" role="dialog" aria-label="Usage" style="max-width:900px;width:95%;max-height:88vh;display:flex;flex-direction:column;gap:20px;overflow:hidden;">
+			<button class="modal-close" aria-label="Close" onclick="closeUsage()">&times;</button>
+			<h2 id="usageHeading" style="margin:0;font-size:28px;flex-shrink:0;">My Usage</h2>
+			
+			<!-- STABLE SCROLL CONTAINER -->
+			<div id="usageScroll" style="display:flex;flex-direction:column;gap:20px;overflow-y:auto;flex:1;min-height:0;padding-right:8px;scrollbar-width:thin;">
+			
+			<!-- Admin Dashboard Section (only shown for admin users) -->
+			<div id="adminDashboard" style="display:none;flex-direction:column;gap:20px;">
 					<div style="background:var(--brand);color:white;padding:20px;border-radius:var(--radius);margin-bottom:20px;">
 						<h3 style="margin:0;font-size:24px;font-weight:700;">Admin Dashboard</h3>
 						<p style="margin:8px 0 0;opacity:0.9;">Real-time monitoring and user management</p>
@@ -513,11 +784,11 @@
 							</div>
 						</div>
 
-						<!-- Router Status Table -->
+						<!-- Router Status Table with Mobile Support -->
 						<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
 							<h4 style="margin:0 0 16px;color:var(--brand);font-size:18px;">Router Status</h4>
 							<div style="overflow-x:auto;max-height:300px;">
-								<table id="adminRoutersTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:800px;">
+								<table id="adminRoutersTable" class="stable-admin-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:800px;">
 									<thead>
 										<tr style="background:var(--panel);">
 											<th style="text-align:left;padding:10px;font-weight:700;position:sticky;top:0;background:var(--panel);">Router ID</th>
@@ -541,7 +812,7 @@
 						<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
 							<h4 style="margin:0 0 16px;color:var(--brand);font-size:18px;">User Activity Monitoring</h4>
 							<div style="overflow-x:auto;max-height:400px;">
-								<table id="adminUsersTable" style="width:100%;border-collapse:collapse;font-size:11px;min-width:1000px;">
+								<table id="adminUsersTable" class="stable-admin-table" style="width:100%;border-collapse:collapse;font-size:11px;min-width:1000px;">
 									<thead>
 										<tr style="background:var(--panel);">
 											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">User ID</th>
@@ -562,28 +833,39 @@
 							</div>
 						</div>
 
-						<!-- Registration & Login Activity Table -->
+						<!-- User Registration Table (Enhanced for Admin Dashboard) -->
 						<div style="background:#ffffff;border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px -14px rgba(0,0,0,.25);">
-							<h4 style="margin:0 0 16px;color:var(--brand);font-size:18px;">Registration & Login Activity</h4>
-							<div style="overflow-x:auto;max-height:400px;">
-								<table id="adminRegistrationsTable" style="width:100%;border-collapse:collapse;font-size:11px;min-width:1200px;">
+							<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+								<h4 style="margin:0;color:var(--brand);font-size:18px;">User Registrations</h4>
+								<div style="display:flex;gap:12px;align-items:center;">
+									<div id="registrationStats" style="font-size:12px;color:#666;font-weight:600;"></div>
+									<button onclick="exportRegistrations()" style="background:#28a745;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;">Export CSV</button>
+								</div>
+							</div>
+							<div style="overflow-x:auto;max-height:500px;">
+								<table id="registrationTable" style="width:100%;border-collapse:collapse;font-size:11px;min-width:1400px;">
 									<thead>
 										<tr style="background:var(--panel);">
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">User ID</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">#</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Full Name</th>
 											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Email</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Phone</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Date of Birth</th>
 											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Registration Date</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Login Count</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Registration IP</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Device ID</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">User Agent</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Status</th>
 											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Last Login</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Last Login IP</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Device</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Profile Changes</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Last Profile Change</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Password Resets</th>
-											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Last Password Reset</th>
+											<th style="text-align:left;padding:8px;font-weight:700;position:sticky;top:0;background:var(--panel);">Login Count</th>
 										</tr>
 									</thead>
-									<tbody></tbody>
+									<tbody id="registrationTableBody">
+										<!-- Registration data will be loaded here -->
+									</tbody>
 								</table>
+								<div id="registrationLoading" style="text-align:center;padding:20px;color:#666;font-style:italic;display:none;">Loading registration data...</div>
+								<div id="registrationEmpty" style="text-align:center;padding:20px;color:#999;">No registrations found</div>
 							</div>
 						</div>
 
@@ -1193,11 +1475,161 @@ async function loadAdminDashboard() {
 			for (const r of rows) {
 				try { const rr = await fetch('/api/admin/temp-unlocks/revoke',{ method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: r.id, secret }) }); const j = await rr.json(); if (j.ok && j.removed) removed += j.removed; } catch(e) {}
 			}
-			alert('Revoked '+removed+' rows');
-			loadTempUnlocksAdmin();
-		}
+		alert('Revoked '+removed+' rows');
+		loadTempUnlocksAdmin();
+	}
 
-		// Update registrations table
+	// Registration data loading and management functions
+	async function loadRegistrationData() {
+		const registrationLoading = document.getElementById('registrationLoading');
+		const registrationEmpty = document.getElementById('registrationEmpty');
+		const registrationTableBody = document.getElementById('registrationTableBody');
+		const registrationStats = document.getElementById('registrationStats');
+
+		try {
+			if (registrationLoading) registrationLoading.style.display = 'block';
+			if (registrationEmpty) registrationEmpty.style.display = 'none';
+			if (registrationTableBody) registrationTableBody.innerHTML = '';
+
+			// Use admin key for accessing registration data
+			const response = await fetch('/api/admin/registrations?adminKey=isn_admin_2024');
+			
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+
+			const data = await response.json();
+
+			if (!data || !data.ok) {
+				throw new Error(data?.message || 'Failed to load registration data');
+			}
+
+			const registrations = data.registrations || [];
+			const stats = data.stats || {};
+
+			// Update registration stats
+			if (registrationStats) {
+				registrationStats.innerHTML = `
+					Total: ${stats.totalRegistrations || 0} | 
+					Today: ${stats.registrationsToday || 0} | 
+					This Week: ${stats.registrationsThisWeek || 0} | 
+					Active: ${stats.activeUsers || 0}
+				`;
+			}
+
+			// Populate registration table
+			if (registrationTableBody) {
+				if (registrations.length === 0) {
+					if (registrationEmpty) registrationEmpty.style.display = 'block';
+					registrationTableBody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">No registrations found</td></tr>';
+				} else {
+					if (registrationEmpty) registrationEmpty.style.display = 'none';
+					registrationTableBody.innerHTML = registrations.map((reg, index) => `
+						<tr style="border-bottom:1px solid #eee;">
+							<td style="padding:8px;font-weight:600;">${reg.id || index + 1}</td>
+							<td style="padding:8px;font-weight:600;">${reg.fullName || `${reg.firstName || ''} ${reg.surname || ''}`.trim()}</td>
+							<td style="padding:8px;max-width:150px;overflow:hidden;text-overflow:ellipsis;" title="${reg.email || ''}">${reg.email || '-'}</td>
+							<td style="padding:8px;">${reg.phone || '-'}</td>
+							<td style="padding:8px;">${reg.dob ? new Date(reg.dob).toLocaleDateString() : '-'}</td>
+							<td style="padding:8px;">${reg.registrationDate ? new Date(reg.registrationDate).toLocaleDateString() : '-'}</td>
+							<td style="padding:8px;font-family:monospace;font-size:10px;">${reg.registrationIP || 'unknown'}</td>
+							<td style="padding:8px;font-family:monospace;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${reg.deviceId || ''}">${reg.deviceId || 'unknown'}</td>
+							<td style="padding:8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;font-size:10px;" title="${reg.userAgent || ''}">${truncateUserAgent(reg.userAgent || 'unknown')}</td>
+							<td style="padding:8px;">
+								<span style="background:${reg.status === 'active' ? '#28a745' : '#dc3545'};color:white;padding:2px 6px;border-radius:4px;font-size:10px;">
+									${reg.status || 'active'}
+								</span>
+							</td>
+							<td style="padding:8px;font-size:10px;">${reg.lastLogin ? new Date(reg.lastLogin).toLocaleDateString() : 'Never'}</td>
+							<td style="padding:8px;font-weight:600;color:var(--brand);">${reg.loginCount || 0}</td>
+						</tr>
+					`).join('');
+				}
+			}
+
+			if (registrationLoading) registrationLoading.style.display = 'none';
+
+		} catch (error) {
+			console.error('Registration data loading error:', error);
+			if (registrationLoading) registrationLoading.style.display = 'none';
+			if (registrationTableBody) {
+				registrationTableBody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:20px;color:#dc3545;">Error loading registration data: ${error.message}</td></tr>`;
+			}
+		}
+	}
+
+	function truncateUserAgent(userAgent) {
+		if (!userAgent || userAgent === 'unknown') return 'unknown';
+		const ua = String(userAgent);
+		
+		// Extract browser info
+		if (ua.includes('Chrome')) return 'Chrome';
+		if (ua.includes('Firefox')) return 'Firefox';
+		if (ua.includes('Safari')) return 'Safari';
+		if (ua.includes('Edge')) return 'Edge';
+		if (ua.includes('Opera')) return 'Opera';
+		
+		// Extract mobile info
+		if (ua.includes('Mobile')) return 'Mobile';
+		if (ua.includes('Android')) return 'Android';
+		if (ua.includes('iPhone')) return 'iPhone';
+		if (ua.includes('iPad')) return 'iPad';
+		
+		// Fallback to truncated version
+		return ua.length > 20 ? ua.substring(0, 20) + '...' : ua;
+	}
+
+	function exportRegistrations() {
+		// Simple CSV export functionality
+		fetch('/api/admin/registrations?adminKey=isn_admin_2024')
+			.then(response => response.json())
+			.then(data => {
+				if (!data.ok || !data.registrations) {
+					throw new Error('Failed to load registration data for export');
+				}
+
+				const registrations = data.registrations;
+				const csvHeaders = [
+					'ID', 'Full Name', 'Email', 'Phone', 'Date of Birth', 
+					'Registration Date', 'Registration IP', 'Device ID', 'User Agent',
+					'Status', 'Last Login', 'Login Count'
+				];
+
+				const csvData = registrations.map(reg => [
+					reg.id || '',
+					reg.fullName || `${reg.firstName || ''} ${reg.surname || ''}`.trim(),
+					reg.email || '',
+					reg.phone || '',
+					reg.dob || '',
+					reg.registrationDate || '',
+					reg.registrationIP || '',
+					reg.deviceId || '',
+					(reg.userAgent || '').replace(/"/g, '""'), // Escape quotes
+					reg.status || 'active',
+					reg.lastLogin || '',
+					reg.loginCount || 0
+				]);
+
+				const csvContent = [csvHeaders, ...csvData]
+					.map(row => row.map(field => `"${field}"`).join(','))
+					.join('\n');
+
+				// Create and download CSV file
+				const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+				const link = document.createElement('a');
+				const url = URL.createObjectURL(blob);
+				link.setAttribute('href', url);
+				link.setAttribute('download', `isn_registrations_${new Date().toISOString().split('T')[0]}.csv`);
+				link.style.visibility = 'hidden';
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+			})
+			.catch(error => {
+				console.error('Export failed:', error);
+				alert('Failed to export registration data: ' + error.message);
+			});
+	}		// Update registrations table
 		const registrationsTableBody = document.querySelector('#adminRegistrationsTable tbody');
 		if (registrationsTableBody) {
 			registrationsTableBody.innerHTML = registrations.map(reg => `
@@ -1235,6 +1667,9 @@ async function loadAdminDashboard() {
 				</tr>
 			`).join('');
 		}
+
+		// Load registration data
+		await loadRegistrationData();
 
 		adminLoading.style.display = 'none';
 		adminContent.style.display = 'flex';
@@ -1676,11 +2111,43 @@ async function logAdEvent(eventType, extra){
 	} catch(err){ console.warn('logAdEvent failed', eventType, err?.message); }
 }
 
+// Proxy configuration for unrestricted ad access
+const PROXY_PORT = 8082;
+const PROXY_HOST = window.location.hostname; // Use same host
+const USE_PROXY_FOR_ADS = true; // Enable proxy for all ad content
+
+// Function to convert any URL to proxy URL for unrestricted access
+function proxyUrl(originalUrl) {
+	if (!USE_PROXY_FOR_ADS || !originalUrl) return originalUrl;
+	
+	// For local/data URLs, return as-is
+	if (originalUrl.startsWith('data:') || originalUrl.startsWith('blob:')) {
+		return originalUrl;
+	}
+	
+	// Create proxy URL that routes through port 8082
+	// Format: http://hostname:8082/proxy?url=encodedOriginalUrl
+	const encodedUrl = encodeURIComponent(originalUrl);
+	const proxyUrl = `http://${PROXY_HOST}:${PROXY_PORT}/proxy?url=${encodedUrl}`;
+	
+	console.log('[PROXY] Routing:', originalUrl, '→', proxyUrl);
+	return proxyUrl;
+}
+
+// Function to ensure all image URLs are accessible via proxy
+function proxyImageUrl(originalUrl) {
+	if (!originalUrl) return 'https://via.placeholder.com/800x600/FF6B35/FFFFFF?text=Advertisement';
+	
+	// For placeholder/fallback images, return proxy version
+	return proxyUrl(originalUrl);
+}
+
 // 20 royalty-free short stock clips (Pixabay / Pexels style CDN links; replace with my own ads when ready)
 // Stable short sample/public-domain clips (mix of samplelib & MDN & w3c) – replace with my ad CDN later
 // MP4 direct clips (fast load) - Using more reliable video sources with better browser compatibility
+// ALL URLS WILL BE AUTOMATICALLY PROXIED FOR UNRESTRICTED ACCESS
 const mp4Ads=[
-	// More reliable test videos with broader codec support
+	// More reliable test videos with broader codec support - PROXIED
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
@@ -1691,20 +2158,25 @@ const mp4Ads=[
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4',
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-	// Fallback to basic working test videos
+	// Additional stable video sources - PROXIED
 	'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4',
 	'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+	'https://archive.org/download/SampleVideo1280x7205mb/SampleVideo_1280x720_5mb.mp4',
+	'https://vjs.zencdn.net/v/oceans.mp4',
+	'https://media.w3.org/2010/05/sintel/trailer_hd.mp4',
 	// Local fallback videos (create simple test videos)
 	'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAAAAGlzb21pc28yYXZjMQAAAKBtZGF0AAAAFwX//9hAAACc2F2YQEAAAC4mFhYtAAPgAAAADAAcAVyAd2QXgBgAAA=='
-];
+].map(url => proxyUrl(url)); // APPLY PROXY TO ALL MP4 URLS
 
-// Optional high-quality / adaptive streaming sources (4K capable) 
+// Optional high-quality / adaptive streaming sources (4K capable) - PROXIED FOR UNRESTRICTED ACCESS
 // These demo manifests do NOT contain Dolby Atmos – they are placeholders showing how to integrate adaptive streams.
 // To truly offer Dolby Atmos you must: (1) license/ingest Atmos-encoded content (E-AC-3 JOC), (2) ensure device/browser support (limited in browsers),
 // (3) provide fallback AAC stereo. Never label audio "Dolby Atmos" unless it actually contains Atmos metadata.
 const adaptiveAds=[
-	{ type:'hls', url:'https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8', label:'Angel One (HLS 4K demo)' },
-	{ type:'dash', url:'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd', label:'Big Buck Bunny (DASH 4K demo)' }
+	{ type:'hls', url: proxyUrl('https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8'), label:'Angel One (HLS 4K demo)' },
+	{ type:'dash', url: proxyUrl('https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd'), label:'Big Buck Bunny (DASH 4K demo)' },
+	{ type:'hls', url: proxyUrl('https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8'), label:'Tears of Steel (HLS)' },
+	{ type:'dash', url: proxyUrl('https://livesim.dashif.org/livesim/testpic_2s/Manifest.mpd'), label:'DASH Test Stream' }
 	// Add your own hosted HLS (.m3u8) or DASH (.mpd) manifests with multiple video + audio tracks.
 ];
 
@@ -1802,12 +2274,18 @@ const adPool=[
 	...ytAds.map(id=>({type:'yt',id}))
 ];
 
-// Lightweight image fallback assets (could be local or remote). Replace URLs with your own creatives.
+// Lightweight image fallback assets - ALL PROXIED FOR UNRESTRICTED ACCESS
 const imgAds=[
- 'https://picsum.photos/seed/isn1/800/450',
- 'https://picsum.photos/seed/isn2/800/450',
- 'https://picsum.photos/seed/isn3/800/450',
- 'https://picsum.photos/seed/isn4/800/450'
+ proxyImageUrl('https://picsum.photos/seed/isn1/800/450'),
+ proxyImageUrl('https://picsum.photos/seed/isn2/800/450'),
+ proxyImageUrl('https://picsum.photos/seed/isn3/800/450'),
+ proxyImageUrl('https://picsum.photos/seed/isn4/800/450'),
+ proxyImageUrl('https://picsum.photos/seed/isn5/800/450'),
+ proxyImageUrl('https://via.placeholder.com/800x450/FF6B35/FFFFFF?text=Sample+Ad+1'),
+ proxyImageUrl('https://via.placeholder.com/800x450/28A745/FFFFFF?text=Sample+Ad+2'),
+ proxyImageUrl('https://via.placeholder.com/800x450/007BFF/FFFFFF?text=Sample+Ad+3'),
+ proxyImageUrl('https://via.placeholder.com/800x450/6F42C1/FFFFFF?text=Sample+Ad+4'),
+ proxyImageUrl('https://via.placeholder.com/800x450/E83E8C/FFFFFF?text=Sample+Ad+5')
 ];
 
 // Advertising source mode toggles
@@ -1863,6 +2341,16 @@ function startAdSequence(bundleSize){
 	videoCompletionValidated = false;
 	
 	const adCount=bundleSize===100?5:bundleSize===250?10:15;
+	console.log('[AD-COUNT] Bundle:', bundleSize, 'MB → Expected ads:', adCount);
+	console.log('[AD-COUNT] Verification - 100MB=5ads, 250MB=10ads, 500MB=15ads');
+	
+	// Verify the calculation is correct
+	if ((bundleSize === 100 && adCount !== 5) || 
+	    (bundleSize === 250 && adCount !== 10) || 
+	    (bundleSize === 500 && adCount !== 15)) {
+		console.error('[AD-COUNT] ERROR: Incorrect ad count calculation!');
+	}
+	
 	let basePool;
 	if(USE_MP4_ONLY) basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
 	else if(USE_YOUTUBE_ONLY) basePool=ytAds.map(id=>({type:'yt',id}));
@@ -1878,19 +2366,28 @@ function startAdSequence(bundleSize){
 				idx++;
 			}
 		}
+	
+	console.log('[AD-COUNT] Generated ad list length:', adList.length, 'Expected:', adCount);
+	
 	// Optionally inject one adaptive (potential 4K) stream at start if device suitable
 	try{
 		if(allowHighQualityAds() && adaptiveAds.length){
 			const hi=adaptiveAds[Math.floor(Math.random()*adaptiveAds.length)];
 			adList.unshift({ type: hi.type, url: hi.url,adaptive:true, label: hi.label });
+			console.log('[AD-COUNT] Added adaptive ad - new total:', adList.length);
 		}
 	}catch{}
 	currentAdIndex=0;
+	console.log('[AD-SEQUENCE] Starting sequence - Bundle:', bundleSize, 'MB, Expected ads:', adList.length, 'Starting at index:', currentAdIndex);
 	adSequenceActive=true; // mark sequence active
 	requestWakeLock(); // ensure wake lock from very start (before first video plays)
 	forceStartMobileKeepAwake(); // new: always start mobile fallback early
+	startAdWakeLockReinforcement(); // Start aggressive wake lock maintenance
 	if(typeof HARD_WAKE_MODE!=='undefined' && HARD_WAKE_MODE){ try{ ensureHardWake(); }catch{} }
 	if(typeof EXTREME_WAKE_MODE!=='undefined' && EXTREME_WAKE_MODE){ try{ startExtremeWake(); }catch{} }
+	
+	console.log('[WAKE-LOCK] Ad sequence started - all wake lock systems activated');
+	
 	// Hide bundle controls/note and the lead on phones so the UI matches previous behaviour
 	document.querySelector('.bundle-list').style.display='none';
 	document.getElementById('bundleNote').style.display='none';
@@ -2080,7 +2577,27 @@ function playCurrentInlineAd(){
 		// start progress loop immediately (duration may be unknown until metadata)
 		startInlineProgress();
 		// Wait for actual playback to begin to start skip timer
-		adVideo.addEventListener('playing',()=>{ adStatus.textContent='Playing'; maybeStartSkipCountdown(); detectBlackFrameFallback(); startFrameMonitor(); // spatial audio waits for explicit unmute
+		adVideo.addEventListener('playing',()=>{ 
+			adStatus.textContent='Playing'; 
+			maybeStartSkipCountdown(); 
+			detectBlackFrameFallback(); 
+			startFrameMonitor(); // spatial audio waits for explicit unmute
+			
+			// Enhanced wake lock activation for video playback (muted or unmuted)
+			console.log('[WAKE-LOCK] Video playing - activating enhanced wake lock (muted:', adVideo.muted, ')');
+			requestWakeLock();
+			forceStartMobileKeepAwake();
+			// Extra protection for muted videos which are more prone to sleep
+			if(adVideo.muted) {
+				console.log('[WAKE-LOCK] Muted video detected - applying extra wake protection');
+				if(HARD_WAKE_MODE) { ensureHardWake(); }
+				// Additional mobile fallback for muted videos
+				if(isTouchDevice()) {
+					setTimeout(() => { requestWakeLock(); }, 1000);
+					setTimeout(() => { requestWakeLock(); }, 5000);
+				}
+			}
+			
 			if(!currentAdViewLogged){ currentAdViewLogged=true; logAdEvent('view'); }
 			// Preload the next MP4 ad (if any) to reduce startup latency for the following ad
 			try{ preloadNextAdIfNeeded(); }catch(e){ /* non-fatal */ }
@@ -2099,80 +2616,174 @@ function playCurrentInlineAd(){
 		const id=entry.id;
 		thumb.src='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';
 		thumb.parentElement.classList.add('loading-thumb');
-		currentAdViewLogged=false; playYouTubeAd(entry.id);
+		currentAdViewLogged=false; 
+		
+		// Enhanced wake lock for YouTube ads
+		console.log('[WAKE-LOCK] YouTube ad starting - enforcing wake lock');
+		requestWakeLock();
+		forceStartMobileKeepAwake();
+		
+		playYouTubeAd(entry.id);
 		// progress handled by simulateYtProgress on state change; skip countdown started on PLAYING
 		// Safety: if still not playing after 1.2s, start skip countdown anyway so user isn't stuck
 		setTimeout(()=>{ if(!skipCountdownStarted){ maybeStartSkipCountdown(); } },1200);
 		setTimeout(()=>{ thumb.parentElement && thumb.parentElement.classList.remove('loading-thumb'); },1800);
 	}else if(entry.type==='imgseq'){
-		// Display image slideshow as a silent ad
+		// Display image slideshow as a silent ad with enhanced wake lock
 		const imgs=entry.images||imgAds.slice(0,3); currentAdViewLogged=false;
 		imgFallback.classList.add('active'); if(!currentAdViewLogged){ currentAdViewLogged=true; logAdEvent('view'); }
+		
+		// Enhanced wake lock for image ads (prevent sleep during slideshow)
+		console.log('[WAKE-LOCK] Image ad sequence starting - enforcing wake lock');
+		requestWakeLock();
+		forceStartMobileKeepAwake();
+		// Extra protection for image ads as they don't have audio/video keepalive
+		if(HARD_WAKE_MODE) { ensureHardWake(); }
+		
 		let idx=0; let slideTimer=null;
 		imgs.forEach((src,i)=>{ const im=new Image(); im.src=src; if(i===0) im.classList.add('active'); imgFallback.appendChild(im); });
-		function next(){ const list=[...imgFallback.querySelectorAll('img')]; list.forEach(im=>im.classList.remove('active')); idx=(idx+1)%list.length; list[idx].classList.add('active'); }
+		function next(){ 
+			const list=[...imgFallback.querySelectorAll('img')]; 
+			list.forEach(im=>im.classList.remove('active')); 
+			idx=(idx+1)%list.length; 
+			list[idx].classList.add('active'); 
+			// Refresh wake lock on each image transition
+			if(adSequenceActive) {
+				requestWakeLock();
+				console.log('[WAKE-LOCK] Image ad transition - refreshing wake lock');
+			}
+		}
 		slideTimer=setInterval(next,1500);
 		adStatus.textContent='Showing'; maybeStartSkipCountdown(); startInlineProgress();
 		// treat as 10s ad progress
 		let t0=performance.now();
 		(function prog(){ const pct=Math.min(100, ((performance.now()-t0)/10000)*100); adProgressInline.style.width=pct+'%'; if(pct<100) requestAnimationFrame(prog); })();
 	}
-	adSequenceLabel.textContent='Ad '+(currentAdIndex+1)+' / '+adList.length+' • '+bundleSizeSelected+' MB';
+	const labelText = 'Ad '+(currentAdIndex+1)+' / '+adList.length+' • '+bundleSizeSelected+' MB';
+	console.log('[AD-LABEL] Updating label:', labelText);
+	adSequenceLabel.textContent = labelText;
 }
 
-// Enhanced fallback system
+// Enhanced fallback system - select alternative ads instead of skipping
 function tryVideoFallback() {
-	console.log('[VIDEO-FALLBACK] Attempting video fallback');
-	adStatus.textContent = 'Trying alternative video...';
+	console.log('[VIDEO-FALLBACK] Current ad failed, selecting alternative ad');
+	adStatus.textContent = 'Selecting alternative video...';
 
-	// Get list of working fallback videos (prioritise Google CDN samples)
-	const fallbackVideos = [
-		'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-		'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-		'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'
+	// Get the current failed ad
+	const failedEntry = adList[currentAdIndex];
+	console.log('[VIDEO-FALLBACK] Failed ad:', failedEntry);
+
+	// Create backup ad pools for different scenarios - ALL PROXIED
+	const backupMP4Ads = [
+		proxyUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'),
+		proxyUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'),
+		proxyUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4'),
+		proxyUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4'),
+		proxyUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4'),
+		proxyUrl('https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'),
+		proxyUrl('https://vjs.zencdn.net/v/oceans.mp4'),
+		proxyUrl('https://media.w3.org/2010/05/sintel/trailer_hd.mp4')
 	];
 
-	// Prepare alternatives excluding the current source
-	const currentSrc = (adVideo && adVideo.src) ? adVideo.src : '';
-	const alternatives = fallbackVideos.filter(url => url && url !== currentSrc);
+	const backupYouTubeAds = [
+		'dQw4w9WgXcQ', // Rick Astley - Never Gonna Give You Up
+		'ZbZSe6N_BXs', // Happy Birthday Song
+		'kJQP7kiw5Fk', // Luis Fonsi - Despacito
+		'9bZkp7q19f0', // PSY - GANGNAM STYLE
+		'hTWKbfoikeg'  // Smash Mouth - All Star
+	];
 
-	// Keep a retry counter on the video element to avoid infinite loops
-	adVideo._fallbackIndex = (adVideo._fallbackIndex || 0);
+	const backupImageAds = [
+		proxyImageUrl('https://via.placeholder.com/800x600/FF0000/FFFFFF?text=Backup+Ad+1'),
+		proxyImageUrl('https://via.placeholder.com/800x600/00FF00/000000?text=Backup+Ad+2'),
+		proxyImageUrl('https://via.placeholder.com/800x600/0000FF/FFFFFF?text=Backup+Ad+3'),
+		proxyImageUrl('https://picsum.photos/800/600?random=1'),
+		proxyImageUrl('https://picsum.photos/800/600?random=2'),
+		proxyImageUrl('https://picsum.photos/800/600?random=3'),
+		proxyImageUrl('https://picsum.photos/800/600?random=4'),
+		proxyImageUrl('https://picsum.photos/800/600?random=5')
+	];
 
-	function attemptNextFallback(){
-		if(adVideo._fallbackIndex >= alternatives.length){
-			console.log('[VIDEO-FALLBACK] All fallbacks tried, skipping');
-			adStatus.textContent = 'Video unavailable - skipping';
-			// Small delay so UI updates are visible
-			setTimeout(nextInlineAd, 900);
-			return;
+	// Try to find an alternative ad from the same type first
+	let alternativeAd = null;
+
+	if (failedEntry.type === 'mp4') {
+		// Find a backup MP4 that hasn't been used
+		const usedUrls = adList.map(ad => ad.url).filter(Boolean);
+		const availableMP4s = backupMP4Ads.filter(url => !usedUrls.includes(url));
+		
+		if (availableMP4s.length > 0) {
+			alternativeAd = {
+				type: 'mp4',
+				url: availableMP4s[Math.floor(Math.random() * availableMP4s.length)],
+				backup: true
+			};
 		}
-
-		const fallbackUrl = alternatives[adVideo._fallbackIndex++];
-		console.log('[VIDEO-FALLBACK] Trying:', fallbackUrl);
-		adVideo.src = fallbackUrl;
-		adVideo.load();
-
-		// Try to play the fallback; if it fails within 800ms, try next
-		let played = false;
-		const playAttempt = async ()=>{
-			try{
-				await adVideo.play();
-				played = true; console.log('[VIDEO-FALLBACK] Success'); adStatus.textContent='Playing';
-			}catch(err){ console.warn('[VIDEO-FALLBACK] play failed', err); }
-		};
-		playAttempt();
-
-		setTimeout(()=>{
-			if(!played){
-				console.warn('[VIDEO-FALLBACK] fallback did not start, trying next');
-				attemptNextFallback();
-			}
-		}, 800);
+	} else if (failedEntry.type === 'yt') {
+		// Find a backup YouTube video
+		const usedIds = adList.map(ad => ad.id).filter(Boolean);
+		const availableYT = backupYouTubeAds.filter(id => !usedIds.includes(id));
+		
+		if (availableYT.length > 0) {
+			alternativeAd = {
+				type: 'yt',
+				id: availableYT[Math.floor(Math.random() * availableYT.length)],
+				backup: true
+			};
+		}
 	}
 
-	// Start the fallback attempts
-	attemptNextFallback();
+	// If no same-type alternative, try other types
+	if (!alternativeAd) {
+		// Try a simple image ad as last resort
+		alternativeAd = {
+			type: 'imgseq',
+			images: [backupImageAds[Math.floor(Math.random() * backupImageAds.length)]],
+			backup: true
+		};
+	}
+
+	if (alternativeAd) {
+		console.log('[VIDEO-FALLBACK] Replacing failed ad with:', alternativeAd);
+		
+		// Replace the failed ad in the list
+		adList[currentAdIndex] = alternativeAd;
+		
+		// Clear any video-specific retry counters
+		if (adVideo) {
+			delete adVideo._fallbackIndex;
+			delete adVideo._retryCount;
+			delete adVideo._reloadOnce;
+		}
+		
+		// Restart the current ad with the alternative
+		adStatus.textContent = 'Loading alternative content...';
+		setTimeout(() => {
+			try {
+				playCurrentInlineAd();
+			} catch (e) {
+				console.error('[VIDEO-FALLBACK] Alternative ad also failed:', e);
+				// Last resort: use image ad
+				adList[currentAdIndex] = {
+					type: 'imgseq',
+					images: [proxyImageUrl('https://via.placeholder.com/800x600/FF6B35/FFFFFF?text=Sponsored+Content')],
+					backup: true,
+					fallback: true
+				};
+				playCurrentInlineAd();
+			}
+		}, 500);
+	} else {
+		console.error('[VIDEO-FALLBACK] No alternatives available, using emergency fallback');
+		// Emergency: replace with simple image
+		adList[currentAdIndex] = {
+			type: 'imgseq',
+			images: [proxyImageUrl('https://via.placeholder.com/800x600/FF6B35/FFFFFF?text=Advertisement')],
+			backup: true,
+			emergency: true
+		};
+		setTimeout(() => playCurrentInlineAd(), 500);
+	}
 }
 function maybeStartSkipCountdown(){ if(skipCountdownStarted) return; skipCountdownStarted=true; startSkipCountdown(10); }
 function startSkipCountdown(sec){
@@ -2555,8 +3166,27 @@ function stopHardWake(){
 }
 function stopWakeLockHeartbeat(){ if(wakeLockHeartbeatInterval){ clearInterval(wakeLockHeartbeatInterval); wakeLockHeartbeatInterval=null; } }
 function handlePlaybackStateChange(isPlaying){
-	if(isPlaying || adSequenceActive){ requestWakeLock(); }
-	else { releaseWakeLock(); }
+	// Enhanced wake lock management for all media types (video, image ads)
+	if(isPlaying || adSequenceActive){ 
+		requestWakeLock(); 
+		// Additional wake lock reinforcement for mobile devices
+		if(isTouchDevice()) {
+			forceStartMobileKeepAwake();
+			// Extra aggressive wake for muted videos (common issue on mobile)
+			if(adVideo && adVideo.muted) {
+				ensureHardWake();
+			}
+		}
+		// Console log for debugging
+		console.log('[WAKE-LOCK] Activated for media playback - playing:', isPlaying, 'sequence active:', adSequenceActive);
+	}
+	else { 
+		// Only release wake lock if ad sequence is completely done
+		if(!adSequenceActive) {
+			releaseWakeLock(); 
+			console.log('[WAKE-LOCK] Released - sequence ended');
+		}
+	}
 }
 // Explicit mobile keep-awake fallback (always-on tiny looping inline video) to supplement existing logic
 let mobileKeepAwakeVid=null;
@@ -2599,17 +3229,66 @@ adVideo.addEventListener('pause',()=>handlePlaybackStateChange(false));
 adVideo.addEventListener('ended',()=>handlePlaybackStateChange(false));
 ['waiting','stalled','seeking'].forEach(ev=> adVideo.addEventListener(ev,()=>{ if(adSequenceActive) handlePlaybackStateChange(true); }));
 let lastWakePing=0; adVideo.addEventListener('timeupdate',()=>{ const now=Date.now(); if(now-lastWakePing>30000){ if(adSequenceActive) requestWakeLock(); lastWakePing=now; }});
+
+// Enhanced wake lock reinforcement during ad playback
+let adWakeLockInterval = null;
+function startAdWakeLockReinforcement() {
+	if(adWakeLockInterval) return; // Already running
+	
+	console.log('[WAKE-LOCK] Starting ad wake lock reinforcement');
+	adWakeLockInterval = setInterval(() => {
+		if(!adSequenceActive) {
+			stopAdWakeLockReinforcement();
+			return;
+		}
+		
+		// Aggressive wake lock maintenance during ads
+		requestWakeLock();
+		
+		// Extra protection for problematic scenarios
+		if(adVideo && !adVideo.paused) {
+			// Video is playing - ensure wake lock is active
+			if(!activeWakeLock && isWakeLockSupported()) {
+				console.log('[WAKE-LOCK] Video playing but no wake lock - reacquiring');
+				requestWakeLock();
+			}
+			
+			// Mobile fallback reinforcement
+			if(isTouchDevice() && noSleepTinyVideo && noSleepTinyVideo.paused) {
+				noSleepTinyVideo.play().catch(() => {});
+			}
+		}
+		
+		// Image ad reinforcement
+		if(document.getElementById('imgFallback').classList.contains('active')) {
+			console.log('[WAKE-LOCK] Image ad active - reinforcing wake lock');
+			requestWakeLock();
+			if(HARD_WAKE_MODE) ensureHardWake();
+		}
+		
+	}, 10000); // Every 10 seconds during ad sequence
+}
+
+function stopAdWakeLockReinforcement() {
+	if(adWakeLockInterval) {
+		console.log('[WAKE-LOCK] Stopping ad wake lock reinforcement');
+		clearInterval(adWakeLockInterval);
+		adWakeLockInterval = null;
+	}
+}
 // Ensure release when closing modal
 function closeAccessModal(){
 	accessModal.classList.remove('active');
 	accessModal.setAttribute('aria-hidden','true');
 	releaseFocusTrap();
 	if(lastFocusedBeforeModal) lastFocusedBeforeModal.focus();
-	// End sequence if still active and release wake lock
+	// End sequence if still active and release all wake lock systems
 	adSequenceActive=false;
+	stopAdWakeLockReinforcement(); // Stop the reinforcement system
 	releaseWakeLock();
 	disableSpatialAudioSimulation();
 	stopMobileKeepAwake();
+	console.log('[WAKE-LOCK] Modal closed - all wake lock systems stopped');
 }
 adVideo.addEventListener('error',(e)=>{ 
 	console.error('[VIDEO-ERROR]', {
@@ -2705,20 +3384,32 @@ function nextInlineAd(){
 	lastProgressUpdate = Date.now();
 	videoCompletionValidated = false;
 	
+	console.log('[AD-PROGRESS] Advancing from ad', currentAdIndex + 1, 'to', currentAdIndex + 2);
+	
 	currentAdIndex++;
+	console.log('[AD-PROGRESS] Current index:', currentAdIndex, 'Total ads:', adList.length);
+	
 	if(currentAdIndex<adList.length){ 
+		console.log('[AD-PROGRESS] Playing ad', currentAdIndex + 1, 'of', adList.length);
 		playCurrentInlineAd(); 
 	} else { 
+		console.log('[AD-PROGRESS] All ads completed! Granting bundle.');
 		// All videos completed - grant bundle
 		grantBundle(); 
 	}
 }
 
 function grantBundle(){
+	console.log('[AD-SEQUENCE] Grant bundle called - Final stats: videosWatched:', currentAdIndex, 'expectedTotal:', adList.length);
 	adStatus.textContent='Granting '+bundleSizeSelected+' MB...';
 	adProgressInline.style.width='100%';
 	const grantDelay=1500; // Slightly longer delay for server processing
 	const identifier=(sessionStorage.getItem('currentUserIdentifier')||'').toLowerCase();
+	
+	// End ad sequence and clean up wake lock systems
+	adSequenceActive=false;
+	stopAdWakeLockReinforcement();
+	console.log('[WAKE-LOCK] Ad sequence completed - cleaning up wake locks');
 	
 	// Calculate total watch time across all videos for validation
 	const totalWatchTime = Math.round(adVideo.currentTime || 0);

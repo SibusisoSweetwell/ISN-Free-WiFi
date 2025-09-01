@@ -20,14 +20,21 @@ function init(dbPath) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT,
       phone TEXT,
-  password_hash TEXT,
+      password_hash TEXT,
       password TEXT,
-  admin_code_hash TEXT,
+      admin_code_hash TEXT,
       firstName TEXT,
       surname TEXT,
       dob TEXT,
       dateCreatedISO TEXT,
-      dateCreatedLocal TEXT
+      dateCreatedLocal TEXT,
+      registrationIP TEXT,
+      userAgent TEXT,
+      deviceId TEXT,
+      registrationSource TEXT DEFAULT 'portal',
+      status TEXT DEFAULT 'active',
+      lastLoginISO TEXT,
+      loginCount INTEGER DEFAULT 0
     )`).run();
 
     DB.prepare(`CREATE TABLE IF NOT EXISTS events (
@@ -152,13 +159,49 @@ function changePassword(identifier, newPassword) {
 
 function createUser(obj) {
   if (!DB) return { ok: false, message: 'DB not initialized' };
-  const dateISO = new Date().toISOString();
-  const hash = obj.password ? hashPassword(obj.password) : null;
+  
+  const dateISO = obj.dateCreatedISO || new Date().toISOString();
+  const dateLocal = obj.dateCreatedLocal || new Date().toLocaleString();
+  const hash = obj.password_hash || (obj.password ? hashPassword(obj.password) : null);
   const emailNorm = obj.email ? String(obj.email).trim().toLowerCase() : null;
-  // IMPORTANT: Do not store plaintext password in the users table for new accounts; keep only password_hash.
-  const info = DB.prepare(`INSERT INTO users (email,phone,password_hash,password,firstName,surname,dob,dateCreatedISO,dateCreatedLocal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(emailNorm, obj.phone || null, hash, null, obj.firstName || null, obj.surname || null, obj.dob || null, dateISO, new Date().toString());
-  return { ok: true, id: info.lastInsertRowid };
+  
+  try {
+    // Enhanced user creation with all metadata fields
+    const info = DB.prepare(`INSERT INTO users (
+      email, phone, password_hash, password, firstName, surname, dob, 
+      dateCreatedISO, dateCreatedLocal, registrationIP, userAgent, deviceId,
+      registrationSource, status, lastLoginISO, loginCount
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        emailNorm,
+        obj.phone || null,
+        hash,
+        null, // Don't store plaintext password
+        obj.firstName || null,
+        obj.surname || null,
+        obj.dob || null,
+        dateISO,
+        dateLocal,
+        obj.registrationIP || 'unknown',
+        obj.userAgent || 'unknown',
+        obj.deviceId || 'unknown',
+        obj.registrationSource || 'portal',
+        obj.status || 'active',
+        obj.lastLoginISO || null,
+        obj.loginCount || 0
+      );
+    
+    _sqliteDbg('[SQLITE-CREATE-USER] Created user:', {
+      id: info.lastInsertRowid,
+      identifier: emailNorm || obj.phone,
+      registrationIP: obj.registrationIP
+    });
+    
+    return { ok: true, id: info.lastInsertRowid };
+  } catch (err) {
+    console.warn('[SQLITE-CREATE-USER-ERR]', err && err.message);
+    return { ok: false, message: err.message };
+  }
 }
 
 function appendAccessEvent(evt) {
@@ -268,6 +311,20 @@ function createPurchaseIfNotExists(phoneNumber, videoCount, bundleMB, bundleType
   } catch (err) { console.warn('[SQLITE-CREATE-PURCHASE-ERR]', err && err.message); return false; }
 }
 
+function getAllUsers() {
+  if (!DB) return [];
+  try {
+    const users = DB.prepare('SELECT * FROM users ORDER BY dateCreatedISO DESC').all();
+    return users.map(user => ({
+      ...user,
+      password_hash: user.password_hash ? _maskSecret(user.password_hash) : null // Mask password hash for security
+    }));
+  } catch (err) {
+    console.warn('[SQLITE-GET-ALL-USERS-ERR]', err && err.message);
+    return [];
+  }
+}
+
 module.exports = {
   init,
   validateLogin,
@@ -284,6 +341,7 @@ module.exports = {
   getUsageByPhone,
   addUsageRecord,
   createPurchaseIfNotExists,
+  getAllUsers,
   _db: () => DB
 };
 
