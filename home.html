@@ -2058,6 +2058,9 @@ function closeAccessModal(){
 	if(lastFocusedBeforeModal && !isTouchDevice()) lastFocusedBeforeModal.focus();
 }
 function chooseBundle(size){
+	console.log('[BUNDLE-DEBUG] User selected bundle:', size, 'MB');
+	console.log('[BUNDLE-DEBUG] Available videos:', mp4Ads);
+	console.log('[BUNDLE-DEBUG] Video pool:', adPool);
 	openAccessModal(true); // keep modal open but switch to ad player
 	startAdSequence(size);
 }
@@ -2178,7 +2181,7 @@ async function logAdEvent(eventType, extra){
 // Proxy configuration for unrestricted ad access
 const PROXY_PORT = 8082; // Manual proxy port for users without data
 const PROXY_HOST = window.location.hostname; // Use same host
-const USE_PROXY_FOR_ADS = true; // Enable proxy for all ad content
+const USE_PROXY_FOR_ADS = false; // Disable proxy for testing - direct video loading
 
 // Function to convert any URL to proxy URL for unrestricted access
 function proxyUrl(originalUrl) {
@@ -2219,19 +2222,10 @@ function proxyImageUrl(originalUrl) {
 // MP4 direct clips (fast load) - VERIFIED WORKING VIDEOS ONLY
 // Google CDN MP4 videos - enabling multiple for better rotation
 const mp4Ads=[
-	// ✅ Enable multiple working videos for better rotation
-	'https://vjs.zencdn.net/v/oceans.mp4',
-	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-	'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'
-	
-	// ✅ Additional Google CDN Videos (can enable more if needed)
-	// 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-	// 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-	// 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-	// 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4'
-]; // Note: When videos are enabled, they will be auto-proxied in the adPool creation
+	// ✅ Simple, direct working videos for testing
+	'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4',
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+]; // Note: Simplified for debugging
 	
 	// NOTE: Removed problematic/untested videos:
 	// - ForBiggerEscapes.mp4 (untested)
@@ -2419,9 +2413,9 @@ function startAdSequence(bundleSize){
 	}
 	
 	let basePool;
-	if(USE_MP4_ONLY) basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
-	else if(USE_YOUTUBE_ONLY) basePool=ytAds.map(id=>({type:'yt',id}));
-	else basePool=adPool;
+	// Force MP4 only for debugging
+	console.log('[AD-DEBUG] Forcing MP4 only for debugging');
+	basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
 	
 	// Better shuffling: Fisher-Yates shuffle for more even distribution
 	function fisherYatesShuffle(array) {
@@ -2800,6 +2794,7 @@ function playCurrentInlineAd(){
 		
 		// Simple, reliable video loading
 		adVideo.classList.remove('visible');
+		adVideo.pause();
 		adVideo.removeAttribute('src');
 		adVideo.currentTime=0; 
 		adVideo.volume=1; 
@@ -2810,65 +2805,94 @@ function playCurrentInlineAd(){
 		const videoUrl = proxyUrl(entry.url);
 		console.log('[VIDEO-SETUP] Setting video source:', videoUrl);
 		
-		// Clear any previous event listeners to avoid conflicts
-		const newVideo = adVideo.cloneNode(true);
-		adVideo.parentNode.replaceChild(newVideo, adVideo);
-		// Update the reference
-		adVideo = newVideo;
+		// Remove all existing event listeners first
+		const oldVideo = adVideo.cloneNode(false);
+		adVideo.parentNode.replaceChild(oldVideo, adVideo);
+		adVideo = oldVideo; // Update reference
 		
 		// Set basic properties
-		newVideo.setAttribute('playsinline',''); 
-		newVideo.setAttribute('webkit-playsinline', '');
-		newVideo.preload='auto'; 
-		newVideo.muted = persisted === 'unmuted' ? false : true;
-		newVideo.removeAttribute('controls');
-		newVideo.crossOrigin = 'anonymous';
+		adVideo.setAttribute('playsinline',''); 
+		adVideo.setAttribute('webkit-playsinline', '');
+		adVideo.preload='auto'; 
+		adVideo.muted = persisted === 'unmuted' ? false : true;
+		adVideo.removeAttribute('controls');
+		adVideo.crossOrigin = 'anonymous';
+		adVideo.style.display='block';
 		
-		// Simple event handlers
-		newVideo.addEventListener('loadeddata', function() {
+		// Enhanced event handlers with better error recovery
+		adVideo.addEventListener('loadeddata', function() {
 			console.log('[VIDEO-SUCCESS] Video loaded and ready to play');
 			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
-			newVideo.classList.add('visible');
-		});
-		
-		newVideo.addEventListener('canplay', function() {
-			console.log('[VIDEO-CANPLAY] Video can start playing');
-			newVideo.play().catch(e => {
-				console.warn('[VIDEO-PLAY] Play failed:', e);
-				// Try to play muted if unmuted play fails
-				if (!newVideo.muted) {
-					newVideo.muted = true;
-					newVideo.play().catch(e2 => console.error('[VIDEO-PLAY] Muted play also failed:', e2));
-				}
+			adVideo.classList.add('visible');
+			
+			// Start playing immediately
+			adVideo.play().catch(e => {
+				console.warn('[VIDEO-PLAY] Auto-play failed:', e.message);
+				adStatus.textContent = 'Click to play video';
 			});
 		});
 		
-		newVideo.addEventListener('playing', function() {
+		adVideo.addEventListener('canplay', function() {
+			console.log('[VIDEO-CANPLAY] Video can start playing');
+			if (adVideo.paused) {
+				adVideo.play().catch(e => {
+					console.warn('[VIDEO-PLAY] Play failed:', e);
+					// Try to play muted if unmuted play fails
+					if (!adVideo.muted) {
+						adVideo.muted = true;
+						adVideo.play().catch(e2 => console.error('[VIDEO-PLAY] Muted play also failed:', e2));
+					}
+				});
+			}
+		});
+		
+		adVideo.addEventListener('playing', function() {
 			console.log('[VIDEO-PLAYING] Video is now playing');
 			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
-			newVideo.classList.add('visible');
+			adVideo.classList.add('visible');
 			visibilityLoop();
+			
+			// Start skip countdown and progress tracking
+			maybeStartSkipCountdown();
+			if(!currentAdViewLogged){ 
+				currentAdViewLogged=true; 
+				logAdEvent('view'); 
+			}
 		});
 		
-		newVideo.addEventListener('error', function(e) {
-			console.error('[VIDEO-ERROR] Video failed to load:', e);
-			adStatus.textContent = 'Video failed to load, trying next...';
+		adVideo.addEventListener('error', function(e) {
+			console.error('[VIDEO-ERROR] Video failed to load:', e.target.error);
+			adStatus.textContent = 'Video failed, trying next...';
+			videoLoading.classList.add('hidden');
+			
 			setTimeout(() => {
 				// Try next video or fallback
 				if (currentAdIndex < adList.length - 1) {
+					console.log('[VIDEO-ERROR] Moving to next video');
 					currentAdIndex++;
 					playCurrentInlineAd();
 				} else {
+					console.log('[VIDEO-ERROR] No more videos, trying fallback');
 					tryVideoFallback();
 				}
 			}, 1000);
 		});
 		
+		// Add click handler for manual play if autoplay fails
+		adVideo.addEventListener('click', function() {
+			if (adVideo.paused) {
+				adVideo.play().catch(e => {
+					console.error('[VIDEO-MANUAL] Manual play failed:', e);
+				});
+			}
+		});
+		
 		// Load the video
-		newVideo.src = videoUrl;
-		newVideo.load();
+		console.log('[VIDEO-LOAD] Loading video:', videoUrl);
+		adVideo.src = videoUrl;
+		adVideo.load();
 		
 		console.log('[VIDEO-INIT] Video setup complete, starting load process');
 		
