@@ -2098,7 +2098,7 @@ function startSessionPing(){
 	clearInterval(sessionPingTimer); sessionPingTimer=setInterval(send, 60*1000); // every minute
 }
 startSessionPing();
-const adVideo=document.getElementById('adVideo');
+let adVideo=document.getElementById('adVideo');
 const skipBtn=document.getElementById('skipBtn');
 const muteBtn=document.getElementById('muteBtn');
 const playPauseBtn=document.getElementById('playPauseBtn');
@@ -2774,10 +2774,13 @@ function playCurrentInlineAd(){
 	adProgressInline.style.width='0%';
 	imgFallback.classList.remove('active'); imgFallback.innerHTML='<div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div>';
 	
+	console.log('[VIDEO-DEBUG] Starting to play ad:', currentAdIndex + 1, 'of', adList.length, entry);
+	
 	if(entry.type==='mp4' || entry.type==='hls' || entry.type==='dash'){
 		// clear youtube src if any
 		if(ytPlayerInstance && ytPlayerReady){ try{ ytPlayerInstance.stopVideo(); }catch{} }
 		videoLoading.classList.remove('hidden');
+		console.log('[VIDEO-LOADING] Starting MP4 video load process');
 		
 		// Enhanced setup for verified working videos
 		const isVerifiedVideo = entry.url && (
@@ -2795,221 +2798,82 @@ function playCurrentInlineAd(){
 			adVideo.removeAttribute('data-verified');
 		}
 		
-		// Reset any previous force flags
-		delete adVideo._forceSeekDone; delete adVideo._reloadAttempt;
+		// Simple, reliable video loading
 		adVideo.classList.remove('visible');
 		adVideo.removeAttribute('src');
-			adVideo.currentTime=0; adVideo.volume=1; adVideo.style.display='block'; videoStartStamp=performance.now(); visibilityLoop();
-			// Track last known time to prevent seeking/scrubbing during ad sequence
-			adVideo._lastKnownTime = 0;
-			adVideo.addEventListener('timeupdate', function(){ try{ adVideo._lastKnownTime = adVideo.currentTime; }catch(e){} });
-			adVideo.addEventListener('seeking', function(ev){ try{ if(adSequenceActive){ // block seek
-				if(Math.abs(adVideo.currentTime - (adVideo._lastKnownTime||0))>0.5){ adVideo.currentTime = adVideo._lastKnownTime || 0; }
-				}
-			}catch(e){} });
+		adVideo.currentTime=0; 
+		adVideo.volume=1; 
+		adVideo.style.display='block'; 
+		videoStartStamp=performance.now(); 
 		
-		// Enhanced video loading with format validation
-		(async()=>{
-			try{
-				if(entry.type==='mp4'){
-					// Enhanced MP4 loading with codec detection
-					console.log('[VIDEO-LOADING] Attempting to load:', entry.url);
-					console.log('[VIDEO-DEBUG] Current adList:', adList);
-					console.log('[VIDEO-DEBUG] Current index:', currentAdIndex, 'Total ads:', adList.length);
-					console.log('[VIDEO-DEBUG] Video element state:', {
-						src: adVideo.src,
-						readyState: adVideo.readyState,
-						networkState: adVideo.networkState,
-						paused: adVideo.paused,
-						ended: adVideo.ended,
-						currentTime: adVideo.currentTime
-					});
-					
-					// Test if browser can play this video format
-					const canPlay = adVideo.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
-					console.log('[VIDEO-CODEC] Can play H.264 MP4:', canPlay);
-					
-					if(canPlay === '') {
-						console.warn('[VIDEO-CODEC] Browser may not support H.264, trying anyway...');
-					}
-					
-					// Optimize video element for our verified working videos
-					try{ 
-						adVideo.setAttribute('playsinline',''); 
-						adVideo.preload='auto'; 
-						adVideo.removeAttribute('controls');
-						// Enhanced settings for our verified CDN videos
-						adVideo.crossOrigin = 'anonymous';
-						adVideo.setAttribute('webkit-playsinline', '');
-						console.log('[VIDEO-OPTIMIZE] Applied enhanced settings for verified video');
-					}catch{}
-					
-					// Warm the connection with a lightweight range HEAD (if CORS allows) to reduce latency on CDNs
-					(async()=>{
-						try{
-							const headResponse = await fetch(entry.url, { method: 'HEAD', mode:'cors', cache:'no-cache' });
-							console.log('[VIDEO-HEAD] Connection warming successful:', headResponse.status);
-						}catch(e){ 
-							console.log('[VIDEO-HEAD] HEAD request blocked by CORS, proceeding normally:', e.message);
-						}
-						// Now set the src using proxy URL and load
-						const videoUrl = proxyUrl(entry.url);
-						console.log('[VIDEO-PROXY] Setting video source:', entry.url, '→', videoUrl);
-						
-						// Enhanced loading for verified working videos
-						adVideo.src = videoUrl;
-						adVideo._retryCount = 0;
-						adVideo._maxRetries = 2; // Reduced retries since our videos are verified working
-						adVideo._currentEntry = entry;
-						
-						// Mark as verified video for better handling
-						adVideo._isVerifiedVideo = true;
-						
-						console.log('[VIDEO-LOAD] Loading verified working video...');
-						
-						// Add explicit loading success handler
-						const onLoadSuccess = () => {
-							console.log('[VIDEO-LOAD] Video loaded successfully, preparing to play');
-							videoLoading.classList.add('hidden');
-							adVideo.removeEventListener('loadeddata', onLoadSuccess);
-							adVideo.removeEventListener('canplay', onLoadSuccess);
-							// Don't call tryPlay here - let the main flow handle it
-						};
-						
-						adVideo.addEventListener('loadeddata', onLoadSuccess);
-						adVideo.addEventListener('canplay', onLoadSuccess);
-						
-						// Load the video
-						adVideo.load();
-						
-						// Enhanced error handler optimized for verified working videos
-						adVideo._onerrorHandler = async function(){
-							try{
-								adVideo._retryCount = (adVideo._retryCount||0) + 1;
-								console.warn('[VIDEO-ERROR] Error with verified video:', entry.url, 'retry:', adVideo._retryCount);
-								
-								if(adVideo._retryCount <= adVideo._maxRetries){
-									// Shorter wait time for verified videos since they should work
-									const wait = 150 * adVideo._retryCount;
-									console.warn('[VIDEO-ERROR] Retrying verified video in', wait, 'ms');
-									setTimeout(()=>{ 
-										try{ 
-											console.log('[VIDEO-RETRY] Attempting reload of verified video');
-											adVideo.load(); 
-											adVideo.play().catch((e)=>{
-												console.warn('[VIDEO-RETRY] Play failed after reload:', e);
-											}); 
-										}catch(retryErr){
-											console.error('[VIDEO-RETRY] Retry failed:', retryErr);
-										} 
-									}, wait);
-								} else {
-									console.error('[VIDEO-ERROR] Verified video failed after retries, using fallback');
-									tryVideoFallback();
-								}
-							}catch(e){ 
-								console.error('[VIDEO-ERROR] Error in error handler:', e);
-								tryVideoFallback(); 
-							}
-						};
-						adVideo.addEventListener('error', adVideo._onerrorHandler);
-						
-						// Enhanced success handlers for verified videos
-						adVideo.addEventListener('loadstart', function onLoadStart() {
-							console.log('[VIDEO-SUCCESS] Verified video load started');
-							adVideo.removeEventListener('loadstart', onLoadStart);
-						});
-						
-						adVideo.addEventListener('canplay', function onCanPlay() {
-							console.log('[VIDEO-SUCCESS] Verified video can play');
-							adVideo.removeEventListener('canplay', onCanPlay);
-						});
-					})();
-
-								// When metadata is loaded, try to play immediately for fastest start
-								adVideo.addEventListener('loadedmetadata', function onMeta(){ adVideo.removeEventListener('loadedmetadata', onMeta); try{ adVideo.play().catch(()=>{}); }catch{} });
-					
-				}else{
-					await setupAdaptivePlayback(entry);
-				}
-			}catch(e){ 
-				console.warn('[VIDEO-LOAD] Adaptive load failed, trying fallback:', e); 
-				tryVideoFallback();
-			}
-		})();
+		// Set up the video source and load
+		const videoUrl = proxyUrl(entry.url);
+		console.log('[VIDEO-SETUP] Setting video source:', videoUrl);
 		
-		// Enhanced play attempt optimized for verified working videos
-		const tryPlay = async () => {
-			try {
-				console.log('[VIDEO-PLAY] Attempting to play verified video');
-				await adVideo.play();
-				console.log('[VIDEO-PLAY] Verified video playing successfully');
-				adStatus.textContent = 'Playing verified content';
-			} catch(playErr) {
-				console.warn('[VIDEO-PLAY] Initial play failed for verified video:', playErr.message);
-				
-				// For verified videos, try more aggressive recovery
-				if(adVideo._isVerifiedVideo) {
-					console.log('[VIDEO-PLAY] Applying enhanced recovery for verified video');
-					
-					// Try unmuting first (some browsers block muted autoplay)
-					if(adVideo.muted) {
-						try {
-							adVideo.muted = false;
-							await adVideo.play();
-							console.log('[VIDEO-PLAY] Success after unmuting verified video');
-							return;
-						} catch(unmuteErr) {
-							console.log('[VIDEO-PLAY] Unmute attempt failed, trying other methods');
-							adVideo.muted = true; // restore muted state
-						}
-					}
-					
-					// Try with a small delay for verified videos
-					setTimeout(async () => {
-						try {
-							await adVideo.play();
-							console.log('[VIDEO-PLAY] Verified video retry successful');
-							adStatus.textContent = 'Playing';
-						} catch(retryErr) {
-							console.warn('[VIDEO-PLAY] Retry failed for verified video:', retryErr.message);
-							// Show user interaction prompt for verified videos
-							adStatus.textContent = 'Click play to start verified video';
-							
-							// Add click handler for manual play
-							const manualPlayHandler = async () => {
-								try {
-									await adVideo.play();
-									console.log('[VIDEO-PLAY] Manual play successful for verified video');
-									adStatus.textContent = 'Playing';
-									adVideo.removeEventListener('click', manualPlayHandler);
-								} catch(manualErr) {
-									console.error('[VIDEO-PLAY] Manual play failed:', manualErr);
-								}
-							};
-							adVideo.addEventListener('click', manualPlayHandler);
-						}
-					}, 200); // Shorter delay for verified videos
+		// Clear any previous event listeners to avoid conflicts
+		const newVideo = adVideo.cloneNode(true);
+		adVideo.parentNode.replaceChild(newVideo, adVideo);
+		// Update the reference
+		adVideo = newVideo;
+		
+		// Set basic properties
+		newVideo.setAttribute('playsinline',''); 
+		newVideo.setAttribute('webkit-playsinline', '');
+		newVideo.preload='auto'; 
+		newVideo.muted = persisted === 'unmuted' ? false : true;
+		newVideo.removeAttribute('controls');
+		newVideo.crossOrigin = 'anonymous';
+		
+		// Simple event handlers
+		newVideo.addEventListener('loadeddata', function() {
+			console.log('[VIDEO-SUCCESS] Video loaded and ready to play');
+			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
+			videoLoading.classList.add('hidden');
+			newVideo.classList.add('visible');
+		});
+		
+		newVideo.addEventListener('canplay', function() {
+			console.log('[VIDEO-CANPLAY] Video can start playing');
+			newVideo.play().catch(e => {
+				console.warn('[VIDEO-PLAY] Play failed:', e);
+				// Try to play muted if unmuted play fails
+				if (!newVideo.muted) {
+					newVideo.muted = true;
+					newVideo.play().catch(e2 => console.error('[VIDEO-PLAY] Muted play also failed:', e2));
+				}
+			});
+		});
+		
+		newVideo.addEventListener('playing', function() {
+			console.log('[VIDEO-PLAYING] Video is now playing');
+			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
+			videoLoading.classList.add('hidden');
+			newVideo.classList.add('visible');
+			visibilityLoop();
+		});
+		
+		newVideo.addEventListener('error', function(e) {
+			console.error('[VIDEO-ERROR] Video failed to load:', e);
+			adStatus.textContent = 'Video failed to load, trying next...';
+			setTimeout(() => {
+				// Try next video or fallback
+				if (currentAdIndex < adList.length - 1) {
+					currentAdIndex++;
+					playCurrentInlineAd();
 				} else {
-					// Standard fallback for non-verified videos
-					setTimeout(async () => {
-						try {
-							await adVideo.play();
-							console.log('[VIDEO-PLAY] Standard retry success');
-						} catch(retryErr) {
-							console.error('[VIDEO-PLAY] Standard retry failed:', retryErr);
-							adStatus.textContent = 'Click play to start video';
-						}
-					}, 250);
+					tryVideoFallback();
 				}
-			}
-		};
+			}, 1000);
+		});
 		
-		tryPlay();
+		// Load the video
+		newVideo.src = videoUrl;
+		newVideo.load();
+		
+		console.log('[VIDEO-INIT] Video setup complete, starting load process');
+		
 		currentAdViewLogged=false;
 		
-		// Extra fallback: force reveal after 1s even if no videoWidth yet
-		setTimeout(()=>{ if(!adVideo.classList.contains('visible')) forceVideoFrameReveal(); },1000);
 		// start progress loop immediately (duration may be unknown until metadata)
 		startInlineProgress();
 		// Wait for actual playback to begin to start skip timer
@@ -3041,7 +2905,7 @@ function playCurrentInlineAd(){
 			try{ preloadNextAdIfNeeded(); }catch(e){ /* non-fatal */ }
 		},{ once:true });
 		// If still not playing after 2s, try a gentle reload once
-		setTimeout(()=>{ if(adVideo.currentTime===0 && !adVideo._reloadOnce){ adVideo._reloadOnce=true; const s=adVideo.src; adVideo.load(); adVideo.src=s; tryPlay(); } },2000);
+		setTimeout(()=>{ if(adVideo.currentTime===0 && !adVideo._reloadOnce){ adVideo._reloadOnce=true; adVideo.load(); adVideo.play().catch(()=>{}); } },2000);
 		// If still blank after 4s, try fallback video
 		setTimeout(()=>{ if(adVideo.currentTime===0){ console.log('[VIDEO-TIMEOUT] Trying fallback video'); tryVideoFallback(); } },4000);
 		// Safety: first timeupdate triggers countdown if not already started
