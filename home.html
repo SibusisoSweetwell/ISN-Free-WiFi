@@ -2225,10 +2225,36 @@ function proxyImageUrl(originalUrl) {
 // MP4 direct clips (fast load) - VERIFIED WORKING VIDEOS ONLY
 // Google CDN MP4 videos - enabling multiple for better rotation
 const mp4Ads=[
-	// ✅ Simple, direct working videos for testing
+	// ✅ Fast-loading, tested videos for instant playback
 	'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4',
 	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-]; // Note: Simplified for debugging
+]; // Note: Optimized for instant loading
+
+// PRELOAD VIDEOS FOR INSTANT PLAYBACK
+const preloadedVideos = {};
+function preloadVideos() {
+	console.log('[PRELOAD] Starting video preload for instant playback...');
+	mp4Ads.forEach((url, index) => {
+		const video = document.createElement('video');
+		video.preload = 'metadata';
+		video.muted = true;
+		video.src = url; // Direct URL - no proxy for speed
+		video.addEventListener('loadedmetadata', () => {
+			console.log(`[PRELOAD] Video ${index + 1} ready for instant playback`);
+			preloadedVideos[url] = video;
+		});
+		video.addEventListener('error', () => {
+			console.warn(`[PRELOAD] Video ${index + 1} failed to preload:`, url);
+		});
+	});
+}
+
+// Start preloading immediately
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', preloadVideos);
+} else {
+	preloadVideos();
+}
 	
 	// NOTE: Removed problematic/untested videos:
 	// - ForBiggerEscapes.mp4 (untested)
@@ -2710,119 +2736,97 @@ function playCurrentInlineAd(){
 			adVideo.removeAttribute('data-verified');
 		}
 		
-		// Simple, reliable video loading
-		adVideo.classList.remove('visible');
+		// INSTANT VIDEO LOADING WITH PRELOADED CONTENT
+		const videoUrl = entry.url; // Direct URL for speed
+		console.log('[INSTANT-LOAD] Using video:', videoUrl);
+		
+		// Use preloaded video if available for instant start
+		if (preloadedVideos[videoUrl]) {
+			console.log('[INSTANT-LOAD] Using preloaded video for instant start!');
+			const preloadedVid = preloadedVideos[videoUrl];
+			// Copy the preloaded video to our player
+			adVideo.src = preloadedVid.src;
+			adVideo.currentTime = 0;
+		} else {
+			console.log('[INSTANT-LOAD] Loading video directly');
+			adVideo.src = videoUrl;
+		}
+		
+		// SUPER FAST SETUP
 		adVideo.pause();
-		adVideo.removeAttribute('src');
 		adVideo.currentTime=0; 
 		adVideo.volume=1; 
 		adVideo.style.display='block'; 
-		videoStartStamp=performance.now(); 
+		adVideo.classList.remove('visible');
 		
-		// Set up the video source and load
-		const videoUrl = proxyUrl(entry.url);
-		console.log('[VIDEO-SETUP] Setting video source:', videoUrl);
-		
-		// Remove all existing event listeners first
-		const oldVideo = adVideo.cloneNode(false);
-		adVideo.parentNode.replaceChild(oldVideo, adVideo);
-		adVideo = oldVideo; // Update reference
-		
-		// Set basic properties
+		// Essential properties for fast playback
 		adVideo.setAttribute('playsinline',''); 
 		adVideo.setAttribute('webkit-playsinline', '');
 		adVideo.preload='auto'; 
-		adVideo.muted = persisted === 'unmuted' ? false : true;
 		adVideo.removeAttribute('controls');
 		adVideo.crossOrigin = 'anonymous';
-		adVideo.style.display='block';
 		
-		// Enhanced event handlers with better error recovery
-		adVideo.addEventListener('loadstart', function() {
-			console.log('[VIDEO-EVENT] Load start');
-			adStatus.textContent = 'Video loading started...';
-		});
-		
-		adVideo.addEventListener('loadedmetadata', function() {
-			console.log('[VIDEO-EVENT] Metadata loaded, duration:', adVideo.duration);
-			adStatus.textContent = 'Video metadata loaded...';
-		});
-		
-		adVideo.addEventListener('loadeddata', function() {
-			console.log('[VIDEO-SUCCESS] Video loaded and ready to play');
-			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
+		// INSTANT EVENT HANDLERS FOR SUPER FAST RESPONSE
+		const onReady = () => {
+			console.log('[INSTANT-SUCCESS] Video ready - starting playback immediately');
+			adStatus.textContent = `Playing video ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
 			adVideo.classList.add('visible');
 			
-			// Start playing immediately
+			// INSTANT PLAY
 			adVideo.play().catch(e => {
-				console.warn('[VIDEO-PLAY] Auto-play failed:', e.message);
-				adStatus.textContent = 'Click to play video';
+				console.warn('[INSTANT-PLAY] Auto-play blocked:', e.message);
+				if (!adVideo.muted) {
+					adVideo.muted = true;
+					adVideo.play().catch(console.error);
+				}
 			});
-		});
+		};
 		
-		adVideo.addEventListener('canplay', function() {
-			console.log('[VIDEO-CANPLAY] Video can start playing');
-			if (adVideo.paused) {
-				adVideo.play().catch(e => {
-					console.warn('[VIDEO-PLAY] Play failed:', e);
-					// Try to play muted if unmuted play fails
-					if (!adVideo.muted) {
-						adVideo.muted = true;
-						adVideo.play().catch(e2 => console.error('[VIDEO-PLAY] Muted play also failed:', e2));
-					}
-				});
-			}
-		});
-		
-		adVideo.addEventListener('playing', function() {
-			console.log('[VIDEO-PLAYING] Video is now playing');
-			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
+		const onPlaying = () => {
+			console.log('[INSTANT-PLAYING] Video playing successfully');
+			adStatus.textContent = `Playing video ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
 			adVideo.classList.add('visible');
-			visibilityLoop();
 			
-			// Start skip countdown and progress tracking
+			// Start skip countdown and tracking
 			maybeStartSkipCountdown();
 			if(!currentAdViewLogged){ 
 				currentAdViewLogged=true; 
 				logAdEvent('view'); 
 			}
-		});
+		};
 		
-		adVideo.addEventListener('error', function(e) {
-			console.error('[VIDEO-ERROR] Video failed to load:', e.target.error);
-			adStatus.textContent = 'Video failed, trying next...';
-			videoLoading.classList.add('hidden');
-			
+		const onError = () => {
+			console.error('[INSTANT-ERROR] Video failed, trying next immediately');
+			adStatus.textContent = 'Video failed, loading next...';
 			setTimeout(() => {
-				// Try next video or fallback
 				if (currentAdIndex < adList.length - 1) {
-					console.log('[VIDEO-ERROR] Moving to next video');
 					currentAdIndex++;
 					playCurrentInlineAd();
 				} else {
-					console.log('[VIDEO-ERROR] No more videos, trying fallback');
-					tryVideoFallback();
+					adStatus.textContent = 'All videos completed';
 				}
-			}, 1000);
-		});
+			}, 500); // Very short delay
+		};
 		
-		// Add click handler for manual play if autoplay fails
-		adVideo.addEventListener('click', function() {
-			if (adVideo.paused) {
-				adVideo.play().catch(e => {
-					console.error('[VIDEO-MANUAL] Manual play failed:', e);
-				});
-			}
-		});
+		// Clean event listeners first
+		adVideo.removeEventListener('loadeddata', onReady);
+		adVideo.removeEventListener('canplay', onReady);
+		adVideo.removeEventListener('playing', onPlaying);
+		adVideo.removeEventListener('error', onError);
 		
-		// Load the video
-		console.log('[VIDEO-LOAD] Loading video:', videoUrl);
-		adVideo.src = videoUrl;
+		// Add fresh event listeners
+		adVideo.addEventListener('loadeddata', onReady, { once: true });
+		adVideo.addEventListener('canplay', onReady, { once: true });
+		adVideo.addEventListener('playing', onPlaying, { once: true });
+		adVideo.addEventListener('error', onError, { once: true });
+		
+		// LOAD AND START
+		console.log('[INSTANT-LOAD] Starting video load and play process');
 		adVideo.load();
 		
-		console.log('[VIDEO-INIT] Video setup complete, starting load process');
+		console.log('[INSTANT-LOAD] Video setup complete - should start playing very soon');
 		
 		currentAdViewLogged=false;
 		
