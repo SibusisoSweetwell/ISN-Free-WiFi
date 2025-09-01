@@ -210,11 +210,51 @@
 			.logo-box { width: 100px; height: 100px; margin-bottom: 4px; }
 		}
 		.field-error { border-color:#e53935 !important; background:#fff5f5 !important; box-shadow:0 0 0 3px rgba(229,57,53,.25) !important; }
-	/* Forgot password code input alignment */
-	.code-box { display:flex; justify-content:center; gap:12px; margin:18px 0 8px; }
-	.code-box input.code-digit { width:54px; height:54px; padding:0; font-size:26px; text-align:center; background:var(--brand-red); color:#fff; border:none; border-radius:12px; font-weight:600; box-shadow:0 3px 8px rgba(0,0,0,.35); transition:transform .15s, background .25s; }
+	/* Forgot / registration code input alignment - responsive so 6 boxes fit on small phones */
+	.code-box {
+		display: flex;
+		justify-content: center;
+		gap: 12px;
+		margin: 18px 0 8px;
+		flex-wrap: wrap; /* allow wrapping on very narrow screens */
+		padding: 0 6px; /* small horizontal padding so inputs don't touch edges */
+	}
+	.code-box input.code-digit {
+		box-sizing: border-box;
+		width: 54px;
+		height: 54px;
+		padding: 0;
+		font-size: 26px;
+		text-align: center;
+		background: var(--brand-red);
+		color: #fff;
+		border: none;
+		border-radius: 12px;
+		font-weight: 600;
+		box-shadow: 0 3px 8px rgba(0,0,0,.35);
+		transition: transform .15s, background .25s;
+		flex: 0 0 auto; /* keep natural size unless media rule changes it */
+		min-width: 36px;
+		max-width: 14%;
+	}
 		.code-box input.code-digit:focus { outline:none; transform:none; box-shadow:0 6px 14px rgba(0,0,0,.4); }
-	@media (max-width:480px){ .code-box { gap:8px; } .code-box input.code-digit { width:46px; height:52px; font-size:22px; } }
+
+	/* Small phones: make inputs flexible so six fit comfortably inside the modal padding */
+	@media (max-width:480px){
+		.code-box { gap:8px; }
+		.code-box input.code-digit {
+			width: auto;
+			flex: 1 1 12%; /* allow inputs to shrink to a percentage of available width */
+			max-width: 46px;
+			min-width: 34px;
+			height: 52px;
+			font-size: 22px;
+		}
+	}
+	/* Very narrow phones (old devices) - force slightly smaller max width to avoid wrapping */
+	@media (max-width:360px){
+		.code-box input.code-digit { max-width: 42px; font-size:20px; }
+	}
 		/* Desktop / large screens: convert to two-column layout */
 		/* Desktop OR tablet landscape (>=760px wide) shows two-column grid */
 		@media (min-width: 900px), (orientation: landscape) and (min-width: 760px) {

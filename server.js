@@ -131,20 +131,7 @@ const adminLimiter = rateLimit({
 // ...smsLimiter declared earlier
 // Server-side SMS send endpoint — uses CLICKATELL_API_KEY from environment variables
 // Keep this endpoint protected with rate limiting to avoid abuse.
-// For the SMS endpoint we pre-read the body and attach it to req.rawBody so
-// malformed JSON won't cause the global JSON parser to throw before the
-// route handler can inspect the raw bytes.
-app.use((req, res, next) => {
-  if (req.method === 'POST' && req.path === '/api/send-sms') {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', chunk => { data += chunk; if (data.length > 1e6) req.connection.destroy(); });
-    req.on('end', () => { req.rawBody = data; req._bodyRead = true; next(); });
-    req.on('error', () => { req.rawBody = ''; req._bodyRead = true; next(); });
-    return;
-  }
-  return next();
-});
+// No per-route pre-read here; express.json verify will capture raw body safely.
 
 // Parse JSON bodies and capture the raw body for diagnostics for other routes.
 app.use(express.json({
