@@ -178,8 +178,136 @@
 			-webkit-touch-callout:none;
 			/* GPU ACCELERATION FOR INSTANT APPEARANCE */
 			will-change:opacity, transform;
-			backface-visibility:hidden;
 		}
+		
+		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+		/* 🚫 ANTI-MANIPULATION CSS - SPOTIFY FREE VERSION STYLE BLOCKING */
+		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+		
+		/* Disable all video interactions during playback */
+		.video-shell.ad-active video {
+			/* Block all pointer events except our allowed controls */
+			pointer-events: none !important;
+			/* Prevent text selection */
+			user-select: none !important;
+			-webkit-user-select: none !important;
+			-moz-user-select: none !important;
+			-ms-user-select: none !important;
+			/* Block touch callouts */
+			-webkit-touch-callout: none !important;
+			/* Prevent drag and drop */
+			-webkit-user-drag: none !important;
+			-khtml-user-drag: none !important;
+			-moz-user-drag: none !important;
+			-o-user-drag: none !important;
+			/* user-drag: none !important; - Invalid CSS property, removed */
+		}
+		
+		/* Prevent any scrolling or zooming during video */
+		.video-shell.ad-active {
+			touch-action: none !important;
+			-ms-touch-action: none !important;
+			/* Lock the container */
+			overflow: hidden !important;
+			/* Prevent shake-to-refresh */
+			overscroll-behavior: none !important;
+			/* Block zoom gestures */
+			-webkit-user-zoom: fixed !important;
+			-moz-user-zoom: fixed !important;
+		}
+		
+		/* Disable double-tap zoom on video */
+		.video-shell video {
+			touch-action: manipulation !important;
+			-ms-touch-action: manipulation !important;
+		}
+		
+		/* Block right-click context menu completely */
+		.video-shell video::-webkit-media-controls {
+			display: none !important;
+			-webkit-appearance: none !important;
+		}
+		
+		/* Hide native video controls completely */
+		.video-shell video::-webkit-media-controls-enclosure {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-panel {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-play-button {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-timeline {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-current-time-display {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-time-remaining-display {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-mute-button {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-volume-slider {
+			display: none !important;
+		}
+		
+		.video-shell video::-webkit-media-controls-fullscreen-button {
+			display: none !important;
+		}
+		
+		/* Block selection of any content during video */
+		.ad-player.active * {
+			user-select: none !important;
+			-webkit-user-select: none !important;
+			-moz-user-select: none !important;
+			-ms-user-select: none !important;
+		}
+		
+		/* Prevent highlighting during video */
+		.ad-player.active {
+			-webkit-tap-highlight-color: transparent !important;
+			-webkit-touch-callout: none !important;
+		}
+		
+		/* Block dev tools inspection during video (additional layer) */
+		.video-shell.ad-active video::selection {
+			background: transparent !important;
+		}
+		
+		/* Prevent any transformations or animations on the video during playback */
+		.video-shell.ad-active video {
+			transform: none !important;
+			transition: none !important;
+			animation: none !important;
+		}
+		
+		/* Anti-shake container stabilization */
+		.video-shell.ad-active {
+			position: relative !important;
+			transform: translate3d(0,0,0) !important;
+			-webkit-transform: translate3d(0,0,0) !important;
+			will-change: auto !important;
+		}
+		
+		/* Block picture-in-picture */
+		.video-shell video {
+			/* Disable PiP */
+			-webkit-picture-in-picture: false !important;
+		}
+		
+		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+		/* END ANTI-MANIPULATION CSS */
+		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 		
 		.video-shell video.visible{opacity:1;transform:scale(1);transition:opacity 0.1s ease, transform 0.1s ease;} /* Instant appearance for Google CDN */
 		
@@ -653,7 +781,7 @@
 			<div class="ad-player" id="adPlayer">
 				<div class="video-shell">
 					<img id="adThumb" alt="Ad thumbnail" loading="lazy" />
-					<video id="adVideo" playsinline webkit-playsinline autoplay muted preload="auto" crossorigin="anonymous" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='28' font-family='Arial' text-anchor='middle' dominant-baseline='middle'%3ELoading...%3C/text%3E%3C/svg%3E" style="background:#000;"></video>
+					<video id="adVideo" playsinline webkit-playsinline autoplay muted preload="auto" crossorigin="anonymous" disablepictureinpicture disableremoteplayback controlslist="nodownload nofullscreen noremoteplayback" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='28' font-family='Arial' text-anchor='middle' dominant-baseline='middle'%3ELoading...%3C/text%3E%3C/svg%3E" style="background:#000;"></video>
 					<iframe id="ytPlayer" allow="autoplay; encrypted-media" title="Ad video" style="display:none;"></iframe>
 					<div id="imgFallback" class="img-fallback"><div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div></div>
 					<div class="video-overlay-btn">
@@ -2112,6 +2240,195 @@ function startSessionPing(){
 }
 startSessionPing();
 let adVideo=document.getElementById('adVideo');
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🚫 COMPREHENSIVE MEDIA CONTROL BLOCKING - SPOTIFY FREE VERSION STYLE
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// Block all browser media controls and navigation
+function blockMediaControls() {
+	console.log('[MEDIA-BLOCK] Implementing comprehensive media control blocking...');
+	
+	// 1. Disable Media Session API (prevents headphone/Bluetooth controls)
+	if ('mediaSession' in navigator) {
+		navigator.mediaSession.metadata = null;
+		navigator.mediaSession.setActionHandler('play', null);
+		navigator.mediaSession.setActionHandler('pause', null);
+		navigator.mediaSession.setActionHandler('seekbackward', null);
+		navigator.mediaSession.setActionHandler('seekforward', null);
+		navigator.mediaSession.setActionHandler('previoustrack', null);
+		navigator.mediaSession.setActionHandler('nexttrack', null);
+		navigator.mediaSession.setActionHandler('skipad', null);
+		navigator.mediaSession.setActionHandler('seekto', null);
+		navigator.mediaSession.setActionHandler('stop', null);
+		console.log('[MEDIA-BLOCK] Browser media controls disabled');
+	}
+	
+	// 2. Block keyboard shortcuts for media control
+	const blockedKeys = ['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'MediaPlayPause', 'MediaStop', 'MediaTrackNext', 'MediaTrackPrevious'];
+	
+	document.addEventListener('keydown', function(e) {
+		if (adSequenceActive && blockedKeys.includes(e.code)) {
+			console.log('[MEDIA-BLOCK] Blocked key:', e.code);
+			e.preventDefault();
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			return false;
+		}
+		
+		// Block specific key combinations during video playback
+		if (adSequenceActive && (e.key === ' ' || e.key === 'k' || e.key === 'K' || e.key === 'j' || e.key === 'J' || e.key === 'l' || e.key === 'L')) {
+			console.log('[MEDIA-BLOCK] Blocked media key:', e.key);
+			e.preventDefault();
+			e.stopPropagation();
+			return false;
+		}
+	}, true);
+	
+	// 3. Block device motion/shake events
+	let shakeThreshold = 15;
+	let lastAcceleration = { x: 0, y: 0, z: 0 };
+	
+	if (window.DeviceMotionEvent) {
+		window.addEventListener('devicemotion', function(e) {
+			if (!adSequenceActive) return;
+			
+			const acceleration = e.accelerationIncludingGravity;
+			if (acceleration) {
+				const deltaX = Math.abs(acceleration.x - lastAcceleration.x);
+				const deltaY = Math.abs(acceleration.y - lastAcceleration.y);
+				const deltaZ = Math.abs(acceleration.z - lastAcceleration.z);
+				
+				if (deltaX > shakeThreshold || deltaY > shakeThreshold || deltaZ > shakeThreshold) {
+					console.log('[MEDIA-BLOCK] Shake gesture blocked during video');
+					e.preventDefault();
+					e.stopPropagation();
+					return false;
+				}
+				
+				lastAcceleration = { x: acceleration.x, y: acceleration.y, z: acceleration.z };
+			}
+		}, { passive: false });
+		console.log('[MEDIA-BLOCK] Device shake blocking enabled');
+	}
+	
+	// 4. Block touch gestures that could interfere with video
+	let touchStartTime = 0;
+	let touchStartPos = { x: 0, y: 0 };
+	
+	document.addEventListener('touchstart', function(e) {
+		if (!adSequenceActive) return;
+		touchStartTime = Date.now();
+		if (e.touches.length > 0) {
+			touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+		}
+	}, { passive: false });
+	
+	document.addEventListener('touchend', function(e) {
+		if (!adSequenceActive) return;
+		
+		const touchDuration = Date.now() - touchStartTime;
+		const touch = e.changedTouches[0];
+		if (touch) {
+			const deltaX = Math.abs(touch.clientX - touchStartPos.x);
+			const deltaY = Math.abs(touch.clientY - touchStartPos.y);
+			
+			// Block rapid taps and swipes during video
+			if (touchDuration < 200 || deltaX > 50 || deltaY > 50) {
+				const target = e.target;
+				if (target === adVideo || target.closest('#adVideo')) {
+					console.log('[MEDIA-BLOCK] Touch gesture blocked on video');
+					e.preventDefault();
+					e.stopPropagation();
+					return false;
+				}
+			}
+		}
+	}, { passive: false });
+	
+	// 5. Block right-click context menu on video
+	adVideo.addEventListener('contextmenu', function(e) {
+		console.log('[MEDIA-BLOCK] Context menu blocked');
+		e.preventDefault();
+		return false;
+	});
+	
+	// 6. Block video-specific controls
+	adVideo.addEventListener('seeked', function(e) {
+		if (adSequenceActive) {
+			console.log('[MEDIA-BLOCK] Manual seek attempt blocked');
+			// Don't allow manual seeking during ads
+			e.preventDefault();
+			return false;
+		}
+	});
+	
+	// 7. Disable video controls attribute dynamically
+	adVideo.removeAttribute('controls');
+	adVideo.controls = false;
+	
+	// 8. Override video methods that could be used to skip
+	const originalPlay = adVideo.play.bind(adVideo);
+	const originalPause = adVideo.pause.bind(adVideo);
+	const originalLoad = adVideo.load.bind(adVideo);
+	
+	adVideo.play = function() {
+		console.log('[MEDIA-BLOCK] Play() called - controlled execution');
+		return originalPlay();
+	};
+	
+	adVideo.pause = function() {
+		if (adSequenceActive) {
+			console.log('[MEDIA-BLOCK] Pause() blocked during ad sequence');
+			return;
+		}
+		return originalPause();
+	};
+	
+	// 10. Block picture-in-picture programmatically
+	if (adVideo.disablePictureInPicture !== undefined) {
+		adVideo.disablePictureInPicture = true;
+	}
+	
+	// Block PiP events
+	adVideo.addEventListener('enterpictureinpicture', function(e) {
+		console.log('[MEDIA-BLOCK] Picture-in-Picture blocked');
+		e.preventDefault();
+		if (document.pictureInPictureElement) {
+			document.exitPictureInPicture().catch(() => {});
+		}
+		return false;
+	});
+	
+	// Block fullscreen exit attempts during video
+	document.addEventListener('fullscreenchange', function() {
+		if (adSequenceActive && !document.fullscreenElement) {
+			console.log('[MEDIA-BLOCK] Fullscreen exit during video - attempting re-enter');
+			// Optionally re-enter fullscreen
+		}
+	});
+	
+	// 10. Block page visibility changes that could pause video
+	document.addEventListener('visibilitychange', function() {
+		if (adSequenceActive && document.hidden) {
+			console.log('[MEDIA-BLOCK] Page hidden during video - maintaining playback');
+			// Keep video playing even when page is hidden
+			if (adVideo.paused) {
+				adVideo.play().catch(() => {});
+			}
+		}
+	});
+	
+	console.log('[MEDIA-BLOCK] All media control blocking systems activated');
+}
+
+// Initialize media blocking
+blockMediaControls();
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// END MEDIA CONTROL BLOCKING
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
 const skipBtn=document.getElementById('skipBtn');
 const muteBtn=document.getElementById('muteBtn');
 const playPauseBtn=document.getElementById('playPauseBtn');
@@ -2467,6 +2784,14 @@ function startAdSequence(bundleSize){
 	
 	currentAdIndex=0;
 	adSequenceActive=true;
+	
+	// ═══ ACTIVATE ANTI-MANIPULATION PROTECTION ═══
+	const videoShell = document.querySelector('.video-shell');
+	const adPlayer = document.querySelector('.ad-player');
+	if (videoShell) {
+		videoShell.classList.add('ad-active');
+		console.log('[MEDIA-BLOCK] Anti-manipulation protection ACTIVATED');
+	}
 	
 	// INSTANT UI SETUP - No delays
 	document.querySelector('.bundle-list').style.display='none';
@@ -3581,6 +3906,13 @@ function closeAccessModal(){
 	if(lastFocusedBeforeModal) lastFocusedBeforeModal.focus();
 	// End sequence if still active and release all wake lock systems
 	adSequenceActive=false;
+	
+	// ═══ DEACTIVATE ANTI-MANIPULATION PROTECTION ═══
+	const videoShell = document.querySelector('.video-shell');
+	if (videoShell) {
+		videoShell.classList.remove('ad-active');
+		console.log('[MEDIA-BLOCK] Anti-manipulation protection DEACTIVATED');
+	}
 	stopAdWakeLockReinforcement(); // Stop the reinforcement system
 	releaseWakeLock();
 	disableSpatialAudioSimulation();

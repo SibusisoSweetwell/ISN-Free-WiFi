@@ -2099,6 +2099,24 @@ app.post('/login', adminLimiter, (req, res)=>{
   return res.status(302).redirect('/login.html?message=invalid_credentials');
 });
 
+// Special route to redirect to Render for testing
+app.get('/test-render', (req,res)=>{
+  res.redirect(`https://${RENDER_HOST}`);
+});
+
+// Special route for direct local access (bypasses redirects)
+app.get('/local', (req,res)=>{
+  res.redirect('/login.html?local=true');
+});
+
+app.get('/local-login', (req,res)=>{
+  res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+app.get('/local-home', (req,res)=>{
+  res.sendFile(path.join(__dirname, 'home.html'));
+});
+
 // Root shortcut -> redirect to portal page with enhanced device authentication check
 app.get('/', (req,res)=> {
   const clientIp = (req.headers['x-forwarded-for']||'').split(',')[0].trim() || req.socket.remoteAddress || '';
@@ -3005,27 +3023,16 @@ app.get('/api/_debug/storage', (req, res) => {
 app.get('/api/portal/config', (req,res)=>{
   try {
     const ips = localIPv4s();
-    const clientIP = req.ip || req.connection.remoteAddress || '';
     
-    // Smart detection: if client is on local network, use local IP
-    // Otherwise use Render hostname for production
-    let hostDisplay;
-    let protocol = 'http';
-    
-    if (process.env.NODE_ENV === 'production' && !clientIP.startsWith('192.168.') && !clientIP.startsWith('10.') && !clientIP.startsWith('172.')) {
-      // Production deployment accessed from internet
-      hostDisplay = RENDER_HOST;
-      protocol = 'https';
-    } else {
-      // Local hotspot or development environment
-      hostDisplay = process.env.PROXY_DISPLAY_HOST || ips[0] || 'localhost';
-      protocol = 'http';
-    }
+    // FORCE RENDER TESTING: Always use Render hostname for proxy testing
+    // This allows testing the live Render deployment even from local hotspot
+    const hostDisplay = RENDER_HOST; // Always use isn-free-wifi.onrender.com
+    const protocol = 'https'; // Always use HTTPS for Render
     
     const portalPort = PORT; // current bound express port (may have auto-incremented)
     const proxyPort = PROXY_PORT;
     const pacUrl = `${protocol}://${hostDisplay}/proxy.pac`;
-    res.json({ ok:true, host: hostDisplay, portalPort, proxyPort, lanIps: ips, pacUrl, clientIP, detectedEnv: process.env.NODE_ENV || 'development' });
+    res.json({ ok:true, host: hostDisplay, portalPort, proxyPort, lanIps: ips, pacUrl, mode: 'render-testing' });
   } catch(err){
     res.status(500).json({ ok:false, message:'config error' });
   }
@@ -3410,15 +3417,41 @@ function startProxy(){
     const hostHeader = rawHostHeader.split(':')[0].toLowerCase();
     const clientIp = (clientReq.socket && clientReq.socket.remoteAddress) || '';
     let mappedIdentifier = resolveActiveClient(clientIp);
+    
+    // Check if user has watched videos (device-based check)
+    const deviceId = generateDeviceFingerprint({ socket: { remoteAddress: clientIp }, headers: clientReq.headers });
+    const deviceVideoCount = getDeviceVideoCount(deviceId);
+    const hasWatchedVideos = deviceVideoCount >= 5; // Need 5 videos for internet access
+    
     // Early redirect: if client is trying to reach the old server IP's login page
     // while using the proxy, redirect them to the Render-hosted portal instead.
     try {
       const parsedEarly = url.parse(clientReq.url || '');
       const earlyPath = parsedEarly.path || clientReq.url || '/';
+      
+      // Special case: Allow direct access to local server if explicitly requested
+      const allowLocalAccess = earlyPath.includes('?local=true') || clientReq.headers['x-local-access'] === 'true';
+      
       if (hostHeader === '10.5.48.94' && (earlyPath === '/' || earlyPath.startsWith('/login'))) {
-        const targetUrl = `https://${RENDER_HOST}/login.html`;
+        if (allowLocalAccess) {
+          // Allow direct access to local server for testing
+          console.log('[LOCAL-ACCESS-ALLOWED]', { ip: clientIp, path: earlyPath });
+          // Continue to normal proxy handling (don't redirect)
+        } else {
+          // Redirect to Render site
+          const targetUrl = `https://${RENDER_HOST}/login.html`;
+          clientRes.writeHead(302, { Location: targetUrl, 'Content-Type': 'text/html' });
+          clientRes.end(`<html><body>Redirecting to <a href="${targetUrl}">${targetUrl}</a></body></html>`);
+          return;
+        }
+      }
+      
+      // NEW: Auto-redirect users who haven't watched videos to Render site
+      if (!hasWatchedVideos && hostHeader !== '10.5.48.94' && hostHeader !== RENDER_HOST.split(':')[0]) {
+        console.log('[AUTO-REDIRECT-NO-VIDEOS]', { ip: clientIp, deviceVideoCount, host: hostHeader });
+        const targetUrl = `https://${RENDER_HOST}/?source=auto_redirect&blocked_host=${encodeURIComponent(hostHeader)}`;
         clientRes.writeHead(302, { Location: targetUrl, 'Content-Type': 'text/html' });
-        clientRes.end(`<html><body>Redirecting to <a href="${targetUrl}">${targetUrl}</a></body></html>`);
+        clientRes.end(`<html><body><h2>Watch Videos to Access Internet</h2><p>You need to watch videos first to access the internet.</p><p><a href="${targetUrl}">Click here to watch videos and earn internet access</a></p></body></html>`);
         return;
       }
     } catch (e) {
