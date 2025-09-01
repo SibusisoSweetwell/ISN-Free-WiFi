@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Video Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
+        video { width: 100%; max-width: 640px; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .loading { background: #fff3cd; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+    </style>
+</head>
+<body>
+    <h1>Simple Video Test</h1>
+    
+    <div class="test">
+        <h3>Test 1: Working VideoJS Ocean (Control)</h3>
+        <div id="status1" class="status loading">Loading...</div>
+        <video id="video1" controls>
+            <source src="http://localhost:3150/proxy?url=https%3A%2F%2Fvjs.zencdn.net%2Fv%2Foceans.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <div class="test">
+        <h3>Test 2: Google CDN Video</h3>
+        <div id="status2" class="status loading">Loading...</div>
+        <video id="video2" controls>
+            <source src="http://localhost:3150/proxy?url=https%3A%2F%2Fcommondatastorage.googleapis.com%2Fgtv-videos-bucket%2Fsample%2FBigBuckBunny.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <div class="test">
+        <h3>Test 3: Direct Access (No Proxy)</h3>
+        <div id="status3" class="status loading">Loading...</div>
+        <video id="video3" controls crossorigin="anonymous">
+            <source src="https://vjs.zencdn.net/v/oceans.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <script>
+        function setupVideoTest(videoId, statusId) {
+            const video = document.getElementById(videoId);
+            const status = document.getElementById(statusId);
+            
+            video.addEventListener('loadstart', () => {
+                status.textContent = 'Started loading...';
+                status.className = 'status loading';
+                console.log(`${videoId}: loadstart`);
+            });
+            
+            video.addEventListener('loadedmetadata', () => {
+                status.textContent = `Metadata loaded (${video.duration}s, ${video.videoWidth}x${video.videoHeight})`;
+                console.log(`${videoId}: loadedmetadata`, {duration: video.duration, width: video.videoWidth, height: video.videoHeight});
+            });
+            
+            video.addEventListener('canplay', () => {
+                status.textContent = 'Can play - Ready!';
+                status.className = 'status success';
+                console.log(`${videoId}: canplay`);
+            });
+            
+            video.addEventListener('playing', () => {
+                status.textContent = 'Playing';
+                status.className = 'status success';
+                console.log(`${videoId}: playing`);
+            });
+            
+            video.addEventListener('error', (e) => {
+                const error = video.error;
+                let errorMsg = 'Unknown error';
+                if (error) {
+                    switch (error.code) {
+                        case error.MEDIA_ERR_ABORTED: errorMsg = 'Playback aborted'; break;
+                        case error.MEDIA_ERR_NETWORK: errorMsg = 'Network error'; break;
+                        case error.MEDIA_ERR_DECODE: errorMsg = 'Decode error'; break;
+                        case error.MEDIA_ERR_SRC_NOT_SUPPORTED: errorMsg = 'Source not supported'; break;
+                    }
+                }
+                status.textContent = `Error: ${errorMsg}`;
+                status.className = 'status error';
+                console.error(`${videoId}: error`, errorMsg, error);
+            });
+            
+            video.addEventListener('stalled', () => {
+                console.warn(`${videoId}: stalled`);
+            });
+            
+            video.addEventListener('waiting', () => {
+                console.warn(`${videoId}: waiting for data`);
+            });
+        }
+        
+        // Setup all video tests
+        setupVideoTest('video1', 'status1');
+        setupVideoTest('video2', 'status2');
+        setupVideoTest('video3', 'status3');
+        
+        console.log('Simple video test initialized');
+    </script>
+</body>
+</html>

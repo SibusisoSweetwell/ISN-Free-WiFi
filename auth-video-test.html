@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authenticated Video Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        video { width: 100%; max-width: 640px; height: 360px; }
+        .loading { background: #fff3cd; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+        .controls { margin: 10px 0; }
+        button { margin: 5px; padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>Authenticated Video Test</h1>
+    <p>Testing videos after authentication bypass...</p>
+
+    <div class="test">
+        <h3>Test: Working VideoJS Ocean Video</h3>
+        <div class="controls">
+            <button onclick="loadVideo1()">Load Video</button>
+            <button onclick="playVideo1()">Play</button>
+            <button onclick="testVideo1Range()">Test Range Request</button>
+        </div>
+        <div id="status1" class="status">Ready to test</div>
+        <video id="video1" controls preload="none">
+        </video>
+        <div id="info1" style="font-family: monospace; font-size: 12px; margin-top: 10px;"></div>
+    </div>
+
+    <div class="test">
+        <h3>Test: Google CDN Video (Known Issues)</h3>
+        <div class="controls">
+            <button onclick="loadVideo2()">Load Video</button>
+            <button onclick="playVideo2()">Play</button>
+            <button onclick="testVideo2Range()">Test Range Request</button>
+        </div>
+        <div id="status2" class="status">Ready to test</div>
+        <video id="video2" controls preload="none">
+        </video>
+        <div id="info2" style="font-family: monospace; font-size: 12px; margin-top: 10px;"></div>
+    </div>
+
+    <div class="test">
+        <h3>Direct Range Request Tests</h3>
+        <button onclick="testDirectRange('oceanvjs')">Test Ocean Range</button>
+        <button onclick="testDirectRange('googlecdn')">Test Google CDN Range</button>
+        <div id="rangeResults" style="font-family: monospace; font-size: 12px; margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        const video1 = document.getElementById('video1');
+        const video2 = document.getElementById('video2');
+        const status1 = document.getElementById('status1');
+        const status2 = document.getElementById('status2');
+        const info1 = document.getElementById('info1');
+        const info2 = document.getElementById('info2');
+
+        const videos = {
+            ocean: 'http://localhost:3150/proxy?url=https%3A%2F%2Fvjs.zencdn.net%2Fv%2Foceans.mp4',
+            google: 'http://localhost:3150/proxy?url=https%3A%2F%2Fcommondatastorage.googleapis.com%2Fgtv-videos-bucket%2Fsample%2FBigBuckBunny.mp4'
+        };
+
+        function setupVideoEvents(video, statusEl, infoEl, name) {
+            const events = [];
+            
+            function logEvent(event, data = '') {
+                const time = new Date().toLocaleTimeString();
+                events.push(`[${time}] ${event}: ${data}`);
+                infoEl.innerHTML = events.slice(-10).join('<br>');
+                console.log(`${name} - ${event}:`, data);
+            }
+
+            video.addEventListener('loadstart', () => {
+                statusEl.textContent = 'Loading started...';
+                statusEl.className = 'status loading';
+                logEvent('loadstart');
+            });
+
+            video.addEventListener('loadedmetadata', () => {
+                statusEl.textContent = `Metadata loaded (${video.duration.toFixed(1)}s)`;
+                logEvent('loadedmetadata', `${video.duration}s, ${video.videoWidth}x${video.videoHeight}`);
+            });
+
+            video.addEventListener('loadeddata', () => {
+                logEvent('loadeddata', 'First frame ready');
+            });
+
+            video.addEventListener('canplay', () => {
+                statusEl.textContent = 'Can play!';
+                statusEl.className = 'status success';
+                logEvent('canplay');
+            });
+
+            video.addEventListener('canplaythrough', () => {
+                logEvent('canplaythrough', 'Can play through');
+            });
+
+            video.addEventListener('playing', () => {
+                statusEl.textContent = 'Playing';
+                statusEl.className = 'status success';
+                logEvent('playing');
+            });
+
+            video.addEventListener('waiting', () => {
+                logEvent('waiting', 'Buffering...');
+            });
+
+            video.addEventListener('stalled', () => {
+                logEvent('stalled', 'Download stalled');
+            });
+
+            video.addEventListener('error', (e) => {
+                const error = video.error;
+                let msg = 'Unknown error';
+                if (error) {
+                    const codes = {
+                        1: 'MEDIA_ERR_ABORTED',
+                        2: 'MEDIA_ERR_NETWORK', 
+                        3: 'MEDIA_ERR_DECODE',
+                        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+                    };
+                    msg = codes[error.code] || `Error code ${error.code}`;
+                }
+                statusEl.textContent = `Error: ${msg}`;
+                statusEl.className = 'status error';
+                logEvent('error', msg);
+            });
+
+            video.addEventListener('progress', () => {
+                if (video.buffered.length > 0) {
+                    const buffered = video.buffered.end(video.buffered.length - 1);
+                    const percent = ((buffered / video.duration) * 100).toFixed(1);
+                    logEvent('progress', `${percent}% buffered`);
+                }
+            });
+        }
+
+        setupVideoEvents(video1, status1, info1, 'Ocean');
+        setupVideoEvents(video2, status2, info2, 'Google');
+
+        function loadVideo1() {
+            video1.src = videos.ocean;
+            video1.load();
+        }
+
+        function loadVideo2() {
+            video2.src = videos.google;
+            video2.load();
+        }
+
+        function playVideo1() {
+            video1.play().catch(e => console.error('Play failed:', e));
+        }
+
+        function playVideo2() {
+            video2.play().catch(e => console.error('Play failed:', e));
+        }
+
+        async function testVideo1Range() {
+            await testRangeRequest(videos.ocean, 'Ocean VJS');
+        }
+
+        async function testVideo2Range() {
+            await testRangeRequest(videos.google, 'Google CDN');
+        }
+
+        async function testDirectRange(type) {
+            const urls = {
+                oceanvjs: videos.ocean,
+                googlecdn: videos.google
+            };
+            await testRangeRequest(urls[type], type);
+        }
+
+        async function testRangeRequest(url, name) {
+            const results = document.getElementById('rangeResults');
+            results.innerHTML += `<br><strong>Testing ${name}:</strong><br>`;
+
+            try {
+                // Test 1: HEAD request
+                console.log(`Testing HEAD request for ${name}`);
+                const headStart = performance.now();
+                const headResponse = await fetch(url, { method: 'HEAD' });
+                const headTime = (performance.now() - headStart).toFixed(2);
+                results.innerHTML += `HEAD: ${headResponse.status} in ${headTime}ms - Length: ${headResponse.headers.get('content-length')}<br>`;
+
+                // Test 2: Range request (first 1KB)
+                console.log(`Testing Range request for ${name}`);
+                const rangeStart = performance.now();
+                const rangeResponse = await fetch(url, { 
+                    headers: { 'Range': 'bytes=0-1023' }
+                });
+                const rangeTime = (performance.now() - rangeStart).toFixed(2);
+                results.innerHTML += `Range 0-1023: ${rangeResponse.status} in ${rangeTime}ms - Accept-Ranges: ${rangeResponse.headers.get('accept-ranges')}<br>`;
+
+                // Test 3: Full request with timeout
+                console.log(`Testing Full request for ${name}`);
+                const fullStart = performance.now();
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
+                try {
+                    const fullResponse = await fetch(url, { 
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    const fullTime = (performance.now() - fullStart).toFixed(2);
+                    results.innerHTML += `Full request: ${fullResponse.status} in ${fullTime}ms<br>`;
+                } catch (fetchError) {
+                    clearTimeout(timeoutId);
+                    const fullTime = (performance.now() - fullStart).toFixed(2);
+                    results.innerHTML += `Full request FAILED: ${fetchError.message} after ${fullTime}ms<br>`;
+                }
+
+            } catch (error) {
+                results.innerHTML += `ERROR: ${error.message}<br>`;
+            }
+        }
+
+        // Auto-load ocean video on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, testing authenticated video access');
+            loadVideo1();
+        });
+    </script>
+</body>
+</html>

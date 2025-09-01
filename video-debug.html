@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .video-container {
+            width: 100%;
+            height: 400px;
+            background: #000;
+            border-radius: 8px;
+            position: relative;
+            margin: 20px 0;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+        }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Video Loading Debug Test</h1>
+        <p>This page will help us debug why videos are showing "Loading..." but not playing.</p>
+        
+        <div class="status" id="status">Ready to test...</div>
+        
+        <div class="controls">
+            <button onclick="testProxyUrl()">Test Proxy URL Generation</button>
+            <button onclick="testVideoLoading()">Test Video Loading</button>
+            <button onclick="testDirectVideo()">Test Direct Video (No Proxy)</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="video-container">
+            <video id="testVideo" controls muted autoplay crossorigin="anonymous"></video>
+            <div class="loading" id="loading">Loading...</div>
+        </div>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('testVideo');
+        const loading = document.getElementById('loading');
+        const logDiv = document.getElementById('log');
+        const status = document.getElementById('status');
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            console.log(logEntry);
+            logDiv.innerHTML += logEntry + '<br>';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+        
+        function updateStatus(message) {
+            status.textContent = message;
+            log(`STATUS: ${message}`);
+        }
+        
+        function showLoading() {
+            loading.style.display = 'block';
+        }
+        
+        function hideLoading() {
+            loading.style.display = 'none';
+        }
+        
+        // Proxy URL generation function (same as in home.html - FIXED)
+        function proxyUrl(originalUrl) {
+            if (!originalUrl) return '';
+            const base = window.location.origin; // This will use the correct port (3150)
+            return `${base}/proxy?url=${encodeURIComponent(originalUrl)}`;
+        }
+        
+        // Test URLs from our mp4Ads array
+        const testVideos = [
+            'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            'https://vjs.zencdn.net/v/oceans.mp4',
+            'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4'
+        ];
+        
+        function testProxyUrl() {
+            log('=== TESTING PROXY URL GENERATION ===');
+            testVideos.forEach((url, index) => {
+                const proxy = proxyUrl(url);
+                log(`Video ${index + 1}:`);
+                log(`  Original: ${url}`);
+                log(`  Proxy: ${proxy}`);
+            });
+            updateStatus('Proxy URL test completed');
+        }
+        
+        function setupVideoEvents() {
+            // Clear previous event listeners
+            const newVideo = video.cloneNode(true);
+            video.parentNode.replaceChild(newVideo, video);
+            const v = document.getElementById('testVideo');
+            
+            v.addEventListener('loadstart', () => {
+                log('[VIDEO] loadstart - Loading has begun');
+                showLoading();
+                updateStatus('Loading started...');
+            });
+            
+            v.addEventListener('loadedmetadata', () => {
+                log('[VIDEO] loadedmetadata - Metadata loaded');
+                log(`[VIDEO] Duration: ${v.duration}s, Video dimensions: ${v.videoWidth}x${v.videoHeight}`);
+            });
+            
+            v.addEventListener('loadeddata', () => {
+                log('[VIDEO] loadeddata - Video data loaded');
+                hideLoading();
+                updateStatus('Video data loaded, attempting play...');
+            });
+            
+            v.addEventListener('canplay', () => {
+                log('[VIDEO] canplay - Video can start playing');
+                hideLoading();
+                updateStatus('Video ready to play');
+            });
+            
+            v.addEventListener('canplaythrough', () => {
+                log('[VIDEO] canplaythrough - Video can play without buffering');
+            });
+            
+            v.addEventListener('playing', () => {
+                log('[VIDEO] playing - Video is now playing');
+                hideLoading();
+                updateStatus('Video is playing!');
+            });
+            
+            v.addEventListener('waiting', () => {
+                log('[VIDEO] waiting - Video is buffering');
+                showLoading();
+                updateStatus('Buffering...');
+            });
+            
+            v.addEventListener('error', (e) => {
+                log('[VIDEO] error - Video error occurred');
+                hideLoading();
+                if (v.error) {
+                    log(`[VIDEO] Error code: ${v.error.code}`);
+                    log(`[VIDEO] Error message: ${v.error.message || 'Unknown error'}`);
+                    
+                    const errorMessages = {
+                        1: 'MEDIA_ERR_ABORTED - Video loading aborted',
+                        2: 'MEDIA_ERR_NETWORK - Network error loading video',
+                        3: 'MEDIA_ERR_DECODE - Video decode error',
+                        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - Video format not supported'
+                    };
+                    
+                    const errorMsg = errorMessages[v.error.code] || 'Unknown error';
+                    log(`[VIDEO] Error details: ${errorMsg}`);
+                    updateStatus(`Error: ${errorMsg}`);
+                }
+            });
+            
+            v.addEventListener('pause', () => {
+                log('[VIDEO] pause - Video paused');
+            });
+            
+            v.addEventListener('ended', () => {
+                log('[VIDEO] ended - Video finished');
+                updateStatus('Video completed');
+            });
+            
+            return v;
+        }
+        
+        async function testVideoLoading() {
+            log('=== TESTING VIDEO LOADING WITH PROXY ===');
+            updateStatus('Setting up video test...');
+            
+            const v = setupVideoEvents();
+            const testUrl = testVideos[0]; // Use BigBuckBunny
+            const proxyTestUrl = proxyUrl(testUrl);
+            
+            log(`Testing with URL: ${testUrl}`);
+            log(`Proxy URL: ${proxyTestUrl}`);
+            
+            updateStatus('Loading video through proxy...');
+            
+            try {
+                v.src = proxyTestUrl;
+                log('[VIDEO] Video src set, calling load()');
+                v.load();
+                
+                // Try to play after a short delay
+                setTimeout(async () => {
+                    try {
+                        log('[VIDEO] Attempting to play...');
+                        await v.play();
+                        log('[VIDEO] Play command successful');
+                    } catch (playError) {
+                        log(`[VIDEO] Play failed: ${playError.message}`);
+                        updateStatus(`Play failed: ${playError.message}`);
+                        
+                        // Try unmuting and playing again
+                        if (v.muted) {
+                            log('[VIDEO] Trying to unmute and play...');
+                            v.muted = false;
+                            try {
+                                await v.play();
+                                log('[VIDEO] Play successful after unmuting');
+                            } catch (unmuteError) {
+                                log(`[VIDEO] Play failed even after unmuting: ${unmuteError.message}`);
+                            }
+                        }
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                log(`[VIDEO] Setup error: ${error.message}`);
+                updateStatus(`Setup error: ${error.message}`);
+            }
+        }
+        
+        async function testDirectVideo() {
+            log('=== TESTING DIRECT VIDEO (NO PROXY) ===');
+            updateStatus('Setting up direct video test...');
+            
+            const v = setupVideoEvents();
+            const testUrl = testVideos[0]; // Use BigBuckBunny directly
+            
+            log(`Testing direct URL: ${testUrl}`);
+            updateStatus('Loading video directly...');
+            
+            try {
+                v.src = testUrl;
+                log('[VIDEO] Direct video src set, calling load()');
+                v.load();
+                
+                // Try to play after a short delay
+                setTimeout(async () => {
+                    try {
+                        log('[VIDEO] Attempting to play...');
+                        await v.play();
+                        log('[VIDEO] Direct play command successful');
+                    } catch (playError) {
+                        log(`[VIDEO] Direct play failed: ${playError.message}`);
+                        updateStatus(`Direct play failed: ${playError.message}`);
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                log(`[VIDEO] Direct setup error: ${error.message}`);
+                updateStatus(`Direct setup error: ${error.message}`);
+            }
+        }
+        
+        // Initialize
+        log('Video Debug Test initialized');
+        updateStatus('Ready to test video loading');
+    </script>
+</body>
+</html>

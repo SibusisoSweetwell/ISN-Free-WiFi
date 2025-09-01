@@ -2168,6 +2168,22 @@ app.use((req, res, next) => {
   const hasProxyHeaders = req.headers['proxy-connection'] || req.headers['proxy-authorization'];
   const isDirectConnection = !hasProxyHeaders && !req.path.includes('proxy');
   
+  // BYPASS AUTHENTICATION for video CDN proxy requests
+  if ((req.path === '/proxy' || req.path === '/video-stream') && req.query.url) {
+    try {
+      const targetUrl = req.query.url;
+      const urlObj = new URL(targetUrl);
+      const hostHeader = urlObj.hostname;
+      
+      if (isVideoAdCDN(hostHeader)) {
+        console.log('[VIDEO-PROXY-BYPASS] Allowing unauthenticated access to video CDN:', hostHeader);
+        return next(); // Allow access to video proxy for CDN domains
+      }
+    } catch (e) {
+      // Invalid URL, continue with normal auth check
+    }
+  }
+  
   // FORCE redirect ANY unauthenticated user to portal (manual proxy, auto proxy, and no proxy users)
   if (!clientInfo || !clientInfo.identifier) {
     const connectionType = hasProxyHeaders ? 'proxy' : 'direct';
@@ -6762,6 +6778,112 @@ app.get('/api/me/profile', (req,res)=>{
 });
 
 // ===========================================
+// DEDICATED VIDEO STREAMING PROXY ENDPOINT
+// ===========================================
+// Specialized endpoint for video streaming with proper range request handling
+app.get('/video-stream', async (req, res) => {
+  const targetUrl = req.query.url;
+  
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing URL parameter' });
+  }
+
+  try {
+    console.log('[VIDEO-STREAM] Streaming video:', targetUrl);
+    
+    const isHttps = targetUrl.startsWith('https://');
+    const httpModule = isHttps ? https : http;
+    const urlParts = new URL(targetUrl);
+    
+    // Enhanced options specifically for video streaming
+    const options = {
+      hostname: urlParts.hostname,
+      port: urlParts.port || (isHttps ? 443 : 80),
+      path: urlParts.pathname + urlParts.search,
+      method: req.method,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+        'Accept-Encoding': 'identity',
+        'Connection': 'keep-alive',
+        'Cache-Control': 'no-cache'
+      },
+      timeout: 0,  // No timeout for streaming
+      keepAlive: true,
+      keepAliveMsecs: 30000
+    };
+
+    // Forward Range header for video seeking
+    if (req.headers.range) {
+      options.headers.Range = req.headers.range;
+      console.log('[VIDEO-STREAM] Range request:', req.headers.range);
+    }
+
+    const proxyReq = httpModule.request(options, (proxyRes) => {
+      console.log('[VIDEO-STREAM] Response status:', proxyRes.statusCode);
+      
+      // Set streaming-optimized headers
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': 'Range, Content-Type',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+        'Cache-Control': 'public, max-age=3600',
+        'Accept-Ranges': 'bytes'
+      });
+
+      // Forward all response headers
+      Object.keys(proxyRes.headers).forEach(key => {
+        res.set(key, proxyRes.headers[key]);
+      });
+
+      res.status(proxyRes.statusCode);
+
+      // Enable streaming with proper flow control
+      let bytesStreamed = 0;
+      proxyRes.on('data', (chunk) => {
+        bytesStreamed += chunk.length;
+        if (bytesStreamed % 1000000 === 0) { // Log every MB
+          console.log('[VIDEO-STREAM] Streamed:', Math.round(bytesStreamed / 1024 / 1024), 'MB');
+        }
+      });
+
+      proxyRes.on('end', () => {
+        console.log('[VIDEO-STREAM] Streaming complete:', bytesStreamed, 'bytes for', targetUrl);
+      });
+
+      proxyRes.on('error', (err) => {
+        console.error('[VIDEO-STREAM] Response error:', err.message);
+      });
+
+      // Pipe the response with backpressure handling
+      proxyRes.pipe(res, { end: true });
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[VIDEO-STREAM] Request error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Video streaming failed', details: err.message });
+      }
+    });
+
+    // No timeout for video streaming
+    proxyReq.on('socket', (socket) => {
+      socket.setTimeout(0); // Remove timeout
+      socket.setKeepAlive(true, 30000);
+    });
+
+    proxyReq.end();
+
+  } catch (err) {
+    console.error('[VIDEO-STREAM] Error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Video streaming error', details: err.message });
+    }
+  }
+});
+
+// ===========================================
 // PROXY ENDPOINT FOR UNRESTRICTED AD ACCESS
 // ===========================================
 // Proxy endpoint to provide unrestricted access to ad content
@@ -6771,6 +6893,13 @@ app.get('/proxy', async (req, res) => {
   
   if (!targetUrl) {
     return res.status(400).json({ error: 'Missing URL parameter' });
+  }
+
+  // Check if this is a video request and redirect to video streaming endpoint
+  if (targetUrl.includes('.mp4') || targetUrl.includes('video') || targetUrl.includes('gtv-videos') || targetUrl.includes('zencdn')) {
+    console.log('[PROXY] Redirecting video request to streaming endpoint:', targetUrl);
+    const streamUrl = `/video-stream?url=${encodeURIComponent(targetUrl)}`;
+    return res.redirect(streamUrl);
   }
 
   try {
@@ -6783,24 +6912,32 @@ app.get('/proxy', async (req, res) => {
     // Parse the target URL
     const urlParts = new URL(targetUrl);
     
-    // Set up request options
+    // Enhanced request options for better video streaming
     const options = {
       hostname: urlParts.hostname,
       port: urlParts.port || (isHttps ? 443 : 80),
       path: urlParts.pathname + urlParts.search,
       method: req.method,
       headers: {
-        'User-Agent': 'ISN-Free-WiFi-Proxy/1.0',
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+        'Accept-Encoding': 'identity;q=1, *;q=0',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'close',  // Force connection close to avoid keep-alive issues
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache'
-      }
+      },
+      // Enhanced connection settings for video streaming
+      timeout: 45000,  // Increased timeout for large video files
+      keepAlive: false  // Disable keep-alive to prevent connection reuse issues
     };
 
     // Forward specific headers if present
     if (req.headers.range) options.headers.Range = req.headers.range;
     if (req.headers.referer) options.headers.Referer = req.headers.referer;
+    
+    // Add Connection: close to response headers to prevent browser connection pooling issues
+    res.set('Connection', 'close');
 
     const proxyReq = httpModule.request(options, (proxyRes) => {
       // Set CORS headers for unrestricted access
@@ -6808,7 +6945,8 @@ app.get('/proxy', async (req, res) => {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
         'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
-        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges'
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+        'Connection': 'close'  // Prevent connection reuse issues
       });
 
       // Forward response headers
@@ -6821,27 +6959,58 @@ app.get('/proxy', async (req, res) => {
       // Set status code
       res.status(proxyRes.statusCode);
 
+      // Enhanced streaming for video content
+      let bytesReceived = 0;
+      proxyRes.on('data', (chunk) => {
+        bytesReceived += chunk.length;
+      });
+
+      proxyRes.on('end', () => {
+        console.log('[PROXY] Transfer complete:', bytesReceived, 'bytes for', targetUrl);
+      });
+
       // Stream the response
       proxyRes.pipe(res);
       
       console.log('[PROXY] Response:', proxyRes.statusCode, 'for', targetUrl);
     });
 
-    // Handle proxy request errors
+    // Enhanced error handling
     proxyReq.on('error', (err) => {
-      console.error('[PROXY] Request error:', err.message);
+      console.error('[PROXY] Request error for', targetUrl, ':', err.message);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Proxy request failed', details: err.message });
+        // Send more specific error responses
+        if (err.code === 'ENOTFOUND') {
+          res.status(502).json({ error: 'DNS resolution failed', details: err.message });
+        } else if (err.code === 'ECONNREFUSED') {
+          res.status(502).json({ error: 'Connection refused', details: err.message });
+        } else if (err.code === 'ETIMEDOUT') {
+          res.status(504).json({ error: 'Connection timeout', details: err.message });
+        } else {
+          res.status(500).json({ error: 'Proxy request failed', details: err.message });
+        }
       }
     });
 
-    // Handle timeouts
-    proxyReq.setTimeout(30000, () => {
-      console.error('[PROXY] Request timeout for:', targetUrl);
+    // Enhanced timeout handling with better logging
+    proxyReq.setTimeout(45000, () => {
+      console.error('[PROXY] Request timeout for:', targetUrl, '- destroying connection');
       proxyReq.destroy();
       if (!res.headersSent) {
-        res.status(504).json({ error: 'Proxy request timeout' });
+        res.status(504).json({ error: 'Proxy request timeout after 45 seconds' });
       }
+    });
+
+    // Handle socket errors
+    proxyReq.on('socket', (socket) => {
+      socket.on('timeout', () => {
+        console.error('[PROXY] Socket timeout for:', targetUrl);
+        proxyReq.destroy();
+      });
+      
+      socket.on('error', (err) => {
+        console.error('[PROXY] Socket error for', targetUrl, ':', err.message);
+      });
     });
 
     // Forward request body if present (for POST requests)
@@ -7388,15 +7557,20 @@ proxyApp.get('/', (req, res) => {
   });
 });
 
-// Start proxy server on port 8082
+// Using main proxy on port 8082 for all video traffic
+// Separate ad proxy commented out - videos will use main captive proxy
+/*
+// Start proxy server on port 8084 (different from main proxy on 8082)
+const AD_PROXY_PORT = 8084;
 try {
-  proxyApp.listen(PROXY_PORT, () => {
-    console.log(`[PROXY-SERVER] Unrestricted ad proxy running on port ${PROXY_PORT}`);
-    console.log(`[PROXY-SERVER] Usage: http://localhost:${PROXY_PORT}/proxy?url=<target_url>`);
+  proxyApp.listen(AD_PROXY_PORT, () => {
+    console.log(`[PROXY-SERVER] Unrestricted ad proxy running on port ${AD_PROXY_PORT}`);
+    console.log(`[PROXY-SERVER] Usage: http://localhost:${AD_PROXY_PORT}/proxy?url=<target_url>`);
   });
 } catch (err) {
-  console.error(`[PROXY-SERVER] Failed to start proxy on port ${PROXY_PORT}:`, err.message);
+  console.error(`[PROXY-SERVER] Failed to start proxy on port ${AD_PROXY_PORT}:`, err.message);
 }
+*/
 
 startExpress(PORT, 5);
 

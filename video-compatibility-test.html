@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Compatibility Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .video-test {
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin: 5px 0;
+            font-weight: bold;
+        }
+        .status.loading { background: #fff3cd; color: #856404; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        video {
+            width: 100%;
+            max-width: 640px;
+            height: 360px;
+            border: 1px solid #ccc;
+        }
+        .video-info {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video Compatibility Test</h1>
+    <p>Testing video playback through the proxy system to identify compatibility issues.</p>
+    
+    <div class="test-container">
+        <button class="test-button" onclick="testAllVideos()">Test All Videos</button>
+        <button class="test-button" onclick="clearResults()">Clear Results</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const PROXY_PORT = 3150;
+        
+        // Test videos from the working video list
+        const testVideos = [
+            {
+                name: "VideoJS Ocean (KNOWN WORKING)",
+                url: "https://vjs.zencdn.net/v/oceans.mp4",
+                description: "VideoJS CDN - MP4"
+            },
+            {
+                name: "Google CDN - Big Buck Bunny",
+                url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                description: "Google CDN - MP4"
+            },
+            {
+                name: "Google CDN - Elephant Dream",
+                url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+                description: "Google CDN - MP4"
+            },
+            {
+                name: "Google CDN - For Bigger Blazes",
+                url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                description: "Google CDN - MP4"
+            },
+            {
+                name: "Google CDN - Subaru Outback",
+                url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
+                description: "Google CDN - MP4"
+            },
+            {
+                name: "Learning Container",
+                url: "https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4",
+                description: "Learning Container - MP4"
+            }
+        ];
+
+        function proxyUrl(originalUrl) {
+            const encoded = encodeURIComponent(originalUrl);
+            return `http://localhost:${PROXY_PORT}/proxy?url=${encoded}`;
+        }
+
+        function createVideoTest(video, index) {
+            const testDiv = document.createElement('div');
+            testDiv.className = 'video-test';
+            testDiv.id = `test-${index}`;
+            
+            const proxiedUrl = proxyUrl(video.url);
+            
+            testDiv.innerHTML = `
+                <h3>${video.name}</h3>
+                <div class="video-info">
+                    <strong>Original URL:</strong> ${video.url}<br>
+                    <strong>Proxy URL:</strong> ${proxiedUrl}<br>
+                    <strong>Description:</strong> ${video.description}
+                </div>
+                <div id="status-${index}" class="status loading">Loading...</div>
+                <video id="video-${index}" controls preload="metadata">
+                    <source src="${proxiedUrl}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div id="events-${index}" class="video-info"></div>
+            `;
+            
+            return testDiv;
+        }
+
+        function setupVideoEvents(video, index) {
+            const statusDiv = document.getElementById(`status-${index}`);
+            const eventsDiv = document.getElementById(`events-${index}`);
+            let events = [];
+
+            function logEvent(eventName, data = '') {
+                const timestamp = new Date().toLocaleTimeString();
+                events.push(`[${timestamp}] ${eventName}: ${data}`);
+                eventsDiv.innerHTML = events.join('<br>');
+                console.log(`Video ${index} - ${eventName}:`, data);
+            }
+
+            // Video events
+            video.addEventListener('loadstart', () => {
+                logEvent('loadstart', 'Started loading');
+                statusDiv.textContent = 'Loading...';
+                statusDiv.className = 'status loading';
+            });
+
+            video.addEventListener('loadedmetadata', () => {
+                logEvent('loadedmetadata', `Duration: ${video.duration}s, Dimensions: ${video.videoWidth}x${video.videoHeight}`);
+            });
+
+            video.addEventListener('loadeddata', () => {
+                logEvent('loadeddata', 'First frame loaded');
+            });
+
+            video.addEventListener('canplay', () => {
+                logEvent('canplay', 'Can start playing');
+                statusDiv.textContent = 'Ready to play';
+                statusDiv.className = 'status success';
+            });
+
+            video.addEventListener('canplaythrough', () => {
+                logEvent('canplaythrough', 'Can play through without buffering');
+            });
+
+            video.addEventListener('playing', () => {
+                logEvent('playing', 'Started playing');
+                statusDiv.textContent = 'Playing';
+                statusDiv.className = 'status success';
+            });
+
+            video.addEventListener('pause', () => {
+                logEvent('pause', 'Paused');
+            });
+
+            video.addEventListener('ended', () => {
+                logEvent('ended', 'Playback ended');
+            });
+
+            video.addEventListener('error', (e) => {
+                const error = video.error;
+                let errorMsg = 'Unknown error';
+                if (error) {
+                    switch (error.code) {
+                        case error.MEDIA_ERR_ABORTED:
+                            errorMsg = 'Playback aborted';
+                            break;
+                        case error.MEDIA_ERR_NETWORK:
+                            errorMsg = 'Network error';
+                            break;
+                        case error.MEDIA_ERR_DECODE:
+                            errorMsg = 'Decode error';
+                            break;
+                        case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            errorMsg = 'Source not supported';
+                            break;
+                    }
+                }
+                logEvent('error', `${errorMsg} (Code: ${error ? error.code : 'unknown'})`);
+                statusDiv.textContent = `Error: ${errorMsg}`;
+                statusDiv.className = 'status error';
+            });
+
+            video.addEventListener('stalled', () => {
+                logEvent('stalled', 'Download stalled');
+            });
+
+            video.addEventListener('waiting', () => {
+                logEvent('waiting', 'Waiting for data');
+            });
+
+            video.addEventListener('progress', () => {
+                if (video.buffered.length > 0) {
+                    const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                    const duration = video.duration;
+                    if (duration > 0) {
+                        const percent = (bufferedEnd / duration * 100).toFixed(1);
+                        logEvent('progress', `Buffered: ${percent}%`);
+                    }
+                }
+            });
+
+            // Test direct URL accessibility
+            fetch(proxyUrl(testVideos[index].url), { method: 'HEAD' })
+                .then(response => {
+                    logEvent('fetch-test', `Response: ${response.status} ${response.statusText}, Content-Type: ${response.headers.get('content-type')}, Content-Length: ${response.headers.get('content-length')}`);
+                })
+                .catch(error => {
+                    logEvent('fetch-error', error.message);
+                });
+        }
+
+        function testAllVideos() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>Testing Videos...</h2>';
+            
+            testVideos.forEach((video, index) => {
+                const testDiv = createVideoTest(video, index);
+                resultsDiv.appendChild(testDiv);
+                
+                // Setup events after the element is in the DOM
+                setTimeout(() => {
+                    const videoElement = document.getElementById(`video-${index}`);
+                    setupVideoEvents(videoElement, index);
+                }, 100);
+            });
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-start testing when page loads
+        window.addEventListener('load', () => {
+            console.log('Video Compatibility Test loaded');
+            testAllVideos();
+        });
+    </script>
+</body>
+</html>
