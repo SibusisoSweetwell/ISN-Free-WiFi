@@ -119,10 +119,10 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-// Rate limiter: conservative for admin-sensitive endpoints
+// Rate limiter: more permissive for admin-sensitive endpoints
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: 100, // increased from 5 to 100 requests per windowMs for admin dashboard
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, message: 'Too many attempts, try again later.' }
@@ -3005,11 +3005,27 @@ app.get('/api/_debug/storage', (req, res) => {
 app.get('/api/portal/config', (req,res)=>{
   try {
     const ips = localIPv4s();
-    const hostDisplay = process.env.PROXY_DISPLAY_HOST || ips[0] || 'localhost';
+    const clientIP = req.ip || req.connection.remoteAddress || '';
+    
+    // Smart detection: if client is on local network, use local IP
+    // Otherwise use Render hostname for production
+    let hostDisplay;
+    let protocol = 'http';
+    
+    if (process.env.NODE_ENV === 'production' && !clientIP.startsWith('192.168.') && !clientIP.startsWith('10.') && !clientIP.startsWith('172.')) {
+      // Production deployment accessed from internet
+      hostDisplay = RENDER_HOST;
+      protocol = 'https';
+    } else {
+      // Local hotspot or development environment
+      hostDisplay = process.env.PROXY_DISPLAY_HOST || ips[0] || 'localhost';
+      protocol = 'http';
+    }
+    
     const portalPort = PORT; // current bound express port (may have auto-incremented)
     const proxyPort = PROXY_PORT;
-    const pacUrl = `http://${hostDisplay}:${portalPort}/proxy.pac`;
-    res.json({ ok:true, host: hostDisplay, portalPort, proxyPort, lanIps: ips, pacUrl });
+    const pacUrl = `${protocol}://${hostDisplay}/proxy.pac`;
+    res.json({ ok:true, host: hostDisplay, portalPort, proxyPort, lanIps: ips, pacUrl, clientIP, detectedEnv: process.env.NODE_ENV || 'development' });
   } catch(err){
     res.status(500).json({ ok:false, message:'config error' });
   }
@@ -3422,10 +3438,11 @@ function startProxy(){
 <body><h1>Invalid Proxy Port</h1>
 <p>Only port 8082 is allowed. Use proper proxy configuration:</p>
 <ul>
-<li><strong>Manual Proxy:</strong> 10.5.48.94:8082</li>
-<li><strong>Auto Proxy (PAC):</strong> http://10.5.48.94:${PORT}/proxy.pac</li>
+<li><strong>Manual Proxy:</strong> ${RENDER_HOST}:8082</li>
+<li><strong>Auto Proxy (PAC):</strong> https://${RENDER_HOST}/proxy.pac</li>
+<li><strong>Local Testing:</strong> 10.5.48.94:8082</li>
 </ul>
-<p><a href="http://10.5.48.94:${PORT}/login.html">Fix Configuration</a></p>
+<p><a href="https://${RENDER_HOST}/login.html">Fix Configuration</a></p>
 </body></html>`);
       return;
     }
@@ -3838,7 +3855,7 @@ document.body.onclick = () => window.location.href='${portalUrl}';
   <div class="icon">📺</div>
   <h1>🔐 Manual Proxy - Watch Videos to Access Internet</h1>
   <p><strong>Blocked Host:</strong> ${hostHeader}</p>
-  <p><strong>Your Proxy:</strong> 10.5.48.94:8082</p>
+  <p><strong>Your Proxy:</strong> ${RENDER_HOST}:8082</p>
   
   <div style="background:#e3f2fd;padding:20px;margin:20px 0;border-radius:8px;border:2px solid #2196f3;">
     <h3>📊 Video Progress:</h3>
@@ -3938,7 +3955,7 @@ document.body.onclick = () => window.location.href='${portalUrl}';
   <div class="icon">📺</div>
   <h1>📺 Watch Videos to Access Internet</h1>
   <p><strong>Blocked Host:</strong> ${hostHeader}</p>
-  <p><strong>Your PAC URL:</strong> http://10.5.48.94:${PORT}/proxy.pac</p>
+  <p><strong>Your PAC URL:</strong> https://${RENDER_HOST}/proxy.pac</p>
   
   <div style="background:#fff3e0;padding:20px;margin:20px 0;border-radius:8px;border:2px solid #ff9800;">
     <h3>📊 Video Progress:</h3>
@@ -3959,7 +3976,7 @@ document.body.onclick = () => window.location.href='${portalUrl}';
     </ul>
   </div>
   
-  <a href="http://10.5.48.94:${PORT}/login.html" class="btn">🎬 Start Watching Videos</a>
+  <a href="https://${RENDER_HOST}/login.html" class="btn">🎬 Start Watching Videos</a>
   <p><small>Each device earns access individually • Redirecting in 5 seconds...</small></p>
 </div>
 </body></html>`);
@@ -4010,9 +4027,9 @@ document.body.onclick = () => window.location.href='${portalUrl}';
 <li>🎥 <strong>15 videos = 500MB</strong> bundle</li>
 </ul>
 </div>
-<p><strong>Your PAC URL:</strong> http://10.5.48.94:${PORT}/proxy.pac</p>
+<p><strong>Your PAC URL:</strong> https://${RENDER_HOST}/proxy.pac</p>
 <hr>
-<p><a href="http://10.5.48.94:${PORT}/login.html" style="background:#f44336;color:white;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;">🎬 Watch Videos for Data</a></p>
+<p><a href="https://${RENDER_HOST}/login.html" style="background:#f44336;color:white;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;">🎬 Watch Videos for Data</a></p>
 <p><small>Redirecting in 5 seconds...</small></p>
 </body></html>`);
         return;
@@ -5884,8 +5901,8 @@ app.post('/api/ad/event', (req,res)=>{
           };
         }
         
-        // Mark device as having earned access (legacy compatibility)
-        markDeviceUnlocked(deviceId, idNorm, 25); // Small amount for legacy systems
+        // Video completion tracking updated - proper bundle system active
+        // Legacy markDeviceUnlocked removed to prevent 25MB override
         
       } else {
         console.log('[INSUFFICIENT-WATCH-TIME]', { 
