@@ -165,19 +165,23 @@
 			-webkit-image-rendering:optimizeQuality;
 		}
 		
-		/* Enhanced video visibility for verified working videos */
+		/* Enhanced video visibility for Google CDN instant appearance */
 		.video-shell video{
-			opacity:1;
-			transition:none;
-			/* ENHANCED VIDEO SETTINGS */
+			opacity:0; /* Start hidden for instant transition */
+			transform:scale(0.98); /* Slight scale for instant zoom */
+			transition:opacity 0.1s ease, transform 0.1s ease; /* Ultra-fast transition for Google CDN */
+			/* ENHANCED VIDEO SETTINGS FOR GOOGLE CDN */
 			pointer-events:auto;
 			user-select:none;
 			-webkit-user-select:none;
 			/* PREVENT DOWNLOAD CONTEXT MENU */
 			-webkit-touch-callout:none;
+			/* GPU ACCELERATION FOR INSTANT APPEARANCE */
+			will-change:opacity, transform;
+			backface-visibility:hidden;
 		}
 		
-		.video-shell video.visible{opacity:1;}
+		.video-shell video.visible{opacity:1;transform:scale(1);transition:opacity 0.1s ease, transform 0.1s ease;} /* Instant appearance for Google CDN */
 		
 		/* Loading state optimization for verified videos */
 		.video-shell video[data-verified="true"] {
@@ -653,7 +657,7 @@
 					<iframe id="ytPlayer" allow="autoplay; encrypted-media" title="Ad video" style="display:none;"></iframe>
 					<div id="imgFallback" class="img-fallback"><div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div></div>
 					<div class="video-overlay-btn">
-						<button id="skipBtn" type="button" class="pressable">Skip (10)</button>
+						<button id="skipBtn" type="button" class="pressable">Skip (15)</button>
 						<button id="muteBtn" type="button" class="mute-btn pressable" aria-label="Toggle sound">Mute</button>
 						<button id="playPauseBtn" type="button" class="pressable" aria-label="Pause ad">Pause</button>
 						<button id="fsBtn" type="button" class="pressable" aria-label="Fullscreen video">Fullscreen</button>
@@ -2225,26 +2229,33 @@ function proxyImageUrl(originalUrl) {
 // MP4 direct clips (fast load) - VERIFIED WORKING VIDEOS ONLY
 // Google CDN MP4 videos - enabling multiple for better rotation
 const mp4Ads=[
-	// ✅ Fast-loading, tested videos for instant playback
-	'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4',
-	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-]; // Note: Optimized for instant loading
+	// ✅ ONLY FAST GOOGLE CDN VIDEOS - Super fast response
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+	'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4'
+]; // Note: Only Google CDN videos for fastest loading and reliable playback
 
-// PRELOAD VIDEOS FOR INSTANT PLAYBACK
+// PRELOAD GOOGLE CDN VIDEOS FOR INSTANT PLAYBACK
 const preloadedVideos = {};
 function preloadVideos() {
-	console.log('[PRELOAD] Starting video preload for instant playback...');
+	console.log('[GOOGLE-PRELOAD] Starting Google CDN video preload for instant playback...');
 	mp4Ads.forEach((url, index) => {
 		const video = document.createElement('video');
-		video.preload = 'metadata';
+		video.preload = 'auto'; // Aggressive preloading for Google CDN
 		video.muted = true;
-		video.src = url; // Direct URL - no proxy for speed
+		video.crossOrigin = 'anonymous';
+		video.src = url; // Direct Google CDN URL
 		video.addEventListener('loadedmetadata', () => {
-			console.log(`[PRELOAD] Video ${index + 1} ready for instant playback`);
+			console.log(`[GOOGLE-PRELOAD] Google video ${index + 1} ready for instant playback`);
 			preloadedVideos[url] = video;
 		});
+		video.addEventListener('canplaythrough', () => {
+			console.log(`[GOOGLE-PRELOAD] Google video ${index + 1} fully loaded and ready`);
+		});
 		video.addEventListener('error', () => {
-			console.warn(`[PRELOAD] Video ${index + 1} failed to preload:`, url);
+			console.warn(`[GOOGLE-PRELOAD] Google video ${index + 1} failed to preload:`, url);
 		});
 	});
 }
@@ -2708,7 +2719,7 @@ function playCurrentInlineAd(){
 	
 	// INSTANT STATUS UPDATE
 	adStatus.textContent=`Starting video ${currentAdIndex + 1} of ${adList.length}...`;
-	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip (10)';
+	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip (15)';
 	skipCountdownStarted=false;
 	adProgressInline.style.width='0%';
 	imgFallback.classList.remove('active');
@@ -2736,46 +2747,48 @@ function playCurrentInlineAd(){
 			adVideo.removeAttribute('data-verified');
 		}
 		
-		// INSTANT VIDEO LOADING WITH PRELOADED CONTENT
-		const videoUrl = entry.url; // Direct URL for speed
-		console.log('[INSTANT-LOAD] Using video:', videoUrl);
+		// INSTANT VIDEO LOADING WITH GOOGLE CDN OPTIMIZATION
+		const videoUrl = entry.url; // Direct Google CDN URL for maximum speed
+		console.log('[GOOGLE-CDN] Loading fast Google video:', videoUrl);
 		
 		// Use preloaded video if available for instant start
 		if (preloadedVideos[videoUrl]) {
-			console.log('[INSTANT-LOAD] Using preloaded video for instant start!');
+			console.log('[GOOGLE-CDN] Using preloaded Google video for instant start!');
 			const preloadedVid = preloadedVideos[videoUrl];
 			// Copy the preloaded video to our player
 			adVideo.src = preloadedVid.src;
 			adVideo.currentTime = 0;
 		} else {
-			console.log('[INSTANT-LOAD] Loading video directly');
+			console.log('[GOOGLE-CDN] Loading Google video directly for fast response');
 			adVideo.src = videoUrl;
 		}
 		
-		// SUPER FAST SETUP
+		// OPTIMIZED SETUP FOR GOOGLE CDN VIDEOS
 		adVideo.pause();
-		adVideo.currentTime=0; 
-		adVideo.volume=1; 
-		adVideo.style.display='block'; 
+		adVideo.currentTime = 0; 
+		adVideo.volume = 1; 
+		adVideo.style.display = 'block'; 
 		adVideo.classList.remove('visible');
 		
-		// Essential properties for fast playback
+		// Essential properties for fast Google CDN playback
 		adVideo.setAttribute('playsinline',''); 
 		adVideo.setAttribute('webkit-playsinline', '');
-		adVideo.preload='auto'; 
+		adVideo.preload = 'auto'; // Aggressive preloading for Google CDN
 		adVideo.removeAttribute('controls');
 		adVideo.crossOrigin = 'anonymous';
 		
-		// INSTANT EVENT HANDLERS FOR SUPER FAST RESPONSE
+		// FAST RESPONSE EVENT HANDLERS FOR GOOGLE CDN
 		const onReady = () => {
-			console.log('[INSTANT-SUCCESS] Video ready - starting playback immediately');
-			adStatus.textContent = `Playing video ${currentAdIndex + 1} of ${adList.length}`;
+			console.log('[GOOGLE-CDN] Video ready - starting playback immediately');
+			adStatus.textContent = `Playing Google video ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
 			adVideo.classList.add('visible');
 			
-			// INSTANT PLAY
-			adVideo.play().catch(e => {
-				console.warn('[INSTANT-PLAY] Auto-play blocked:', e.message);
+			// INSTANT PLAY - Google CDN should respond fast
+			adVideo.play().then(() => {
+				console.log('[GOOGLE-CDN] Video playing successfully from Google CDN');
+			}).catch(e => {
+				console.warn('[GOOGLE-CDN] Auto-play blocked, trying muted:', e.message);
 				if (!adVideo.muted) {
 					adVideo.muted = true;
 					adVideo.play().catch(console.error);
@@ -2784,13 +2797,15 @@ function playCurrentInlineAd(){
 		};
 		
 		const onPlaying = () => {
-			console.log('[INSTANT-PLAYING] Video playing successfully');
-			adStatus.textContent = `Playing video ${currentAdIndex + 1} of ${adList.length}`;
+			console.log('[GOOGLE-CDN] Google video playing successfully');
+			adStatus.textContent = `Playing Google video ${currentAdIndex + 1} of ${adList.length}`;
 			videoLoading.classList.add('hidden');
 			adVideo.classList.add('visible');
 			
-			// Start skip countdown and tracking
+			// GIVE MORE TIME FOR GOOGLE VIDEOS TO PLAY PROPERLY
+			// Start skip countdown but with enough time for the video to be seen
 			maybeStartSkipCountdown();
+			startInlineProgress(); // Start progress tracking for Google videos
 			if(!currentAdViewLogged){ 
 				currentAdViewLogged=true; 
 				logAdEvent('view'); 
@@ -2798,35 +2813,36 @@ function playCurrentInlineAd(){
 		};
 		
 		const onError = () => {
-			console.error('[INSTANT-ERROR] Video failed, trying next immediately');
-			adStatus.textContent = 'Video failed, loading next...';
+			console.error('[GOOGLE-CDN] Google video failed, trying next immediately');
+			adStatus.textContent = 'Google video failed, loading next...';
+			// Shorter timeout for Google CDN since they should be reliable
 			setTimeout(() => {
 				if (currentAdIndex < adList.length - 1) {
 					currentAdIndex++;
 					playCurrentInlineAd();
 				} else {
-					adStatus.textContent = 'All videos completed';
+					adStatus.textContent = 'All Google videos completed';
 				}
-			}, 500); // Very short delay
+			}, 300); // Very fast recovery for Google CDN
 		};
 		
-		// Clean event listeners first
+		// Clean event listeners first for Google CDN optimization
 		adVideo.removeEventListener('loadeddata', onReady);
 		adVideo.removeEventListener('canplay', onReady);
 		adVideo.removeEventListener('playing', onPlaying);
 		adVideo.removeEventListener('error', onError);
 		
-		// Add fresh event listeners
+		// Add optimized event listeners for Google CDN
 		adVideo.addEventListener('loadeddata', onReady, { once: true });
 		adVideo.addEventListener('canplay', onReady, { once: true });
 		adVideo.addEventListener('playing', onPlaying, { once: true });
 		adVideo.addEventListener('error', onError, { once: true });
 		
-		// LOAD AND START
-		console.log('[INSTANT-LOAD] Starting video load and play process');
+		// FAST LOADING FOR GOOGLE CDN
+		console.log('[GOOGLE-CDN] Starting Google video load process');
 		adVideo.load();
 		
-		console.log('[INSTANT-LOAD] Video setup complete - should start playing very soon');
+		console.log('[GOOGLE-CDN] Google video setup complete - should load very fast');
 		
 		currentAdViewLogged=false;
 		
@@ -3041,7 +3057,7 @@ function tryVideoFallback() {
 function maybeStartSkipCountdown(){ 
 	if(skipCountdownStarted) return; 
 	skipCountdownStarted=true; 
-	startSkipCountdown(10); 
+	startSkipCountdown(15); // Give Google videos more time to play and be seen
 }
 function startSkipCountdown(sec){
 	let remaining=sec; 
