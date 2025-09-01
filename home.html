@@ -47,7 +47,7 @@
 		/* Ensure account modal has vertical breathing space */
 		#accountOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow:auto;}
 		/* For Usage & Help we move scroll to inner wrapper so outer stays visually static */
-		#usageOverlay .access-modal,#helpOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow:hidden;}
+		#usageOverlay .access-modal,#helpOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
 		@media (max-height:760px){ #usageOverlay .access-modal,#helpOverlay .access-modal{margin-top:40px;margin-bottom:40px;max-height:calc(100vh - 80px);} }
 		#usageScroll,#helpScroll{flex:1 1 auto;overflow:auto;min-height:0;}
 		#usageScroll::-webkit-scrollbar,#helpScroll::-webkit-scrollbar{width:8px;}
@@ -320,6 +320,11 @@
 		-webkit-backface-visibility:hidden;
 		transform:translateZ(0);
 		-webkit-transform:translateZ(0);
+		/* SMOOTH SCROLLING */
+		overflow-y:auto;
+		-webkit-overflow-scrolling:touch;
+		scroll-behavior:smooth;
+		max-height:85vh;
 	}
 
 	/* STABLE TABLES - No vibrations on mobile */
@@ -333,6 +338,9 @@
 		contain:layout;
 		transform:translateZ(0);
 		-webkit-transform:translateZ(0);
+		/* PREVENT TABLE BLINKING */
+		animation:none !important;
+		transition:none !important;
 	}
 
 	/* STABLE TABLE CELLS */
@@ -345,6 +353,31 @@
 		overflow-wrap:break-word;
 		/* PREVENT CELL VIBRATIONS */
 		contain:layout;
+		/* SMOOTH TRANSITIONS ONLY FOR CONTENT CHANGES */
+		transition:background-color 0.2s ease;
+	}
+
+	/* TABLE BODY STABILITY */
+	.stable-usage-modal tbody {
+		/* PREVENT CONTENT JUMPING */
+		min-height:100px;
+		display:table-row-group;
+	}
+
+	/* ENHANCED SCROLLBAR STYLING */
+	.stable-usage-modal::-webkit-scrollbar {
+		width:8px;
+	}
+	.stable-usage-modal::-webkit-scrollbar-track {
+		background:#f1f1f1;
+		border-radius:4px;
+	}
+	.stable-usage-modal::-webkit-scrollbar-thumb {
+		background:#888;
+		border-radius:4px;
+	}
+	.stable-usage-modal::-webkit-scrollbar-thumb:hover {
+		background:#555;
 	}
 
 	/* MOBILE RESPONSIVE TABLES - Stack on phones */
@@ -1874,27 +1907,20 @@ async function loadRegularUsage() {
 	const currentId = sessionStorage.getItem('currentUserIdentifier');
 	const err = document.getElementById('usageError');
 	
-	// Reset UI
+	// Clear errors only, don't reset data to prevent blinking
 	err.textContent = '';
-	document.getElementById('statBundleInUse').textContent='-';
-	document.getElementById('statRemaining').textContent='-';
-	document.getElementById('statDateTime').textContent=new Date().toLocaleString();
-	document.getElementById('statTotalUnlocked').textContent='-';
-	document.getElementById('statMostUsedBundle').textContent='-';
 	
 	const histBody=document.getElementById('usageHistoryBody');
 	const histEmpty=document.getElementById('usageHistoryEmpty');
 	const headRow = document.querySelector('#usageHistoryTable thead tr');
-	
-	if(histBody) histBody.innerHTML=''; 
-	histEmpty.style.display='none';
 	
 	try{
 		const res=await fetch('/api/me/usage?identifier='+encodeURIComponent(currentId));
 		if(!res.ok) throw new Error('HTTP '+res.status);
 		const data=await res.json(); if(!data.ok) throw new Error('Bad payload');
 		
-		// Stats
+		// Update stats smoothly without clearing first
+		document.getElementById('statDateTime').textContent=new Date().toLocaleString();
 		document.getElementById('statTotalUnlocked').textContent=data.totalBundleMB+' MB';
 		document.getElementById('statRemaining').textContent=data.remainingMB+' MB';
 		
@@ -1910,30 +1936,47 @@ async function loadRegularUsage() {
 		// Reset table headers for user view
 		if(headRow){ headRow.innerHTML='<th style="text-align:left;padding:8px 10px;position:sticky;top:0;">Bundle</th><th style="text-align:left;padding:8px 10px;position:sticky;top:0;">Used</th><th style="text-align:left;padding:8px 10px;position:sticky;top:0;">Remaining</th><th style="text-align:left;padding:8px 10px;position:sticky;top:0;">Router</th><th style="text-align:left;padding:8px 10px;position:sticky;top:0;">Granted At</th>'; }
 		
-		if(!data.purchases.length){ histEmpty.style.display='block'; return; }
+		if(!data.purchases.length){ 
+			if(histBody) histBody.innerHTML=''; 
+			histEmpty.style.display='block'; 
+			return; 
+		}
 		
-		data.purchases.slice(-25).reverse().forEach(p=>{
-			const tr=document.createElement('tr');
-			const remaining=Math.max(0,p.bundleMB - p.usedMB);
-			tr.innerHTML='<td style="padding:6px 8px;">'+p.bundleMB+' MB</td>'+
-						 '<td style="padding:6px 8px;">'+p.usedMB+' MB</td>'+
-						 '<td style="padding:6px 8px;">'+remaining+' MB</td>'+
-						 '<td style="padding:6px 8px;">'+(p.routerId||'router')+'</td>'+
-						 '<td style="padding:6px 8px;">'+new Date(p.grantedAtISO).toLocaleString()+'</td>';
-			if(histBody) histBody.appendChild(tr);
-		});
+		// Check if table content actually changed before rebuilding to prevent unnecessary blinking
+		const newDataHash = JSON.stringify(data.purchases.slice(-25).reverse());
+		const currentDataHash = histBody.getAttribute('data-hash');
+		
+		if(newDataHash !== currentDataHash) {
+			// Only rebuild table if data actually changed
+			if(histBody) histBody.innerHTML='';
+			histEmpty.style.display='none';
+			
+			data.purchases.slice(-25).reverse().forEach(p=>{
+				const tr=document.createElement('tr');
+				const remaining=Math.max(0,p.bundleMB - p.usedMB);
+				tr.innerHTML='<td style="padding:6px 8px;" data-label="Bundle">'+p.bundleMB+' MB</td>'+
+							 '<td style="padding:6px 8px;" data-label="Used">'+p.usedMB+' MB</td>'+
+							 '<td style="padding:6px 8px;" data-label="Remaining">'+remaining+' MB</td>'+
+							 '<td style="padding:6px 8px;" data-label="Router">'+(p.routerId||'router')+'</td>'+
+							 '<td style="padding:6px 8px;" data-label="Granted">' +new Date(p.grantedAtISO).toLocaleString()+'</td>';
+				if(histBody) histBody.appendChild(tr);
+			});
+			
+			// Store hash to prevent unnecessary rebuilds
+			if(histBody) histBody.setAttribute('data-hash', newDataHash);
+		}
 	}catch(e){
 		console.error('Usage fetch failed', e);
 		err.textContent=(e && e.message && e.message.startsWith('HTTP 4'))? 'Not authorized or missing data.' : (e && e.message && e.message.startsWith('TypeError'))? 'Server not reachable.' : 'Error loading your usage';
 	}
 }
-// Auto-refresh regular usage every 1s while the modal is open
+// Auto-refresh regular usage every 5s while the modal is open (reduced from 1s to prevent blinking)
 let regularUsageTimer = null;
 function startRegularUsageAutoRefresh(){
 	stopRegularUsageAutoRefresh();
 	regularUsageTimer = setInterval(()=>{
 		try{ loadRegularUsage(); }catch(e){}
-	}, 1000);
+	}, 5000); // Increased from 1000ms to 5000ms
 }
 function stopRegularUsageAutoRefresh(){ if(regularUsageTimer){ clearInterval(regularUsageTimer); regularUsageTimer=null; } }
 	document.getElementById('statRemaining').textContent='-';

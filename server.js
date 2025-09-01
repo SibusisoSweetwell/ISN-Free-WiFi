@@ -3241,14 +3241,31 @@ function detectRouterId(req) {
 // Check if a host is a video ad CDN (should not count against user data usage)
 function isVideoAdCDN(hostHeader) {
   const videoAdDomains = [
+    // Google Ad Services & YouTube
     'googleads.g.doubleclick.net','pagead2.googlesyndication.com','tpc.googlesyndication.com',
     'securepubads.g.doubleclick.net','video-ad-stats.googlesyndication.com',
     'imasdk.googleapis.com','www.gstatic.com','ssl.gstatic.com',
     'storage.googleapis.com','commondatastorage.googleapis.com', // Google Cloud Storage for videos
     'yt3.ggpht.com','ytimg.com','googlevideo.com','manifest.googlevideo.com',
+    'youtube.com','www.youtube.com','m.youtube.com','youtu.be',
+    // Vimeo
     'vimeo.com','player.vimeo.com','i.vimeocdn.com','f.vimeocdn.com',
+    // Video Players & CDNs
     'jwpcdn.com','cdn.jwplayer.com','content.jwplatform.com',
-    'brightcove.com','edge.api.brightcove.com','players.brightcove.net'
+    'brightcove.com','edge.api.brightcove.com','players.brightcove.net',
+    // Facebook & Instagram Videos
+    'facebook.com','www.facebook.com','m.facebook.com','web.facebook.com',
+    'instagram.com','www.instagram.com','cdninstagram.com',
+    'fbcdn.net','scontent.com','video.xx.fbcdn.net',
+    // Spotify & Other Music/Video
+    'spotify.com','open.spotify.com','audio-ak-spotify-com.akamaized.net',
+    'scdn.co','spotifycdn.com','audio4-ak-spotify-com.akamaized.net',
+    // TikTok
+    'tiktok.com','www.tiktok.com','v16-webapp.tiktok.com',
+    'musically.ly','musical.ly','byteoversea.com',
+    // Common Video CDNs
+    'cloudfront.net','amazonaws.com','akamai.net','akamaized.net',
+    'fastly.com','cloudflare.com','jsdelivr.net','unpkg.com'
   ];
   
   // Direct match
@@ -3263,6 +3280,14 @@ function isVideoAdCDN(hostHeader) {
     }
     // Check for Google Video CDN patterns (r1---sn-*.googlevideo.com)
     if (domain.includes('googlevideo.com') && /^r\d+---sn-[^.]+\.googlevideo\.com$/i.test(hostHeader)) {
+      return true;
+    }
+    // Check for Facebook CDN patterns (scontent-*.xx.fbcdn.net)
+    if (domain.includes('fbcdn.net') && /^scontent-[^.]+\.xx\.fbcdn\.net$/i.test(hostHeader)) {
+      return true;
+    }
+    // Check for Spotify CDN patterns (audio*-ak-spotify-com.akamaized.net)
+    if (domain.includes('akamaized.net') && /^audio\d*-ak-spotify-com\.akamaized\.net$/i.test(hostHeader)) {
       return true;
     }
   }
@@ -3427,11 +3452,43 @@ function startProxy(){
         return;
       }
 
-      // If it's a video ad CDN host, mark the request and continue processing.
-      // Downstream logic already skips counting and blocking for video ad hosts,
-      // but setting this header helps ensure downstream handlers treat it as ad traffic.
+      // If it's a video ad CDN host, immediately proxy without any blocking or checking
+      // Video ads must ALWAYS work to ensure users can earn data bundles  
+      console.log('[VIDEO-AD-BYPASS] Immediately proxying video ad request', { host: hostHeader, ip: clientIp });
+      
+      // Mark as video ad traffic
       clientReq.headers['x-proxy-video-ad'] = '1';
-      // Continue processing - do not trigger manual/auto blocking for ad hosts
+      
+      // IMMEDIATELY proxy video ad requests without any authentication or data checks
+      const targetPort = (hostHeader.includes('https') || clientReq.url.includes('https')) ? 443 : 80;
+      const protocol = targetPort === 443 ? https : http;
+      
+      const proxyOptions = {
+        hostname: hostHeader,
+        port: targetPort,
+        path: clientReq.url,
+        method: clientReq.method,
+        headers: {
+          ...clientReq.headers,
+          'x-forwarded-for': clientIp,
+          'x-video-ad-proxy': '1'
+        }
+      };
+
+      const proxyReq = protocol.request(proxyOptions, proxyRes => {
+        clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.on('data', chunk => clientRes.write(chunk));
+        proxyRes.on('end', () => clientRes.end());
+      });
+
+      proxyReq.on('error', err => {
+        console.warn('[VIDEO-AD-PROXY-ERROR]', { host: hostHeader, error: err.message });
+        clientRes.writeHead(502, { 'Content-Type': 'text/html' });
+        clientRes.end('<html><body>Video Ad Proxy Error</body></html>');
+      });
+
+      clientReq.pipe(proxyReq);
+      return; // Exit immediately - no further processing needed for video ads
     }
     
     // AUTO-AUTHENTICATION: Check if unauthenticated user has earned data bundles via video watching

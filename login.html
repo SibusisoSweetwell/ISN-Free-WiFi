@@ -210,7 +210,7 @@
 			.logo-box { width: 100px; height: 100px; margin-bottom: 4px; }
 		}
 		.field-error { border-color:#e53935 !important; background:#fff5f5 !important; box-shadow:0 0 0 3px rgba(229,57,53,.25) !important; }
-	/* Forgot / registration code input alignment - responsive so 6 boxes fit on small phones */
+	/* Forgot / registration code input alignment - responsive so 5 boxes fit on small phones */
 	.code-box {
 		display: flex;
 		justify-content: center;
@@ -236,25 +236,25 @@
 		transition: transform .15s, background .25s;
 	flex: 0 0 auto; /* keep natural size unless media rule changes it */
 		min-width: 36px;
-		max-width: 14%;
+		max-width: 16%; /* Adjusted for 5 inputs instead of 6 */
 	}
 		.code-box input.code-digit:focus { outline:none; transform:none; box-shadow:0 6px 14px rgba(0,0,0,.4); }
 
-	/* Small phones: make inputs flexible so six fit comfortably inside the modal padding */
+	/* Small phones: make inputs flexible so five fit comfortably inside the modal padding */
 	@media (max-width:480px){
 		.code-box { gap:8px; }
 		.code-box input.code-digit {
 			width: auto;
-			flex: 1 1 12%; /* allow inputs to shrink to a percentage of available width */
-			max-width: 46px;
-			min-width: 34px;
+			flex: 1 1 16%; /* allow inputs to shrink to a percentage of available width for 5 inputs */
+			max-width: 52px; /* Slightly larger since we have 5 instead of 6 */
+			min-width: 38px;
 			height: 52px;
 			font-size: 22px;
 		}
 	}
 	/* Very narrow phones (old devices) - force slightly smaller max width to avoid wrapping */
 	@media (max-width:360px){
-		.code-box input.code-digit { max-width: 42px; font-size:20px; }
+		.code-box input.code-digit { max-width: 48px; font-size:20px; }
 	}
 	/* Ensure password fields inside forgot modal show black text/dots when focused or filled */
 	#fp-password, #fp-password2, .forgot-modal input.strong, .forgot-modal input:focus, .forgot-modal input.filled {
@@ -571,7 +571,7 @@ function fpStatus(msg,type){ const el=document.getElementById('fp-status'); el.s
 	const box=document.getElementById('fp-code-box');
 	box.className='code-box';
 	box.innerHTML='';
-	for(let i=0;i<6;i++){
+	for(let i=0;i<5;i++){
 		const inp=document.createElement('input');
 		inp.type='text';
 		inp.maxLength=1;
@@ -774,11 +774,11 @@ async function sendSMS_viaClickatell(toNumber, message){
 }
 */
 
-// --- Registration: JavaScript-generated 6-digit codes (NO SMS) ---
-function gen6(){ return Math.floor(100000 + Math.random()*900000).toString(); }
+// --- Registration: JavaScript-generated 5-digit codes (NO SMS) ---
+function gen5(){ return Math.floor(10000 + Math.random()*90000).toString(); }
 function buildRegCodeInputs(){
 	const box=document.getElementById('reg-code-box'); if(!box) return; box.innerHTML=''; box.className='code-box';
-	for(let i=0;i<6;i++){
+	for(let i=0;i<5;i++){
 		const inp=document.createElement('input'); inp.type='text'; inp.maxLength=1; inp.inputMode='numeric'; inp.className='code-digit';
 		inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n) n.focus(); } else inp.value=''; });
 		inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p){ p.focus(); p.value=''; } } if(e.key==='ArrowLeft'){ const p=inp.previousElementSibling; if(p) p.focus(); } if(e.key==='ArrowRight'){ const n=inp.nextElementSibling; if(n) n.focus(); } });
@@ -808,17 +808,15 @@ async function submitRegister(e){
 	if(phoneRaw && !normPhone){ showMsg('Enter a valid South African phone number starting with 0.', 'error'); return false; }
 	if(!isStrongPassword(p1)){ showMsg('Password needs upper, lower, number, symbol & 8+ length.', 'error'); return false; }
 	
-	// Generate JavaScript 6-digit code (NO SMS)
-	const code = gen6();
+	// Generate JavaScript 5-digit code (NO SMS)
+	const code = gen5();
 	sessionStorage.setItem('regPendingCode', code);
 	sessionStorage.setItem('regPendingPayload', JSON.stringify({ firstName:first, surname:sur, dob, email: email||null, phone: normPhone||null, password: p1 }));
 	
-	// Show verification stage with JavaScript-generated code
-	document.querySelector('.submit-reg').style.display='none';
-	document.getElementById('reg-demo-code').textContent='Your verification code: '+code;
+	// Close register popup and open verification code popup
+	closeRegister();
 	openRegVerify(code, true);
 	
-	showMsg('✅ Verification code generated! Enter the code shown above.','success');
 	return false;
 }
 
@@ -827,9 +825,9 @@ function openRegVerify(code, showCode){
 	const ov = document.getElementById('regVerifyOverlay');
 	ov.classList.add('active'); ov.removeAttribute('aria-hidden'); document.body.style.overflow='hidden';
 	document.getElementById('reg-verify-demo').textContent = showCode ? 'Your verification code: '+code : '';
-	document.getElementById('reg-verify-desc').textContent = 'Enter the 6-digit verification code shown above.';
+	document.getElementById('reg-verify-desc').textContent = 'Enter the 5-digit verification code shown above.';
 	const box = document.getElementById('reg-verify-box'); box.innerHTML=''; 
-	for(let i=0;i<6;i++){ 
+	for(let i=0;i<5;i++){ 
 		const inp=document.createElement('input'); 
 		inp.type='text'; 
 		inp.maxLength=1; 
@@ -858,8 +856,8 @@ function closeRegVerify(){ const ov=document.getElementById('regVerifyOverlay');
 
 async function confirmRegVerify(){
 	const entered = Array.from(document.querySelectorAll('#reg-verify-box input')).map(i=>i.value).join('');
-	if(entered.length!==6){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Enter all 6 digits.'; return; }
-	const pending = sessionStorage.getItem('regPendingCode'); if(entered!==pending){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Invalid code.'; return; }
+	if(entered.length!==5){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Enter all 5 digits.'; return; }
+	const pending = sessionStorage.getItem('regPendingCode'); if(entered!==pending){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Invalid code. Please check the code shown above.'; return; }
 	// proceed with server create using stored payload
 	const payload = JSON.parse(sessionStorage.getItem('regPendingPayload')||'{}');
 	try{ const res = await fetch('/api/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const data = await res.json().catch(()=>({})); if(!res.ok||!data.ok){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent = data.message||('Registration failed '+res.status); return; } document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Account created! Redirecting...'; setTimeout(()=>{ closeRegVerify(); closeRegister(); try{ if(payload.email) sessionStorage.setItem('currentUserIdentifier', payload.email.toLowerCase()); else if(payload.phone) sessionStorage.setItem('currentUserIdentifier', payload.phone); }catch{}; window.location.href='home.html'; },900); }catch(err){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Network error: '+(err.message||'unknown'); }
@@ -877,8 +875,8 @@ async function startResetSimple(){
 		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
 		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
 		
-		// Generate JavaScript 6-digit code (NO SMS)
-		const code=gen6();
+		// Generate JavaScript 5-digit code (NO SMS)
+		const code=gen5();
 		sessionStorage.setItem('pendingResetCode', code);
 		sessionStorage.setItem('pendingResetEmail', email);
 		sessionStorage.setItem('pendingResetNewPass', newPass);
@@ -886,21 +884,21 @@ async function startResetSimple(){
 		document.getElementById('fp-stage-collect').style.display='none';
 		document.getElementById('fp-stage-code').style.display='block';
 		document.getElementById('fp-action-btn').textContent='Verify & Save';
-		document.getElementById('fp-desc').textContent='Enter the 6-digit verification code shown below.';
+		document.getElementById('fp-desc').textContent='Enter the 5-digit verification code shown below.';
 		document.getElementById('fp-demo-code').textContent='Your verification code: '+code;
 		buildCodeInputs();
 		fpStage='verify';
-		fpStatus('✅ Verification code generated! Enter the code shown above.','success');
+		fpStatus('Verification code generated! Enter the code shown above.','success');
 		return;
 	} else if(fpStage==='verify'){
 		const email=sessionStorage.getItem('pendingResetEmail');
 		const newPass=sessionStorage.getItem('pendingResetNewPass');
 		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
-		if(codeEntered.length!==6){ fpStatus('Enter all 6 digits.','error'); return; }
+		if(codeEntered.length!==5){ fpStatus('Enter all 5 digits.','error'); return; }
 		
 		// Verify JavaScript-generated code
 		const pendingCode = sessionStorage.getItem('pendingResetCode');
-		if(codeEntered!==pendingCode){ fpStatus('Invalid verification code.','error'); return; }
+		if(codeEntered!==pendingCode){ fpStatus('Invalid verification code. Please check the code shown above.','error'); return; }
 		
 		try{
 			const res=await fetch('/api/forgot/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code:codeEntered,newPassword:newPass})});
