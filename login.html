@@ -682,19 +682,15 @@ document.addEventListener('click',e=>{ const ov=document.getElementById('registe
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(document.getElementById('registerOverlay').classList.contains('active')) closeRegister(); } });
 
 // --- SMS helper (Clickatell HTTP API) ---
-	// IMPORTANT: Do NOT commit your real API key. For production, send SMS from the server
-	// and keep the API key in an environment variable. This placeholder is for local testing only.
-	const CLICKATELL_API_KEY = 'REPLACE_WITH_SERVER_SIDE_KEY';
+	// Use server-side SMS forwarding endpoint. The server keeps the Clickatell API key in
+	// the environment variable CLICKATELL_API_KEY and will perform the actual send.
 async function sendSMS_viaClickatell(toNumber, message){
 	if(!toNumber) throw new Error('Missing toNumber');
-	// Normalize minimal: remove spaces, ensure starting country code or leading 0 as provided
-	const to = encodeURIComponent(toNumber.replace(/\s+/g,''));
-	const content = encodeURIComponent(message);
-	const url = `https://platform.clickatell.com/messages/http/send?apiKey=${CLICKATELL_API_KEY}&to=${to}&content=${content}`;
-	// Use fetch; Clickatell returns 200 for accepted
-	const resp = await fetch(url, { method: 'GET' });
-	if(!resp.ok){ const txt = await resp.text(); throw new Error('SMS send failed: '+resp.status+' '+txt); }
-	return resp.text();
+	const payload = { to: String(toNumber).replace(/\s+/g,''), message };
+	const resp = await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+	const data = await resp.json().catch(()=>({ok:false, message:'invalid response'}));
+	if(!resp.ok || !data.ok) throw new Error('SMS send failed: '+(data.message||resp.status));
+	return data.result || 'ok';
 }
 
 // --- Registration: send verification code then verify before creating account ---

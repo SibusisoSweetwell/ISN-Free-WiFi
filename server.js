@@ -71,6 +71,33 @@ app.use((req, res, next) => {
   try { console.log('[REQ] %s %s from %s', req.method, req.path, req.ip || req.headers['x-forwarded-for'] || 'unknown'); } catch(e){}
   next();
 });
+
+// smsLimiter must be available before the /api/send-sms route is registered.
+const smsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: 'Too many SMS attempts, try again later.' }
+});
+
+// Raw echo endpoint (registered before body parsers) to capture request body bytes for debugging
+app.post('/api/raw-echo', (req, res) => {
+  try {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => {
+      console.log('[RAW-ECHO] headers=', req.headers);
+      console.log('[RAW-ECHO] body=', data);
+      res.json({ ok: true, headers: req.headers, raw: data });
+    });
+    req.on('error', () => { res.status(500).json({ ok:false, message:'read-error' }); });
+  } catch (e) { res.status(500).json({ ok:false, message: e.message }); }
+});
+
+// /api/send-sms handler moved below after JSON/body parsing middleware so
+// req.body and req.rawBody are available.
 // Use environment PORT when provided (Render sets this) otherwise default to 3150
 let PORT = Number(process.env.PORT) || 3150; // Portal port (configurable via env)
 const PROXY_PORT = 8082; // Fixed port for proxy
@@ -99,6 +126,82 @@ const adminLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, message: 'Too many attempts, try again later.' }
+});
+
+// ...smsLimiter declared earlier
+// Server-side SMS send endpoint — uses CLICKATELL_API_KEY from environment variables
+// Keep this endpoint protected with rate limiting to avoid abuse.
+// For the SMS endpoint we pre-read the body and attach it to req.rawBody so
+// malformed JSON won't cause the global JSON parser to throw before the
+// route handler can inspect the raw bytes.
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/api/send-sms') {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => { data += chunk; if (data.length > 1e6) req.connection.destroy(); });
+    req.on('end', () => { req.rawBody = data; req._bodyRead = true; next(); });
+    req.on('error', () => { req.rawBody = ''; req._bodyRead = true; next(); });
+    return;
+  }
+  return next();
+});
+
+// Parse JSON bodies and capture the raw body for diagnostics for other routes.
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, res, buf, encoding) => {
+    try { if (!req._bodyRead) req.rawBody = buf && buf.toString(encoding || 'utf8'); } catch(e){ req.rawBody = '' }
+  }
+}));
+// /api/send-sms is handled earlier with a raw-reading handler (see above).
+
+// Server-side SMS send endpoint — moved here so body parsers have run.
+app.post('/api/send-sms', smsLimiter, async (req, res) => {
+  try {
+    let bodyObj = {};
+    if (req.body && Object.keys(req.body).length) bodyObj = req.body;
+    else if (req.rawBody && String(req.rawBody).trim()) {
+      const raw = String(req.rawBody);
+      try { bodyObj = JSON.parse(raw); }
+      catch (e) {
+        // Try querystring parse first
+        try { bodyObj = require('querystring').parse(raw); } catch(_) { bodyObj = {}; }
+        // If still empty, attempt a loose object parse like {to:123,message:hi}
+        if ((!bodyObj || Object.keys(bodyObj).length === 0) && /\{.*:.*\}/.test(raw)) {
+          const loose = {};
+          const kvs = raw.replace(/^[{\s]+|[}\s]+$/g,'').split(',');
+          kvs.forEach(pair => {
+            const m = pair.split(':');
+            if (m && m.length >= 2) {
+              const k = String(m.shift()).trim().replace(/^['"]|['"]$/g,'');
+              const v = m.join(':').trim().replace(/^['"]|['"]$/g,'');
+              loose[k] = v;
+            }
+          });
+          bodyObj = loose;
+        }
+      }
+    }
+
+    const to = (bodyObj && (bodyObj.to || bodyObj.phone)) || req.query.to || '';
+    const message = (bodyObj && bodyObj.message) || req.query.message || '';
+    if (!to || !message) return res.status(400).json({ ok:false, message:'Missing to or message', raw: req.rawBody || null });
+
+    const key = process.env.CLICKATELL_API_KEY || '';
+    if (!key) return res.status(500).json({ ok:false, message:'SMS service not configured' });
+
+    const toEnc = encodeURIComponent(String(to).replace(/\s+/g,''));
+    const contentEnc = encodeURIComponent(String(message));
+    const sendUrl = `https://platform.clickatell.com/messages/http/send?apiKey=${encodeURIComponent(key)}&to=${toEnc}&content=${contentEnc}`;
+    const fetch = require('node-fetch');
+    const resp = await fetch(sendUrl, { method: 'GET' });
+    const txt = await resp.text();
+    if (!resp.ok) return res.status(502).json({ ok:false, message: txt });
+    return res.json({ ok:true, result: txt });
+  } catch (err) {
+    console.error('[SMS-HANDLER-ERR]', err && err.message);
+    return res.status(500).json({ ok:false, message: err.message, raw: req.rawBody || null });
+  }
 });
 
 // Admin code and password are hashed before storage. We also create a guaranteed
@@ -1764,12 +1867,30 @@ app.use((req, res, next) => {
   }
 });
 
+// Friendly JSON parse error handler (body-parser emits a SyntaxError on invalid JSON)
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
+    console.warn('[BODY-PARSE-ERR]', err && err.message);
+    return res.status(400).json({ ok: false, message: 'Invalid JSON in request body', raw: req.rawBody || null });
+  }
+  return next(err);
+});
+
 // NOTE: serve static files after application routes so API endpoints (like /admin/*) are not
 // accidentally overridden by files like login.html. We'll mount static later, after admin routes.
 
 // Explicit route for home.html to ensure it's served
 app.get('/home.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'home.html'));
+});
+
+// Debug endpoint: echo raw body and headers (temporary, helpful for diagnosing PowerShell curl issues)
+app.post('/api/debug-raw', (req, res) => {
+  try {
+    return res.json({ ok: true, rawBody: req.rawBody || null, headers: req.headers });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: e.message });
+  }
 });
 
 // --- Admin auth middleware ---
