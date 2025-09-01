@@ -1412,9 +1412,13 @@ function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
     
     const videoViews = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ADEVENTS]);
     
-    // Only record if video was watched for minimum duration (30+ seconds)
-    const isCompleted = duration >= 30;
+    // Only record if video was watched for minimum duration (90+ seconds to ensure proper viewing)
+    // Videos should be watched for at least 1.5 minutes to count as completed
+    const isCompleted = duration >= 90;
     const earnedMB = isCompleted ? 20 : 0; // 20MB per completed video
+    
+    // Log video tracking details for debugging
+    console.log(`[VIDEO-DURATION-CHECK] ${identifier} watched video for ${duration}s (minimum: 90s) - ${isCompleted ? 'COMPLETED' : 'PARTIAL'}`);
     
     const newView = {
       id: guid(),
@@ -1429,7 +1433,8 @@ function recordVideoView(identifier, deviceId, videoUrl, duration, routerId) {
       timestampLocal: new Date().toLocaleString(),
       ip: '', // Will be filled by caller
       userAgent: '',
-      completedAt: isCompleted ? new Date().toISOString() : null
+      completedAt: isCompleted ? new Date().toISOString() : null,
+      minimumDurationMet: isCompleted
     };
     
     videoViews.push(newView);
@@ -3241,13 +3246,19 @@ function detectRouterId(req) {
 // Check if a host is a video ad CDN (should not count against user data usage)
 function isVideoAdCDN(hostHeader) {
   const videoAdDomains = [
-    // Google Ad Services & YouTube
+    // Google Ad Services & YouTube - Enhanced patterns
     'googleads.g.doubleclick.net','pagead2.googlesyndication.com','tpc.googlesyndication.com',
     'securepubads.g.doubleclick.net','video-ad-stats.googlesyndication.com',
     'imasdk.googleapis.com','www.gstatic.com','ssl.gstatic.com',
     'storage.googleapis.com','commondatastorage.googleapis.com', // Google Cloud Storage for videos
     'yt3.ggpht.com','ytimg.com','googlevideo.com','manifest.googlevideo.com',
     'youtube.com','www.youtube.com','m.youtube.com','youtu.be',
+    // Google Video CDN Patterns - More comprehensive
+    'video.google.com','play.google.com','googleusercontent.com',
+    'gvt1.com','gvt2.com','gvt3.com','blogger.googleusercontent.com',
+    // Sample video hosting domains (used in home.html)
+    'sample-videos.com','www.learningcontainer.com','learningcontainer.com',
+    'archive.org','vjs.zencdn.net','media.w3.org',
     // Vimeo
     'vimeo.com','player.vimeo.com','i.vimeocdn.com','f.vimeocdn.com',
     // Video Players & CDNs
@@ -3265,31 +3276,66 @@ function isVideoAdCDN(hostHeader) {
     'musically.ly','musical.ly','byteoversea.com',
     // Common Video CDNs
     'cloudfront.net','amazonaws.com','akamai.net','akamaized.net',
-    'fastly.com','cloudflare.com','jsdelivr.net','unpkg.com'
+    'fastly.com','cloudflare.com','jsdelivr.net','unpkg.com',
+    // Additional Google Services
+    'doubleclick.net','googletagmanager.com','googletagservices.com'
   ];
   
   // Direct match
   if (videoAdDomains.includes(hostHeader)) {
+    console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'direct' });
     return true;
   }
   
   // Check for subdomain or wildcard matches
   for (const domain of videoAdDomains) {
     if (hostHeader.endsWith('.' + domain) || hostHeader === domain) {
+      console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'subdomain', domain });
       return true;
     }
     // Check for Google Video CDN patterns (r1---sn-*.googlevideo.com)
     if (domain.includes('googlevideo.com') && /^r\d+---sn-[^.]+\.googlevideo\.com$/i.test(hostHeader)) {
+      console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'google-video-cdn', pattern: 'r*---sn-*.googlevideo.com' });
       return true;
     }
     // Check for Facebook CDN patterns (scontent-*.xx.fbcdn.net)
     if (domain.includes('fbcdn.net') && /^scontent-[^.]+\.xx\.fbcdn\.net$/i.test(hostHeader)) {
+      console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'facebook-cdn', pattern: 'scontent-*.xx.fbcdn.net' });
       return true;
     }
     // Check for Spotify CDN patterns (audio*-ak-spotify-com.akamaized.net)
     if (domain.includes('akamaized.net') && /^audio\d*-ak-spotify-com\.akamaized\.net$/i.test(hostHeader)) {
+      console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'spotify-cdn', pattern: 'audio*-ak-spotify-com.akamaized.net' });
       return true;
     }
+    // Check for Google services patterns (*.googleusercontent.com, *.gstatic.com, etc.)
+    if ((domain.includes('google') || domain.includes('gvt')) && 
+        (hostHeader.includes('google') || hostHeader.includes('gvt') || hostHeader.includes('youtube'))) {
+      console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'google-services', domain });
+      return true;
+    }
+  }
+  
+  // Special patterns for Google video services
+  if (/^.*\.google(apis|usercontent|video|syndication)\.com$/i.test(hostHeader) ||
+      /^.*\.gvt[0-9]\.com$/i.test(hostHeader) ||
+      /^.*\.youtube(-nocookie)?\.com$/i.test(hostHeader) ||
+      /^.*\.ytimg\.com$/i.test(hostHeader)) {
+    console.log('[VIDEO-DOMAIN-MATCH]', { host: hostHeader, type: 'google-regex-pattern' });
+    return true;
+  }
+  
+  // Debug: Log when domains are NOT matched
+  if (hostHeader.includes('google') || hostHeader.includes('youtube') || hostHeader.includes('video')) {
+    console.log('[VIDEO-DOMAIN-NO-MATCH]', { host: hostHeader, reason: 'contains video keywords but no match' });
+  }
+  
+  // Emergency fallback: if it looks like any video-related domain, allow it
+  if (hostHeader.includes('video') || hostHeader.includes('cdn') || hostHeader.includes('stream') || 
+      hostHeader.includes('media') || hostHeader.includes('content') || hostHeader.includes('youtube') ||
+      hostHeader.includes('googlevideo') || hostHeader.includes('vimeo') || hostHeader.includes('facebook')) {
+    console.log('[VIDEO-DOMAIN-EMERGENCY-MATCH]', { host: hostHeader, type: 'emergency-video-fallback' });
+    return true;
   }
   
   return false;
@@ -3454,37 +3500,114 @@ function startProxy(){
 
       // If it's a video ad CDN host, immediately proxy without any blocking or checking
       // Video ads must ALWAYS work to ensure users can earn data bundles  
-      console.log('[VIDEO-AD-BYPASS] Immediately proxying video ad request', { host: hostHeader, ip: clientIp });
+      console.log('[VIDEO-AD-BYPASS] Immediately proxying video ad request', { host: hostHeader, ip: clientIp, url: clientReq.url });
       
       // Mark as video ad traffic
       clientReq.headers['x-proxy-video-ad'] = '1';
+      clientReq.headers['x-video-allowed'] = '1';
       
       // IMMEDIATELY proxy video ad requests without any authentication or data checks
-      const targetPort = (hostHeader.includes('https') || clientReq.url.includes('https')) ? 443 : 80;
-      const protocol = targetPort === 443 ? https : http;
+      // For HTTP proxy requests, clientReq.url contains the full URL or just the path
+      let targetPath = '/';
+      let isHttps = false;
+      
+      try {
+        // Check if it's a full URL (starts with http:// or https://)
+        if (clientReq.url.startsWith('http://') || clientReq.url.startsWith('https://')) {
+          const parsedUrl = url.parse(clientReq.url);
+          targetPath = parsedUrl.path || '/';
+          isHttps = parsedUrl.protocol === 'https:';
+          console.log('[VIDEO-PROXY-URL-PARSED]', { originalUrl: clientReq.url, targetPath, isHttps });
+        } else {
+          // It's just a path
+          targetPath = clientReq.url;
+          isHttps = clientReq.headers['x-forwarded-proto'] === 'https' || hostHeader.includes('https');
+          console.log('[VIDEO-PROXY-PATH-ONLY]', { path: targetPath, isHttps });
+        }
+      } catch (e) {
+        console.warn('[VIDEO-PROXY-URL-PARSE-ERROR]', e.message, 'using fallback');
+        targetPath = clientReq.url || '/';
+        isHttps = clientReq.headers['x-forwarded-proto'] === 'https';
+      }
+      
+      const targetPort = isHttps ? 443 : 80;
+      const protocol = isHttps ? https : http;
+      
+      // Enhanced headers for Google video compatibility
+      const proxyHeaders = {
+        ...clientReq.headers,
+        'host': hostHeader, // Set the correct host header
+        'x-forwarded-for': clientIp,
+        'x-video-ad-proxy': '1',
+        'x-real-ip': clientIp,
+        'user-agent': clientReq.headers['user-agent'] || 'Mozilla/5.0 (compatible; ISN-WiFi-Proxy/1.0)',
+        'accept': '*/*',
+        'accept-encoding': 'gzip, deflate, br',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache'
+      };
+      
+      // Remove problematic headers that might block Google videos
+      delete proxyHeaders['connection'];
+      delete proxyHeaders['proxy-connection'];
+      delete proxyHeaders['proxy-authorization'];
       
       const proxyOptions = {
         hostname: hostHeader,
         port: targetPort,
-        path: clientReq.url,
+        path: targetPath, // Use parsed path instead of full URL
         method: clientReq.method,
-        headers: {
-          ...clientReq.headers,
-          'x-forwarded-for': clientIp,
-          'x-video-ad-proxy': '1'
-        }
+        headers: proxyHeaders,
+        // Add timeout for better reliability
+        timeout: 30000
       };
 
       const proxyReq = protocol.request(proxyOptions, proxyRes => {
-        clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+        // Set CORS headers for video compatibility
+        const responseHeaders = {
+          ...proxyRes.headers,
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET, POST, OPTIONS, HEAD',
+          'access-control-allow-headers': '*',
+          'x-proxy-source': 'isn-video-proxy'
+        };
+        
+        clientRes.writeHead(proxyRes.statusCode, responseHeaders);
         proxyRes.on('data', chunk => clientRes.write(chunk));
         proxyRes.on('end', () => clientRes.end());
       });
 
       proxyReq.on('error', err => {
-        console.warn('[VIDEO-AD-PROXY-ERROR]', { host: hostHeader, error: err.message });
-        clientRes.writeHead(502, { 'Content-Type': 'text/html' });
-        clientRes.end('<html><body>Video Ad Proxy Error</body></html>');
+        console.error('[VIDEO-AD-PROXY-ERROR]', { 
+          host: hostHeader, 
+          path: targetPath,
+          error: err.message, 
+          code: err.code,
+          errno: err.errno,
+          syscall: err.syscall,
+          address: err.address,
+          port: err.port
+        });
+        if (!clientRes.headersSent) {
+          clientRes.writeHead(502, { 
+            'Content-Type': 'text/html',
+            'access-control-allow-origin': '*'
+          });
+          clientRes.end('<html><body>Video Proxy Error: ' + err.message + '</body></html>');
+        }
+      });
+      
+      proxyReq.on('timeout', () => {
+        console.warn('[VIDEO-AD-PROXY-TIMEOUT]', { host: hostHeader, path: targetPath });
+        proxyReq.destroy();
+        if (!clientRes.headersSent) {
+          clientRes.writeHead(504, { 
+            'Content-Type': 'text/html',
+            'access-control-allow-origin': '*'
+          });
+          clientRes.end('<html><body>Video Proxy Timeout</body></html>');
+        }
       });
 
       clientReq.pipe(proxyReq);
@@ -5954,16 +6077,44 @@ app.post('/api/video/complete', (req, res) => {
       return res.status(400).json({ ok: false, message: 'Missing required fields: identifier, videoUrl, duration' });
     }
     
+    // Validate duration is reasonable (between 30 seconds and 10 minutes)
+    const durationNum = Number(duration);
+    if (isNaN(durationNum) || durationNum < 30 || durationNum > 600) {
+      console.warn(`[VIDEO-INVALID-DURATION] ${identifier} submitted invalid duration: ${duration}s (must be 30-600s)`);
+      return res.status(400).json({ 
+        ok: false, 
+        message: 'Invalid video duration. Videos must be watched for 30 seconds to 10 minutes.' 
+      });
+    }
+    
     // Use provided deviceId or generate from request
     const deviceInfo = generateDeviceFingerprint(req);
     const deviceId = providedDeviceId || deviceInfo.deviceId;
     const routerId = req.headers['x-router-id'] || detectRouterId(req) || 'default-router';
     const clientIp = req.ip || req.connection.remoteAddress;
     
-    console.log(`[VIDEO-COMPLETION-REQUEST] ${identifier} device ${deviceId.slice(0,8)}... watched ${videoUrl} for ${duration}s`);
+    console.log(`[VIDEO-COMPLETION-REQUEST] ${identifier} device ${deviceId.slice(0,8)}... watched ${videoUrl} for ${durationNum}s`);
+    
+    // Check for rapid video submissions (anti-gaming protection)
+    const lastSubmissionKey = `last_video_${deviceId}`;
+    const lastSubmission = global.lastVideoSubmissions || (global.lastVideoSubmissions = new Map());
+    const now = Date.now();
+    const lastTime = lastSubmission.get(lastSubmissionKey) || 0;
+    
+    // Prevent submitting videos faster than once every 60 seconds
+    if (now - lastTime < 60000) {
+      const waitTime = Math.ceil((60000 - (now - lastTime)) / 1000);
+      console.warn(`[VIDEO-RATE-LIMIT] ${identifier} submitting videos too quickly. Must wait ${waitTime}s`);
+      return res.status(429).json({ 
+        ok: false, 
+        message: `Please wait ${waitTime} seconds before submitting another video completion.` 
+      });
+    }
+    
+    lastSubmission.set(lastSubmissionKey, now);
     
     // Record the video view with enhanced tracking
-    const videoResult = recordVideoView(identifier, deviceId, videoUrl, duration, routerId);
+    const videoResult = recordVideoView(identifier, deviceId, videoUrl, durationNum, routerId);
     
     if (!videoResult.videoRecorded) {
       return res.status(500).json({ 

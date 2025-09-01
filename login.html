@@ -377,7 +377,7 @@ if(location.port==='5500'){
 			</div>
 			<div id="fp-stage-code" style="display:none;">
 				<label for="fp-code-box">Enter Code</label>
-				<div id="fp-code-box" class="code-inputs" aria-label="Reset code input"></div>
+				<div id="fp-code-box" class="code-box" aria-label="Reset code input"></div>
 				<p id="fp-demo-code" style="margin:2px 0 0;font-size:13px;color:#000;"></p>
 			</div>
 			<div id="fp-status" style="display:none;font-size:14px;font-weight:600;text-align:center;border-radius:8px;padding:10px 14px;line-height:1.3;"></div>
@@ -555,6 +555,10 @@ function closeForgot(){
 	ov.classList.remove('active');
 	ov.setAttribute('aria-hidden','true');
 	document.body.style.overflow='';
+	// Clear the countdown timer when closing
+	clearForgotPasswordCountdown();
+	// Reset stage
+	fpStage='collect';
 }
 function isStrongPassword(p){
 	return /[A-Z]/.test(p)&&/[a-z]/.test(p)&&/\d/.test(p)&&/[^A-Za-z0-9]/.test(p)&&p.length>=8;
@@ -569,7 +573,7 @@ function validateMatch(){ if(fpPwdEl2.value && fpPwdEl.value!==fpPwdEl2.value){ 
 function fpStatus(msg,type){ const el=document.getElementById('fp-status'); el.style.display='block'; el.textContent=msg; el.style.background= type==='error' ? 'var(--brand-red)' : '#fff'; el.style.color= type==='error' ? '#fff' : '#000'; }
 	function buildCodeInputs(){
 	const box=document.getElementById('fp-code-box');
-	box.className='code-box';
+	box.className='code-box'; // Use consistent styling with registration
 	box.innerHTML='';
 	for(let i=0;i<5;i++){
 		const inp=document.createElement('input');
@@ -863,7 +867,7 @@ async function confirmRegVerify(){
 	try{ const res = await fetch('/api/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const data = await res.json().catch(()=>({})); if(!res.ok||!data.ok){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent = data.message||('Registration failed '+res.status); return; } document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Account created! Redirecting...'; setTimeout(()=>{ closeRegVerify(); closeRegister(); try{ if(payload.email) sessionStorage.setItem('currentUserIdentifier', payload.email.toLowerCase()); else if(payload.phone) sessionStorage.setItem('currentUserIdentifier', payload.phone); }catch{}; window.location.href='home.html'; },900); }catch(err){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Network error: '+(err.message||'unknown'); }
 }
 
-// Enhanced forgot password with JavaScript-generated codes (NO SMS)
+// Enhanced forgot password with JavaScript-generated codes (NO SMS) + 5-minute expiry
 async function startResetSimple(){
 	if(fpStage==='collect'){
 		const email=document.getElementById('fp-email').value.trim();
@@ -875,26 +879,48 @@ async function startResetSimple(){
 		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
 		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
 		
-		// Generate JavaScript 5-digit code (NO SMS)
+		// Generate JavaScript 5-digit code with 5-minute expiry
 		const code=gen5();
+		const expiryTime = Date.now() + (5 * 60 * 1000); // 5 minutes from now
+		
 		sessionStorage.setItem('pendingResetCode', code);
+		sessionStorage.setItem('pendingResetCodeExpiry', expiryTime.toString());
 		sessionStorage.setItem('pendingResetEmail', email);
 		sessionStorage.setItem('pendingResetNewPass', newPass);
 		
 		document.getElementById('fp-stage-collect').style.display='none';
 		document.getElementById('fp-stage-code').style.display='block';
 		document.getElementById('fp-action-btn').textContent='Verify & Save';
-		document.getElementById('fp-desc').textContent='Enter the 5-digit verification code shown below.';
-		document.getElementById('fp-demo-code').textContent='Your verification code: '+code;
+		document.getElementById('fp-desc').textContent='Enter the 5-digit verification code shown below (expires in 5 minutes).';
+		document.getElementById('fp-demo-code').textContent='Your verification code: '+code+' (expires in 5 minutes)';
 		buildCodeInputs();
 		fpStage='verify';
-		fpStatus('Verification code generated! Enter the code shown above.','success');
+		fpStatus('Verification code generated! Enter the code shown above. Code expires in 5 minutes.','success');
+		
+		// Start countdown timer
+		startForgotPasswordCountdown();
 		return;
 	} else if(fpStage==='verify'){
 		const email=sessionStorage.getItem('pendingResetEmail');
 		const newPass=sessionStorage.getItem('pendingResetNewPass');
 		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
 		if(codeEntered.length!==5){ fpStatus('Enter all 5 digits.','error'); return; }
+		
+		// Check if code has expired
+		const expiryTime = parseInt(sessionStorage.getItem('pendingResetCodeExpiry') || '0');
+		const currentTime = Date.now();
+		
+		if (currentTime > expiryTime) {
+			fpStatus('Verification code has expired. Please request a new code.','error');
+			// Reset to collect stage
+			document.getElementById('fp-stage-code').style.display='none';
+			document.getElementById('fp-stage-collect').style.display='block';
+			document.getElementById('fp-action-btn').textContent='Send Code';
+			document.getElementById('fp-desc').textContent='Fill the details below to generate a verification code.';
+			fpStage='collect';
+			clearForgotPasswordCountdown();
+			return;
+		}
 		
 		// Verify JavaScript-generated code
 		const pendingCode = sessionStorage.getItem('pendingResetCode');
@@ -905,11 +931,42 @@ async function startResetSimple(){
 			const data=await res.json();
 			if(!res.ok||!data.ok){ fpStatus(data.message||'Password reset failed','error'); return; }
 			fpStatus('Password updated. You can log in now.','success');
+			clearForgotPasswordCountdown();
 			let remain=10; pushToast('Password updated.<small>Returning to login in <span id="fpCountdown">'+remain+'</span>s</small>','success');
 			fpStatus('Password updated. Redirecting in '+remain+'s...','success');
 			const tmr=setInterval(()=>{ remain--; const c=document.getElementById('fpCountdown'); if(c) c.textContent=remain; fpStatus('Password updated. Redirecting in '+remain+'s...','success'); if(remain<=0){ clearInterval(tmr); closeForgot(); } },1000);
 			fpStage='done';
 		}catch{ fpStatus('Network error verifying code','error'); }
+	}
+}
+
+// Countdown timer for forgot password code expiry
+let forgotPasswordTimer = null;
+function startForgotPasswordCountdown() {
+	clearForgotPasswordCountdown();
+	
+	forgotPasswordTimer = setInterval(() => {
+		const expiryTime = parseInt(sessionStorage.getItem('pendingResetCodeExpiry') || '0');
+		const currentTime = Date.now();
+		const timeLeft = expiryTime - currentTime;
+		
+		if (timeLeft <= 0) {
+			clearForgotPasswordCountdown();
+			fpStatus('Verification code has expired. Please request a new code.','error');
+			document.getElementById('fp-demo-code').textContent='Code expired. Please request a new code.';
+		} else {
+			const minutesLeft = Math.floor(timeLeft / 60000);
+			const secondsLeft = Math.floor((timeLeft % 60000) / 1000);
+			const timeDisplay = minutesLeft + ':' + (secondsLeft < 10 ? '0' : '') + secondsLeft;
+			document.getElementById('fp-demo-code').textContent='Your verification code: '+sessionStorage.getItem('pendingResetCode')+' (expires in '+timeDisplay+')';
+		}
+	}, 1000);
+}
+
+function clearForgotPasswordCountdown() {
+	if (forgotPasswordTimer) {
+		clearInterval(forgotPasswordTimer);
+		forgotPasswordTimer = null;
 	}
 }
 	</script>

@@ -2090,6 +2090,8 @@ const adProgressInline=document.getElementById('adProgressInline');
 const videoLoading=document.getElementById('videoLoading');
 const toast=document.getElementById('globalToast');
 let adList=[];let currentAdIndex=0;let skipTimer=null;let progressInterval=null;let bundleSizeSelected=0;let adGrantTimeout=null;let skipCountdownStarted=false;let skipFallbackTimer=null;let videoStartStamp=0;let autoSkipTimer=null;let skipCountdownPaused=false;
+// Add cumulative watch time tracking across entire sequence
+let cumulativeWatchTime = 0;
 // Track full ad sequence activity for persistent wake lock
 let adSequenceActive=false;
 // Persisted mute helpers (centralized)
@@ -2382,6 +2384,8 @@ function startAdSequence(bundleSize){
 	videoStartTime = null;
 	videoWatchTime = 0;
 	videoCompletionValidated = false;
+	// Reset cumulative watch time for new sequence
+	cumulativeWatchTime = 0;
 	
 	const adCount=bundleSize===100?5:bundleSize===250?10:15;
 	console.log('[AD-COUNT] Bundle:', bundleSize, 'MB → Expected ads:', adCount);
@@ -2540,6 +2544,16 @@ function playCurrentInlineAd(){
 				if(entry.type==='mp4'){
 					// Enhanced MP4 loading with codec detection
 					console.log('[VIDEO-LOADING] Attempting to load:', entry.url);
+					console.log('[VIDEO-DEBUG] Current adList:', adList);
+					console.log('[VIDEO-DEBUG] Current index:', currentAdIndex, 'Total ads:', adList.length);
+					console.log('[VIDEO-DEBUG] Video element state:', {
+						src: adVideo.src,
+						readyState: adVideo.readyState,
+						networkState: adVideo.networkState,
+						paused: adVideo.paused,
+						ended: adVideo.ended,
+						currentTime: adVideo.currentTime
+					});
 					
 					// Test if browser can play this video format
 					const canPlay = adVideo.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
@@ -3421,6 +3435,17 @@ adVideo.addEventListener('canplay',()=>{ forceVideoFrameReveal(); if(!skipCountd
 function nextInlineAd(){
 	clearAdTimers();
 	
+	// Calculate and accumulate watch time for this video before moving to next
+	const actualWatchTime = Math.max(videoWatchTime, adVideo.currentTime || 0);
+	cumulativeWatchTime += actualWatchTime;
+	
+	console.log('[VIDEO-CUMULATIVE-TIME]', {
+		currentVideoWatchTime: actualWatchTime,
+		cumulativeWatchTime: cumulativeWatchTime,
+		videoIndex: currentAdIndex + 1,
+		videoDuration: adVideo.duration || 0
+	});
+	
 	// Reset video tracking for next video
 	videoStartTime = 0;
 	videoWatchTime = 0;
@@ -3455,7 +3480,45 @@ function grantBundle(){
 	console.log('[WAKE-LOCK] Ad sequence completed - cleaning up wake locks');
 	
 	// Calculate total watch time across all videos for validation
-	const totalWatchTime = Math.round(adVideo.currentTime || 0);
+	// Use cumulative time from all videos in the sequence, plus current video time
+	let totalWatchTime = 0;
+	
+	// Try to get the accumulated watch time from the validation function
+	try {
+		const currentVideoWatchTime = Math.max(videoWatchTime, adVideo.currentTime || 0);
+		// Add current video time to cumulative time from previous videos
+		totalWatchTime = Math.round(cumulativeWatchTime + currentVideoWatchTime);
+		
+		console.log('[VIDEO-COMPLETION-TIME]', {
+			videoWatchTime: videoWatchTime,
+			currentTime: adVideo.currentTime,
+			currentVideoWatchTime: currentVideoWatchTime,
+			cumulativeWatchTime: cumulativeWatchTime,
+			totalWatchTime: totalWatchTime,
+			videosInSequence: currentAdIndex + 1,
+			expectedVideos: adList.length
+		});
+	} catch(e) {
+		// Fallback to current time if tracking failed
+		totalWatchTime = Math.round(adVideo.currentTime || 0);
+		console.warn('[VIDEO-TIME-FALLBACK]', 'Using fallback time calculation:', totalWatchTime);
+	}
+	
+	// Calculate expected minimum watch time (45 seconds per video minimum)
+	const expectedMinimumTime = (currentAdIndex + 1) * 45; // 45 seconds per video
+	
+	// Ensure minimum watch time for video completion
+	if (totalWatchTime < expectedMinimumTime) {
+		console.warn('[VIDEO-INSUFFICIENT-TIME]', `Watch time ${totalWatchTime}s is below expected minimum ${expectedMinimumTime}s for ${currentAdIndex + 1} videos`);
+		// Don't artificially inflate the time, but log the issue
+	}
+	
+	console.log('[VIDEO-SEQUENCE-SUMMARY]', {
+		totalWatchTime: totalWatchTime,
+		expectedMinimumTime: expectedMinimumTime,
+		videosWatched: currentAdIndex + 1,
+		averageTimePerVideo: Math.round(totalWatchTime / (currentAdIndex + 1))
+	});
 	
 	// Enhanced completion logging with validation
 	try{ 
