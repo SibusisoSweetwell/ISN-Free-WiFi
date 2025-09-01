@@ -362,7 +362,7 @@ if(location.port==='5500'){
 		<div class="forgot-modal" role="document">
 			<button class="close-forgot" aria-label="Close" onclick="closeForgot()">&times;</button>
 			<h3>Forgot Password</h3>
-			<p class="forgot-desc" id="fp-desc">Fill the details below to receive a reset code.</p>
+			<p class="forgot-desc" id="fp-desc">Fill the details below to generate a verification code.</p>
 			<div id="fp-stage-collect">
 				<label for="fp-email">Email Address</label>
 				<input id="fp-email" type="email" placeholder="Enter your registered email" autocomplete="email" />
@@ -420,7 +420,7 @@ if(location.port==='5500'){
 			<!-- Registration code verification stage (shown after Create Account pressed) -->
 			<div id="reg-stage-code" style="display:none;grid-column:1 / -1;text-align:center;">
 				<!-- kept for fallback when JS disabled -->
-				<label for="reg-code-box">Enter verification code</label>
+				<label for="reg-code-box">Enter verification code shown above</label>
 				<div id="reg-code-box" class="code-box" aria-label="Registration code input"></div>
 				<p id="reg-demo-code" style="margin:6px 0 0;font-size:13px;color:#000;"></p>
 				<button id="reg-verify-btn" type="button" class="submit-reg" style="margin-top:10px;">Verify & Create Account</button>
@@ -434,7 +434,7 @@ if(location.port==='5500'){
 		<div class="forgot-modal" role="document">
 			<button class="close-forgot" aria-label="Close" onclick="closeRegVerify()">&times;</button>
 			<h3>Verify Account</h3>
-			<p class="forgot-desc" id="reg-verify-desc">Enter the 6-digit code sent to your phone or email.</p>
+			<p class="forgot-desc" id="reg-verify-desc">Enter the 6-digit verification code shown below.</p>
 			<div id="reg-verify-stage" style="display:block;text-align:center;">
 				<label for="reg-verify-box">Enter Code</label>
 				<div id="reg-verify-box" class="code-box" aria-label="Registration verification input"></div>
@@ -761,9 +761,9 @@ async function submitRegister(e){
 document.addEventListener('click',e=>{ const ov=document.getElementById('registerOverlay'); if(e.target===ov) closeRegister(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(document.getElementById('registerOverlay').classList.contains('active')) closeRegister(); } });
 
-// --- SMS helper (Clickatell HTTP API) ---
-	// Use server-side SMS forwarding endpoint. The server keeps the Clickatell API key in
-	// the environment variable CLICKATELL_API_KEY and will perform the actual send.
+// --- SMS functionality DISABLED - Using JavaScript-generated codes instead ---
+/*
+// SMS helper (Clickatell HTTP API) - DISABLED
 async function sendSMS_viaClickatell(toNumber, message){
 	if(!toNumber) throw new Error('Missing toNumber');
 	const payload = { to: String(toNumber).replace(/\s+/g,''), message };
@@ -772,8 +772,9 @@ async function sendSMS_viaClickatell(toNumber, message){
 	if(!resp.ok || !data.ok) throw new Error('SMS send failed: '+(data.message||resp.status));
 	return data.result || 'ok';
 }
+*/
 
-// --- Registration: send verification code then verify before creating account ---
+// --- Registration: JavaScript-generated 6-digit codes (NO SMS) ---
 function gen6(){ return Math.floor(100000 + Math.random()*900000).toString(); }
 function buildRegCodeInputs(){
 	const box=document.getElementById('reg-code-box'); if(!box) return; box.innerHTML=''; box.className='code-box';
@@ -786,11 +787,10 @@ function buildRegCodeInputs(){
 	try{ if(box.firstChild) box.firstChild.focus(); }catch{}
 }
 
-// Overwrite submitRegister to send code first then verify client-side before calling server for final create
-const origSubmitRegister = submitRegister;
+// Enhanced submitRegister with JavaScript-only 6-digit verification (NO SMS)
 async function submitRegister(e){
 	e.preventDefault();
-	// basic validation already done in original; replicate minimal here then send code
+	// Basic validation
 	const first=document.getElementById('reg-first').value.trim();
 	const sur=document.getElementById('reg-surname').value.trim();
 	const dob=document.getElementById('reg-dob').value;
@@ -801,40 +801,57 @@ async function submitRegister(e){
 	const p2=document.getElementById('reg-password2').value;
 	const statusEl=document.getElementById('reg-status');
 	function showMsg(msg,type){ statusEl.textContent=msg; statusEl.className='status '+type; }
+	
 	if(!first||!sur||!dob||!p1||!p2){ showMsg('Please fill out all required fields.', 'error'); return false; }
 	if(p1!==p2){ showMsg('Passwords do not match.', 'error'); return false; }
 	if(!email && !phoneRaw){ showMsg('Provide either an email or a phone number.', 'error'); return false; }
 	if(phoneRaw && !normPhone){ showMsg('Enter a valid South African phone number starting with 0.', 'error'); return false; }
-	// Generate code and show code stage
+	if(!isStrongPassword(p1)){ showMsg('Password needs upper, lower, number, symbol & 8+ length.', 'error'); return false; }
+	
+	// Generate JavaScript 6-digit code (NO SMS)
 	const code = gen6();
 	sessionStorage.setItem('regPendingCode', code);
 	sessionStorage.setItem('regPendingPayload', JSON.stringify({ firstName:first, surname:sur, dob, email: email||null, phone: normPhone||null, password: p1 }));
-	// Open verification overlay instead of inline stage
+	
+	// Show verification stage with JavaScript-generated code
 	document.querySelector('.submit-reg').style.display='none';
-	document.getElementById('reg-demo-code').textContent='(Demo code: '+code+')';
+	document.getElementById('reg-demo-code').textContent='Your verification code: '+code;
 	openRegVerify(code, true);
-	// Send SMS if phone provided
-	if(normPhone){
-		try{
-			await sendSMS_viaClickatell(normPhone, `Your ISN signup code is ${code}`);
-			showMsg('Code sent to phone. Enter it below to complete signup.','success');
-		}catch(err){
-			console.warn('SMS send failed',err);
-			showMsg('Failed to send SMS. Check number or try again.','error');
-		}
-	} else {
-		showMsg('Email-only signup: use demo code shown.','warn');
-	}
-	// Verification is handled by the overlay confirmRegVerify handler
+	
+	showMsg('✅ Verification code generated! Enter the code shown above.','success');
 	return false;
 }
 
-// New registration verification overlay helpers
-function openRegVerify(code, demoText){
+// New registration verification overlay helpers (JavaScript-only)
+function openRegVerify(code, showCode){
 	const ov = document.getElementById('regVerifyOverlay');
 	ov.classList.add('active'); ov.removeAttribute('aria-hidden'); document.body.style.overflow='hidden';
-	document.getElementById('reg-verify-demo').textContent = demoText ? '(Demo code: '+code+')' : '';
-	const box = document.getElementById('reg-verify-box'); box.innerHTML=''; for(let i=0;i<6;i++){ const inp=document.createElement('input'); inp.type='text'; inp.maxLength=1; inp.inputMode='numeric'; inp.className='code-digit'; inp.addEventListener('input',()=>{ if(/\d/.test(inp.value)){ inp.value=inp.value.replace(/[^0-9]/g,''); const n=inp.nextElementSibling; if(n) n.focus(); else { setTimeout(()=>{ document.getElementById('reg-verify-action-btn').click(); },120); } } else inp.value=''; }); inp.addEventListener('keydown',e=>{ if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p){ p.focus(); p.value=''; } } if(e.key==='ArrowLeft'){ const p=inp.previousElementSibling; if(p) p.focus(); } if(e.key==='ArrowRight'){ const n=inp.nextElementSibling; if(n) n.focus(); } }); box.appendChild(inp); }
+	document.getElementById('reg-verify-demo').textContent = showCode ? 'Your verification code: '+code : '';
+	document.getElementById('reg-verify-desc').textContent = 'Enter the 6-digit verification code shown above.';
+	const box = document.getElementById('reg-verify-box'); box.innerHTML=''; 
+	for(let i=0;i<6;i++){ 
+		const inp=document.createElement('input'); 
+		inp.type='text'; 
+		inp.maxLength=1; 
+		inp.inputMode='numeric'; 
+		inp.className='code-digit'; 
+		inp.addEventListener('input',()=>{ 
+			if(/\d/.test(inp.value)){ 
+				inp.value=inp.value.replace(/[^0-9]/g,''); 
+				const n=inp.nextElementSibling; 
+				if(n) n.focus(); 
+				else { 
+					setTimeout(()=>{ document.getElementById('reg-verify-action-btn').click(); },120); 
+				} 
+			} else inp.value=''; 
+		}); 
+		inp.addEventListener('keydown',e=>{ 
+			if(e.key==='Backspace'&&!inp.value){ const p=inp.previousElementSibling; if(p){ p.focus(); p.value=''; } } 
+			if(e.key==='ArrowLeft'){ const p=inp.previousElementSibling; if(p) p.focus(); } 
+			if(e.key==='ArrowRight'){ const n=inp.nextElementSibling; if(n) n.focus(); } 
+		}); 
+		box.appendChild(inp); 
+	}
 	try{ if(box.firstChild) box.firstChild.focus(); }catch{}
 }
 function closeRegVerify(){ const ov=document.getElementById('regVerifyOverlay'); ov.classList.remove('active'); ov.setAttribute('aria-hidden','true'); document.body.style.overflow=''; }
@@ -848,10 +865,8 @@ async function confirmRegVerify(){
 	try{ const res = await fetch('/api/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); const data = await res.json().catch(()=>({})); if(!res.ok||!data.ok){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent = data.message||('Registration failed '+res.status); return; } document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Account created! Redirecting...'; setTimeout(()=>{ closeRegVerify(); closeRegister(); try{ if(payload.email) sessionStorage.setItem('currentUserIdentifier', payload.email.toLowerCase()); else if(payload.phone) sessionStorage.setItem('currentUserIdentifier', payload.phone); }catch{}; window.location.href='home.html'; },900); }catch(err){ document.getElementById('reg-verify-status').style.display='block'; document.getElementById('reg-verify-status').textContent='Network error: '+(err.message||'unknown'); }
 }
 
-// Wire forgot password to send SMS code using same Clickatell helper when user hits Send Code
-const origStartResetSimple = window.startResetSimple;
-window.startResetSimple = async function(){
-	// replicate existing startResetSimple collect stage behaviour but send code via Clickatell when server not used
+// Enhanced forgot password with JavaScript-generated codes (NO SMS)
+async function startResetSimple(){
 	if(fpStage==='collect'){
 		const email=document.getElementById('fp-email').value.trim();
 		const phone=normalizePhone(document.getElementById('fp-phone').value);
@@ -861,25 +876,44 @@ window.startResetSimple = async function(){
 		if(!email||!phone||!newPass||!newPass2){ fpStatus('Fill all fields (valid SA phone).','error'); return; }
 		if(newPass!==newPass2){ fpStatus('Passwords do not match.','error'); return; }
 		if(!isStrongPassword(newPass)){ fpStatus('Password needs upper, lower, number, symbol & 8+ chars.','error'); return; }
-		// Generate and send code
+		
+		// Generate JavaScript 6-digit code (NO SMS)
 		const code=gen6();
 		sessionStorage.setItem('pendingResetCode', code);
 		sessionStorage.setItem('pendingResetEmail', email);
 		sessionStorage.setItem('pendingResetNewPass', newPass);
+		
 		document.getElementById('fp-stage-collect').style.display='none';
 		document.getElementById('fp-stage-code').style.display='block';
 		document.getElementById('fp-action-btn').textContent='Verify & Save';
-		document.getElementById('fp-desc').textContent='Enter the 6-digit code sent to your phone.';
-		document.getElementById('fp-demo-code').textContent='(Demo code: '+code+')';
+		document.getElementById('fp-desc').textContent='Enter the 6-digit verification code shown below.';
+		document.getElementById('fp-demo-code').textContent='Your verification code: '+code;
 		buildCodeInputs();
 		fpStage='verify';
-		try{ await sendSMS_viaClickatell(phone, `Your ISN password reset code is ${code}`); fpStatus('Code sent to phone.','success'); }catch(e){ console.warn('SMS failed',e); fpStatus('Failed to send SMS.','error'); }
+		fpStatus('✅ Verification code generated! Enter the code shown above.','success');
 		return;
-	} else {
-		// if verify stage fall back to original implementation
-		return origStartResetSimple ? origStartResetSimple() : null;
+	} else if(fpStage==='verify'){
+		const email=sessionStorage.getItem('pendingResetEmail');
+		const newPass=sessionStorage.getItem('pendingResetNewPass');
+		const codeEntered=Array.from(document.querySelectorAll('#fp-code-box input')).map(i=>i.value).join('');
+		if(codeEntered.length!==6){ fpStatus('Enter all 6 digits.','error'); return; }
+		
+		// Verify JavaScript-generated code
+		const pendingCode = sessionStorage.getItem('pendingResetCode');
+		if(codeEntered!==pendingCode){ fpStatus('Invalid verification code.','error'); return; }
+		
+		try{
+			const res=await fetch('/api/forgot/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code:codeEntered,newPassword:newPass})});
+			const data=await res.json();
+			if(!res.ok||!data.ok){ fpStatus(data.message||'Password reset failed','error'); return; }
+			fpStatus('Password updated. You can log in now.','success');
+			let remain=10; pushToast('Password updated.<small>Returning to login in <span id="fpCountdown">'+remain+'</span>s</small>','success');
+			fpStatus('Password updated. Redirecting in '+remain+'s...','success');
+			const tmr=setInterval(()=>{ remain--; const c=document.getElementById('fpCountdown'); if(c) c.textContent=remain; fpStatus('Password updated. Redirecting in '+remain+'s...','success'); if(remain<=0){ clearInterval(tmr); closeForgot(); } },1000);
+			fpStage='done';
+		}catch{ fpStatus('Network error verifying code','error'); }
 	}
-};
+}
 	</script>
 </body>
 </html>
