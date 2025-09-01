@@ -269,32 +269,31 @@
 		/* 🚫 ENHANCED BROWSER MEDIA CONTROLS BLOCKING CSS FOR RENDER SITE */
 		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 		
-		/* Block ALL possible browser media control elements */
-		.video-shell video::-webkit-media-controls,
-		.video-shell video::-webkit-media-controls-enclosure,
-		.video-shell video::-webkit-media-controls-panel,
+		/* SELECTIVE BROWSER MEDIA CONTROLS BLOCKING - Allow custom controls to work */
 		.video-shell video::-webkit-media-controls-start-playback-button,
-		.video-shell video::-webkit-media-controls-play-button,
-		.video-shell video::-webkit-media-controls-overlay-play-button,
-		.video-shell video::-webkit-media-controls-timeline-container,
+		.video-shell video::-webkit-media-controls-overlay-play-button {
+			/* Hide browser's built-in overlay play button but allow custom controls */
+			display: none !important;
+			-webkit-appearance: none !important;
+		}
+		
+		/* Keep these hidden for security but allow custom controls */
 		.video-shell video::-webkit-media-controls-timeline,
-		.video-shell video::-webkit-media-controls-current-time-display,
-		.video-shell video::-webkit-media-controls-time-remaining-display,
-		.video-shell video::-webkit-media-controls-mute-button,
-		.video-shell video::-webkit-media-controls-volume-slider-container,
-		.video-shell video::-webkit-media-controls-volume-slider,
-		.video-shell video::-webkit-media-controls-fullscreen-button,
-		.video-shell video::-webkit-media-controls-toggle-closed-captions-button,
 		.video-shell video::-webkit-media-controls-seek-back-button,
 		.video-shell video::-webkit-media-controls-seek-forward-button,
 		.video-shell video::-webkit-media-controls-rewind-button,
-		.video-shell video::-webkit-media-controls-return-to-realtime-button,
-		.video-shell video::-webkit-media-controls-overlay-enclosure {
+		.video-shell video::-webkit-media-controls-return-to-realtime-button {
 			display: none !important;
-			-webkit-appearance: none !important;
-			opacity: 0 !important;
-			pointer-events: none !important;
-			visibility: hidden !important;
+		}
+		
+		/* Allow these for basic functionality */
+		.video-shell video::-webkit-media-controls-play-button,
+		.video-shell video::-webkit-media-controls-current-time-display,
+		.video-shell video::-webkit-media-controls-time-remaining-display,
+		.video-shell video::-webkit-media-controls-mute-button,
+		.video-shell video::-webkit-media-controls-volume-slider {
+			/* These can work with our custom overlay - visible but controlled */
+			opacity: 0.8;
 		}
 		
 		/* Block Firefox media controls */
@@ -311,14 +310,13 @@
 		
 		/* Enhanced video element blocking during ad playback */
 		.video-shell.ad-active video {
-			/* Completely disable interactions */
-			pointer-events: none !important;
+			/* ONLY block external interactions, not video player controls */
 			user-select: none !important;
 			-webkit-user-select: none !important;
 			-moz-user-select: none !important;
 			-ms-user-select: none !important;
 			
-			/* Block touch interactions */
+			/* Block touch callouts but allow video controls */
 			-webkit-touch-callout: none !important;
 			-webkit-tap-highlight-color: transparent !important;
 			
@@ -328,37 +326,25 @@
 			-moz-user-drag: none !important;
 			-o-user-drag: none !important;
 			
-			/* Block outline and focus */
+			/* Block outline and focus rings */
 			outline: none !important;
-			border: none !important;
-			
-			/* Prevent browser zoom */
-			touch-action: none !important;
-			-ms-touch-action: none !important;
 		}
 		
-		/* Block all media control overlays globally during video */
+		/* FIXED: Allow video player controls and proper landscape display */
 		body.video-playing {
-			/* Prevent text selection anywhere */
+			/* Only prevent page-level interactions, not video controls */
 			user-select: none !important;
 			-webkit-user-select: none !important;
 			-moz-user-select: none !important;
 			-ms-user-select: none !important;
 			
-			/* Block zoom and scroll */
-			touch-action: none !important;
-			-ms-touch-action: none !important;
-			overflow: hidden !important;
-			
-			/* Prevent overscroll behaviors */
-			overscroll-behavior: none !important;
-			overscroll-behavior-x: none !important;
-			overscroll-behavior-y: none !important;
+			/* REMOVED: No longer block touch actions - let video player work normally */
+			/* REMOVED: No longer hide overflow - let landscape videos display properly */
 		}
 		
-		/* Hide browser notification overlays during video */
-		body.video-playing *:not(.video-shell):not(.video-shell *) {
-			/* Reduce interference from other elements */
+		/* FIXED: Remove interference with video player background */
+		body.video-playing *:not(.video-shell):not(.video-shell *):not(.video-overlay-btn):not(.video-overlay-btn *) {
+			/* Only reduce z-index for non-video elements */
 			z-index: 1 !important;
 		}
 		
@@ -2500,25 +2486,24 @@ function blockMediaControls() {
 		}
 	});
 	
-	// 7. Disable video controls attribute dynamically
-	adVideo.removeAttribute('controls');
-	adVideo.controls = false;
+	// 7. FIXED: Allow video controls to work properly
+	// Remove the overly restrictive controls blocking
+	// The video should be controllable via the overlay buttons
+	console.log('[MEDIA-BLOCK] Video controls allowed for proper functionality');
 	
-	// 8. Override video methods that could be used to skip
+	// 8. FIXED: Allow video player controls but prevent external manipulation
 	const originalPlay = adVideo.play.bind(adVideo);
 	const originalPause = adVideo.pause.bind(adVideo);
 	const originalLoad = adVideo.load.bind(adVideo);
 	
 	adVideo.play = function() {
-		console.log('[MEDIA-BLOCK] Play() called - controlled execution');
+		console.log('[MEDIA-BLOCK] Play() called - allowing video player control');
 		return originalPlay();
 	};
 	
+	// FIXED: Allow pause from video player controls
 	adVideo.pause = function() {
-		if (adSequenceActive) {
-			console.log('[MEDIA-BLOCK] Pause() blocked during ad sequence');
-			return;
-		}
+		console.log('[MEDIA-BLOCK] Pause() called - allowing video player control');
 		return originalPause();
 	};
 	
@@ -2596,38 +2581,28 @@ function enhancedMediaControlBlocking() {
 		}
 	}
 	
-	// 2. BLOCK ALL BLUETOOTH/HEADPHONE HARDWARE CONTROLS
+	// 2. BLOCK ONLY EXTERNAL HARDWARE CONTROLS (NOT VIDEO PLAYER CONTROLS)
 	document.addEventListener('keydown', function(e) {
 		if (!adSequenceActive) return;
 		
-		// Block media keys from keyboard/headphones/Bluetooth devices
-		const mediaKeys = [
+		// ONLY block external media keys, NOT video player functionality
+		const externalMediaKeys = [
 			'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
 			'MediaTrackNext', 'MediaTrackPrevious', 'MediaRewind',
 			'MediaFastForward', 'VolumeUp', 'VolumeDown', 'VolumeMute'
 		];
 		
-		if (mediaKeys.includes(e.code) || mediaKeys.includes(e.key)) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Hardware media key blocked:', e.code || e.key);
+		if (externalMediaKeys.includes(e.code) || externalMediaKeys.includes(e.key)) {
+			console.log('[ENHANCED-MEDIA-BLOCK] External hardware media key blocked:', e.code || e.key);
 			e.preventDefault();
 			e.stopPropagation();
 			e.stopImmediatePropagation();
 			return false;
 		}
 		
-		// Block spacebar, arrow keys, and common video shortcuts
-		const videoShortcuts = [
-			' ', 'Space', 'k', 'K', 'j', 'J', 'l', 'L', 'm', 'M',
-			'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-			'Home', 'End', 'PageUp', 'PageDown', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
-		];
+		// REMOVED: No longer block spacebar, arrow keys, or video shortcuts
+		// These are needed for video player controls to work properly
 		
-		if (videoShortcuts.includes(e.key) || videoShortcuts.includes(e.code)) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Video shortcut blocked:', e.key || e.code);
-			e.preventDefault();
-			e.stopPropagation();
-			return false;
-		}
 	}, { capture: true, passive: false });
 	
 	// 3. BLOCK BROWSER NOTIFICATION CONTROLS
@@ -2733,57 +2708,71 @@ function enhancedMediaControlBlocking() {
 		});
 	});
 	
-	// 9. BLOCK BROWSER ZOOM/SCALE GESTURES ON VIDEO
+	// 9. CONTROLLED ZOOM BLOCKING (Allow video controls)
 	let lastTouchDistance = 0;
 	document.addEventListener('touchstart', function(e) {
 		if (adSequenceActive && e.touches.length === 2) {
-			const touch1 = e.touches[0];
-			const touch2 = e.touches[1];
-			lastTouchDistance = Math.sqrt(
-				Math.pow(touch2.clientX - touch1.clientX, 2) +
-				Math.pow(touch2.clientY - touch1.clientY, 2)
-			);
+			// Only block zoom on video element itself, not controls
+			const target = e.target;
+			if (target === adVideo || target.closest('#adVideo')) {
+				const touch1 = e.touches[0];
+				const touch2 = e.touches[1];
+				lastTouchDistance = Math.sqrt(
+					Math.pow(touch2.clientX - touch1.clientX, 2) +
+					Math.pow(touch2.clientY - touch1.clientY, 2)
+				);
+			}
 		}
 	}, { passive: false });
 	
 	document.addEventListener('touchmove', function(e) {
 		if (adSequenceActive && e.touches.length === 2) {
-			const touch1 = e.touches[0];
-			const touch2 = e.touches[1];
-			const currentDistance = Math.sqrt(
-				Math.pow(touch2.clientX - touch1.clientX, 2) +
-				Math.pow(touch2.clientY - touch1.clientY, 2)
-			);
-			
-			// Block pinch-to-zoom gestures
-			if (Math.abs(currentDistance - lastTouchDistance) > 10) {
-				console.log('[ENHANCED-MEDIA-BLOCK] Pinch-to-zoom blocked during video');
-				e.preventDefault();
-				return false;
+			// Only block zoom on video element itself, not controls
+			const target = e.target;
+			if (target === adVideo || target.closest('#adVideo')) {
+				const touch1 = e.touches[0];
+				const touch2 = e.touches[1];
+				const currentDistance = Math.sqrt(
+					Math.pow(touch2.clientX - touch1.clientX, 2) +
+					Math.pow(touch2.clientY - touch1.clientY, 2)
+				);
+				
+				// Block pinch-to-zoom gestures only on video
+				if (Math.abs(currentDistance - lastTouchDistance) > 10) {
+					console.log('[ENHANCED-MEDIA-BLOCK] Video zoom blocked, controls allowed');
+					e.preventDefault();
+					return false;
+				}
 			}
 		}
 	}, { passive: false });
 	
-	// 10. PREVENT BROWSER BACK/FORWARD NAVIGATION DURING VIDEO
+	// 10. MINIMAL NAVIGATION BLOCKING (Don't interfere with video player)
 	window.addEventListener('popstate', function(e) {
 		if (adSequenceActive) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Browser navigation blocked during video');
-			// Push state back to maintain current page
-			history.pushState(null, null, window.location.href);
-			e.preventDefault();
-			return false;
+			console.log('[ENHANCED-MEDIA-BLOCK] Page navigation blocked during video');
+			// Only block if not related to video controls
+			const target = e.target;
+			if (!target || (!target.closest('.video-shell') && !target.closest('.video-overlay-btn'))) {
+				history.pushState(null, null, window.location.href);
+				e.preventDefault();
+			}
 		}
 	});
 	
 	// Push initial state to enable navigation blocking
 	history.pushState(null, null, window.location.href);
 	
-	// 11. BLOCK BROWSER CONTEXT MENU COMPLETELY DURING VIDEO
+	// 11. CONTROLLED CONTEXT MENU BLOCKING (Allow video controls)
 	document.addEventListener('contextmenu', function(e) {
 		if (adSequenceActive) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Context menu blocked during video');
-			e.preventDefault();
-			return false;
+			// Only block context menu on video element itself, not controls
+			const target = e.target;
+			if (target === adVideo || target.closest('#adVideo')) {
+				console.log('[ENHANCED-MEDIA-BLOCK] Video context menu blocked, controls allowed');
+				e.preventDefault();
+				return false;
+			}
 		}
 	}, { capture: true });
 	
