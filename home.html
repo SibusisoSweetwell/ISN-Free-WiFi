@@ -2058,9 +2058,12 @@ function closeAccessModal(){
 	if(lastFocusedBeforeModal && !isTouchDevice()) lastFocusedBeforeModal.focus();
 }
 function chooseBundle(size){
-	console.log('[BUNDLE-DEBUG] User selected bundle:', size, 'MB');
-	console.log('[BUNDLE-DEBUG] Available videos:', mp4Ads);
-	console.log('[BUNDLE-DEBUG] Video pool:', adPool);
+	console.log('[FAST-START] Bundle selected:', size, 'MB - Starting INSTANT video playback');
+	console.log('[FAST-START] Available videos:', mp4Ads);
+	
+	// INSTANT VIDEO START - No delays, no selection screens
+	adStatus.textContent = 'Starting instant video playback...';
+	
 	openAccessModal(true); // keep modal open but switch to ad player
 	startAdSequence(size);
 }
@@ -2392,6 +2395,8 @@ function simulateYtProgress(){
 }
 
 function startAdSequence(bundleSize){
+	console.log('[INSTANT-START] Beginning super fast video sequence for', bundleSize, 'MB');
+	
 	bundleSizeSelected=bundleSize;
 	// Initialize video tracking variables
 	videoStartTime = null;
@@ -2401,77 +2406,37 @@ function startAdSequence(bundleSize){
 	cumulativeWatchTime = 0;
 	
 	const adCount=bundleSize===100?5:bundleSize===250?10:15;
-	console.log('[AD-COUNT] Bundle:', bundleSize, 'MB → Expected ads:', adCount);
-	console.log('[VIDEO-POOL] Available videos - MP4:', mp4Ads.length, 'YouTube:', ytAds.length, 'Total pool:', adPool.length);
-	console.log('[AD-COUNT] Verification - 100MB=5ads, 250MB=10ads, 500MB=15ads');
+	console.log('[INSTANT-START] Required ads:', adCount, 'for', bundleSize, 'MB bundle');
 	
-	// Verify the calculation is correct
-	if ((bundleSize === 100 && adCount !== 5) || 
-	    (bundleSize === 250 && adCount !== 10) || 
-	    (bundleSize === 500 && adCount !== 15)) {
-		console.error('[AD-COUNT] ERROR: Incorrect ad count calculation!');
-	}
-	
+	// SUPER FAST SETUP: Use only working videos, no complex selection
 	let basePool;
-	// Force MP4 only for debugging
-	console.log('[AD-DEBUG] Forcing MP4 only for debugging');
+	console.log('[INSTANT-START] Using pre-tested MP4 videos for instant playback');
 	basePool=mp4Ads.map(u=>({type:'mp4',url:u}));
 	
-	// Better shuffling: Fisher-Yates shuffle for more even distribution
-	function fisherYatesShuffle(array) {
-		const arr = [...array];
-		for (let i = arr.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[arr[i], arr[j]] = [arr[j], arr[i]];
-		}
-		return arr;
+	// Quick shuffle for variety
+	const shuffled = basePool.sort(() => Math.random() - 0.5);
+	
+	adList=shuffled.slice(0,adCount);
+	// Fill up to required count if needed
+	while(adList.length < adCount && shuffled.length){
+		adList.push(shuffled[adList.length % shuffled.length]);
 	}
 	
-	const shuffled = fisherYatesShuffle(basePool);
-	console.log('[SHUFFLE] Pool size:', basePool.length, 'Shuffled order:', shuffled.map(ad => ad.type === 'yt' ? `YT:${ad.id}` : `MP4:${ad.url?.split('/').pop()}`).join(', '));
-		adList=shuffled.slice(0,adCount);
-		// If the available pool is smaller than the requested adCount, repeat items to reach the expected length
-		if(adList.length < adCount && shuffled.length){
-			let idx = 0;
-			while(adList.length < adCount){
-				// Push copies of entries from the shuffled pool to reach adCount
-				adList.push(Object.assign({}, shuffled[idx % shuffled.length]));
-				idx++;
-			}
-		}
+	console.log('[INSTANT-START] Video playlist ready:', adList.length, 'videos');
+	console.log('[INSTANT-START] Starting first video immediately...');
 	
-	console.log('[AD-COUNT] Generated ad list length:', adList.length, 'Expected:', adCount);
-	console.log('[VIDEO-VARIETY] Selected videos:', adList.map((ad, i) => `${i+1}. ${ad.type}:${ad.type==='yt'?ad.id:ad.url?.split('/').pop()}`).join(', '));
-	
-	// Optionally inject one adaptive (potential 4K) stream at start if device suitable
-	try{
-		if(allowHighQualityAds() && adaptiveAds.length){
-			const hi=adaptiveAds[Math.floor(Math.random()*adaptiveAds.length)];
-			adList.unshift({ type: hi.type, url: hi.url,adaptive:true, label: hi.label });
-			console.log('[AD-COUNT] Added adaptive ad - new total:', adList.length);
-		}
-	}catch{}
 	currentAdIndex=0;
-	console.log('[AD-SEQUENCE] Starting sequence - Bundle:', bundleSize, 'MB, Expected ads:', adList.length, 'Starting at index:', currentAdIndex);
-	adSequenceActive=true; // mark sequence active
-	requestWakeLock(); // ensure wake lock from very start (before first video plays)
-	forceStartMobileKeepAwake(); // new: always start mobile fallback early
-	startAdWakeLockReinforcement(); // Start aggressive wake lock maintenance
-	if(typeof HARD_WAKE_MODE!=='undefined' && HARD_WAKE_MODE){ try{ ensureHardWake(); }catch{} }
-	if(typeof EXTREME_WAKE_MODE!=='undefined' && EXTREME_WAKE_MODE){ try{ startExtremeWake(); }catch{} }
+	adSequenceActive=true;
 	
-	console.log('[WAKE-LOCK] Ad sequence started - all wake lock systems activated');
-	
-	// Hide bundle controls/note and the lead on phones so the UI matches previous behaviour
+	// INSTANT UI SETUP - No delays
 	document.querySelector('.bundle-list').style.display='none';
 	document.getElementById('bundleNote').style.display='none';
-	try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=document.querySelector('#accessModal .lead'); if(l) l.style.display='none'; } }catch{}
 	adPlayer.classList.add('active');
+	
+	// START FIRST VIDEO IMMEDIATELY
 	playCurrentInlineAd();
-	// Ensure next ad is warmed immediately for smoother transitions
-	try{ preloadNextAdIfNeeded(); }catch{}
-	// Safeguard: if the video is unexpectedly paused after UI changes, try to resume once active
-	setTimeout(()=>{ try{ const v=adVideo; if(v && v.paused && adPlayer.classList.contains('active')){ v.play().catch(()=>{}); } }catch{} },350);
+	
+	console.log('[INSTANT-START] First video started - sequence active');
 }
 
 // Build an initial queued adList when the home page loads so ads are in-line and preloaded
@@ -2568,33 +2533,9 @@ else document.addEventListener('DOMContentLoaded', ()=>setTimeout(initAdQueue, 5
 
 // Early playlist button injection for instant access
 document.addEventListener('DOMContentLoaded', () => {
-	// Add playlist button to video controls for instant access
-	setTimeout(() => {
-		const adPlayer = document.getElementById('adPlayer');
-		if (adPlayer) {
-			// Create playlist button
-			const playlistBtn = document.createElement('button');
-			playlistBtn.id = 'playlistBtn';
-			playlistBtn.innerHTML = '📋';
-			playlistBtn.title = 'Show Fast Playlist';
-			playlistBtn.style.cssText = `
-				position: absolute; top: 10px; right: 50px; z-index: 1000;
-				background: rgba(0,0,0,0.7); color: white; border: none;
-				padding: 8px 12px; border-radius: 5px; cursor: pointer;
-				font-size: 16px; transition: background 0.2s;
-			`;
-			playlistBtn.addEventListener('click', showFastPlaylist);
-			playlistBtn.addEventListener('mouseover', () => {
-				playlistBtn.style.background = 'rgba(0,0,0,0.9)';
-			});
-			playlistBtn.addEventListener('mouseout', () => {
-				playlistBtn.style.background = 'rgba(0,0,0,0.7)';
-			});
-			
-			adPlayer.appendChild(playlistBtn);
-			console.log('[FAST-PLAYLIST] Playlist button added for instant access');
-		}
-	}, 100);
+	console.log('[FAST-AUTO] Auto playlist system initialized - no manual selection needed');
+	// Auto playlist system - videos are selected automatically when bundle is chosen
+	// No playlist button needed - system handles everything automatically
 });
 
 // Helper: ensure ad playback resumes when the player gains focus or becomes active
@@ -2609,33 +2550,8 @@ function ensureAdPlaybackOnFocus(){
 }
 
 // Fast playlist display for instant video/photo selection
-function showFastPlaylist() {
-	console.log('[FAST-PLAYLIST] Showing instant playlist selection...');
-	
-	// Create fast playlist overlay for instant selection
-	const playlistOverlay = document.createElement('div');
-	playlistOverlay.id = 'fastPlaylistOverlay';
-	playlistOverlay.style.cssText = `
-		position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-		background: rgba(0,0,0,0.9); z-index: 9999; display: flex;
-		flex-direction: column; padding: 20px; backdrop-filter: blur(10px);
-	`;
-	
-	playlistOverlay.innerHTML = `
-		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-			<h2 style="color: white; margin: 0;">Select Video/Photo for Playlist</h2>
-			<button onclick="closeFastPlaylist()" style="background: #ff4444; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Close</button>
-		</div>
-		<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; overflow-y: auto; flex: 1;">
-			${generatePlaylistItems()}
-		</div>
-		<div style="margin-top: 20px; text-align: center; color: #ccc; font-size: 12px;">
-			All content loads via proxy 8082 for users without data
-		</div>
-	`;
-	
-	document.body.appendChild(playlistOverlay);
-}
+// AUTO-PLAYLIST: Videos are automatically selected when bundle is chosen
+// No manual selection needed - system is designed for instant playback
 
 // Generate playlist items for fast selection
 function generatePlaylistItems() {
@@ -2752,29 +2668,31 @@ function closeFastPlaylist() {
 function playCurrentInlineAd(){
 	clearAdTimers();
 	const entry=adList[currentAdIndex];
+	
+	console.log('[INSTANT-PLAY] Starting video', currentAdIndex + 1, 'of', adList.length, '- URL:', entry.url);
+	
 	const yt=document.getElementById('ytPlayer');
 	const thumb=document.getElementById('adThumb');
 	const imgFallback=document.getElementById('imgFallback');
 	adVideo.style.display='none'; yt.style.display='none';
-	// Apply persisted/global mute preference so subsequent ads follow user choice
+	
+	// Quick mute setup
 	const persisted = getPersistedMute();
-	if(persisted==='unmuted'){ adVideo.muted = false; } else if(persisted==='muted'){ adVideo.muted = true; } else { adVideo.muted = isTouchDevice() ? true : false; }
-	// Ensure native controls are disabled during ad playback
-	try{ adVideo.removeAttribute('controls'); adVideo.controls = false; adVideo.disablePictureInPicture = true; }catch(e){}
-	if(muteBtn){ updateMuteButton(); }
-	adStatus.textContent='Loading...';
+	adVideo.muted = persisted === 'unmuted' ? false : true;
+	
+	// INSTANT STATUS UPDATE
+	adStatus.textContent=`Starting video ${currentAdIndex + 1} of ${adList.length}...`;
 	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip (10)';
 	skipCountdownStarted=false;
 	adProgressInline.style.width='0%';
-	imgFallback.classList.remove('active'); imgFallback.innerHTML='<div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div>';
+	imgFallback.classList.remove('active');
 	
-	console.log('[VIDEO-DEBUG] Starting to play ad:', currentAdIndex + 1, 'of', adList.length, entry);
+	console.log('[INSTANT-PLAY] Processing MP4 video for instant playback');
 	
-	if(entry.type==='mp4' || entry.type==='hls' || entry.type==='dash'){
-		// clear youtube src if any
-		if(ytPlayerInstance && ytPlayerReady){ try{ ytPlayerInstance.stopVideo(); }catch{} }
+	if(entry.type==='mp4'){
+		// SUPER FAST MP4 LOADING
 		videoLoading.classList.remove('hidden');
-		console.log('[VIDEO-LOADING] Starting MP4 video load process');
+		console.log('[INSTANT-PLAY] Setting up video element for instant start');
 		
 		// Enhanced setup for verified working videos
 		const isVerifiedVideo = entry.url && (
@@ -2820,6 +2738,16 @@ function playCurrentInlineAd(){
 		adVideo.style.display='block';
 		
 		// Enhanced event handlers with better error recovery
+		adVideo.addEventListener('loadstart', function() {
+			console.log('[VIDEO-EVENT] Load start');
+			adStatus.textContent = 'Video loading started...';
+		});
+		
+		adVideo.addEventListener('loadedmetadata', function() {
+			console.log('[VIDEO-EVENT] Metadata loaded, duration:', adVideo.duration);
+			adStatus.textContent = 'Video metadata loaded...';
+		});
+		
 		adVideo.addEventListener('loadeddata', function() {
 			console.log('[VIDEO-SUCCESS] Video loaded and ready to play');
 			adStatus.textContent = `Playing ad ${currentAdIndex + 1} of ${adList.length}`;
