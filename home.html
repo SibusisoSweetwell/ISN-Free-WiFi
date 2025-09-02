@@ -816,12 +816,34 @@
 		white-space:nowrap;
 		flex:0 0 auto;
 	}
+		/* All video overlay buttons have consistent styling */
 		.video-overlay-btn button#playPauseBtn,
 		.video-overlay-btn button#fsBtn,
-		.video-overlay-btn button#skipBtn{cursor:pointer;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.2);}
+		.video-overlay-btn button#skipBtn{
+			cursor:pointer;
+			background:rgba(0,0,0,.8);
+			border:1px solid rgba(255,255,255,.2);
+			/* Inherit base button styling for consistency */
+		}
+		
+		/* Skip button uses standard enabled styling when active */
+		.video-overlay-btn button#skipBtn.enabled{
+			cursor:pointer;
+			background:var(--brand);
+			border:1px solid rgba(255,255,255,.3);
+		}
+		
 		.video-overlay-btn button#playPauseBtn:hover,
 		.video-overlay-btn button#fsBtn:hover,
-		.video-overlay-btn button#skipBtn:hover{background:var(--brand-dark);box-shadow:0 2px 6px rgba(255,65,108,.3);padding:8px 12px;width:auto;min-width:fit-content;transition:all 0.2s ease;}
+		.video-overlay-btn button#skipBtn:hover,
+		.video-overlay-btn button#skipBtn.enabled:hover{
+			background:var(--brand-dark);
+			box-shadow:0 2px 6px rgba(255,65,108,.3);
+			padding:8px 12px;
+			width:auto;
+			min-width:fit-content;
+			transition:all 0.2s ease;
+		}
 		
 		/* Position skip button at left edge separately */
 		.video-overlay-btn button#skipBtn{
@@ -3254,83 +3276,133 @@ if (document.readyState === 'loading') {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 function initAntiCheatSystem() {
-	// Enhanced compatibility for small phones and limited browsers
+	// Enhanced compatibility for extremely low-end devices (250MB RAM, old CPUs)
 	let wasAutoPaused = false;
 	let focusLossTime = 0;
 	let antiCheatThrottle = false;
 	let isLowEndDevice = false;
+	let isExtremelyLowEnd = false;
 	
-	// Detect low-end devices and limited browsers
+	// Comprehensive device detection for very old phones and desktops
 	try {
 		const userAgent = navigator.userAgent.toLowerCase();
 		const isOldAndroid = /android\s[1-4]\./.test(userAgent);
+		const isVeryOldAndroid = /android\s[1-2]\./.test(userAgent);
 		const isOldWebView = /android.*version\/[1-4]\./.test(userAgent);
-		const isBasicBrowser = /ucbrowser|samsungbrowser|miuibrowser/.test(userAgent);
-		const hasLimitedRAM = navigator.deviceMemory && navigator.deviceMemory < 2;
+		const isBasicBrowser = /ucbrowser|samsungbrowser|miuibrowser|operamini/.test(userAgent);
+		const isOldDesktop = /windows\s(95|98|xp|2000)|mac\sos\sx\s10\.[0-8]/.test(userAgent);
+		const isOldMobile = /nokia|blackberry|palm|symbian/.test(userAgent);
 		
-		isLowEndDevice = isOldAndroid || isOldWebView || isBasicBrowser || hasLimitedRAM;
-		console.log('[ANTI-CHEAT] Device compatibility:', {
+		// RAM and hardware detection
+		const deviceMemory = navigator.deviceMemory;
+		const hardwareConcurrency = navigator.hardwareConcurrency || 1;
+		const hasLimitedRAM = deviceMemory && deviceMemory <= 0.5; // 512MB or less
+		const hasVeryLimitedRAM = deviceMemory && deviceMemory <= 0.25; // 250MB or less
+		const hasSingleCore = hardwareConcurrency <= 1;
+		
+		// Performance indicators
+		const isSlowCPU = performance.now() > 100; // If just loading takes long
+		const connectionSpeed = navigator.connection ? navigator.connection.downlink : 0;
+		const isSlowConnection = connectionSpeed && connectionSpeed < 0.5;
+		
+		isLowEndDevice = isOldAndroid || isOldWebView || isBasicBrowser || hasLimitedRAM || hasSingleCore;
+		isExtremelyLowEnd = isVeryOldAndroid || isOldDesktop || isOldMobile || hasVeryLimitedRAM || 
+			(hasSingleCore && hasLimitedRAM) || (isOldAndroid && isSlowConnection);
+		
+		console.log('[ANTI-CHEAT] Enhanced device compatibility:', {
 			isLowEndDevice,
+			isExtremelyLowEnd,
+			deviceMemory: deviceMemory || 'unknown',
+			hardwareConcurrency,
 			userAgent: userAgent.substr(0, 50) + '...',
-			deviceMemory: navigator.deviceMemory || 'unknown'
+			connectionSpeed: connectionSpeed || 'unknown'
 		});
 	} catch(e) {
-		console.log('[ANTI-CHEAT] Device detection failed, assuming limited device');
+		console.log('[ANTI-CHEAT] Device detection failed, assuming extremely limited device');
+		isExtremelyLowEnd = true;
 		isLowEndDevice = true;
 	}
 	
-	// Lightweight pause indicator with fallbacks
+	// Ultra-lightweight pause indicator optimized for 250MB RAM devices
 	function showPauseIndicator() {
 		if (adStatus && !antiCheatThrottle) {
 			antiCheatThrottle = true;
-			// Use simpler approach for limited browsers
+			
+			// Ultra-simple approach for extremely low-end devices
 			const updateUI = () => {
 				try {
-					adStatus.textContent = "Video paused - Return to continue";
-					adStatus.style.color = "#ff6b6b";
+					if (adStatus) {
+						adStatus.textContent = "Video paused - Return to continue";
+						adStatus.style.color = "#ff6b6b";
+					}
 				} catch(e) {
 					console.log('[ANTI-CHEAT] UI update failed');
 				}
 				antiCheatThrottle = false;
 			};
 			
-			if (isLowEndDevice) {
-				updateUI(); // Immediate for slow devices
+			if (isExtremelyLowEnd) {
+				// Immediate update for very old devices to avoid timeouts
+				updateUI();
+			} else if (isLowEndDevice) {
+				updateUI(); // Also immediate for low-end
 			} else {
-				setTimeout(updateUI, 100);
+				setTimeout(updateUI, 50); // Reduced from 100ms
 			}
 		}
 	}
 	
-	// Enhanced connection detection with fallbacks
+	// Ultra-conservative connection detection for old devices
 	function getConnectionInfo() {
 		try {
 			const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
 			if (connection) {
 				return {
-					effectiveType: connection.effectiveType || '3g',
-					downlink: connection.downlink || 1,
-					rtt: connection.rtt || 500
+					effectiveType: connection.effectiveType || '2g',
+					downlink: connection.downlink || 0.25,
+					rtt: connection.rtt || 1000
 				};
 			}
 		} catch(e) {
 			console.log('[ANTI-CHEAT] Connection API not available');
 		}
 		
-		// Fallback: assume slow connection for safety
+		// Ultra-conservative fallbacks for very old devices
+		if (isExtremelyLowEnd) {
+			return {
+				effectiveType: 'slow-2g',
+				downlink: 0.1, // Assume very slow
+				rtt: 2000 // Assume high latency
+			};
+		} else if (isLowEndDevice) {
+			return {
+				effectiveType: '2g',
+				downlink: 0.25,
+				rtt: 1500
+			};
+		}
+		
+		// Default for unknown devices
 		return {
-			effectiveType: isLowEndDevice ? 'slow-2g' : '3g',
+			effectiveType: '3g',
 			downlink: 0.5,
 			rtt: 800
 		};
 	}
 	
-	// Enhanced focus/blur detection with browser compatibility
+	// Ultra-conservative focus detection for extremely old devices
 	function setupFocusDetection() {
-		// Enhanced blur handler with compatibility checks
+		// Enhanced blur handler with ultra-conservative timing
 		const handleBlur = function() {
 			focusLossTime = Date.now();
-			const pauseDelay = isLowEndDevice ? 3000 : 2000; // Longer delay for slower devices
+			
+			// Ultra-conservative delays for very old devices
+			let pauseDelay = 2000; // Default
+			if (isExtremelyLowEnd) {
+				pauseDelay = 5000; // Very long delay for extremely old devices
+			} else if (isLowEndDevice) {
+				pauseDelay = 3500; // Longer delay for low-end devices
+			}
 			
 			setTimeout(() => {
 				const focusLossDuration = Date.now() - focusLossTime;
@@ -3339,6 +3411,7 @@ function initAntiCheatSystem() {
 						adVideo.pause();
 						wasAutoPaused = true;
 						showPauseIndicator();
+						console.log('[ANTI-CHEAT] Video paused after', pauseDelay + 'ms delay');
 					} catch(e) {
 						console.log('[ANTI-CHEAT] Pause failed:', e);
 					}
@@ -3346,7 +3419,7 @@ function initAntiCheatSystem() {
 			}, pauseDelay);
 		};
 		
-		// Enhanced focus handler with intelligent resume
+		// Ultra-conservative resume handler
 		const handleFocus = function() {
 			if (adSequenceActive && wasAutoPaused) {
 				wasAutoPaused = false;
@@ -3356,27 +3429,32 @@ function initAntiCheatSystem() {
 					const isSlowConnection = connInfo.effectiveType === 'slow-2g' || 
 						connInfo.effectiveType === '2g' || connInfo.downlink < 0.5;
 					
-					// Adaptive resume delay based on device and connection
+					// Ultra-adaptive resume delay based on device capability
 					let resumeDelay = 500;
-					if (isLowEndDevice && isSlowConnection) {
-						resumeDelay = 3000; // Very slow devices need more time
+					if (isExtremelyLowEnd) {
+						resumeDelay = isSlowConnection ? 6000 : 4000; // Very long for old devices
+					} else if (isLowEndDevice && isSlowConnection) {
+						resumeDelay = 3000;
 					} else if (isLowEndDevice || isSlowConnection) {
 						resumeDelay = 1500;
 					}
+					
+					console.log('[ANTI-CHEAT] Resuming after', resumeDelay + 'ms delay');
 					
 					setTimeout(() => {
 						if (adVideo && adVideo.paused && adSequenceActive) {
 							try {
 								adVideo.play().catch(() => {
-									// Enhanced fallback with multiple retries for limited browsers
 									console.log('[ANTI-CHEAT] First resume failed, retrying...');
+									// Ultra-conservative retry for old devices
+									const retryDelay = isExtremelyLowEnd ? 5000 : (isLowEndDevice ? 3000 : 2000);
 									setTimeout(() => {
 										if (adVideo && adVideo.paused) {
 											adVideo.play().catch(() => {
 												console.log('[ANTI-CHEAT] Resume failed completely');
 											});
 										}
-									}, isLowEndDevice ? 3000 : 2000);
+									}, retryDelay);
 								});
 							} catch(e) {
 								console.log('[ANTI-CHEAT] Resume error:', e);
@@ -3385,23 +3463,25 @@ function initAntiCheatSystem() {
 					}, resumeDelay);
 				}
 				
-				// Clear pause indicator with fallback
+				// Clear pause indicator with conservative timing
 				if (adStatus) {
+					const clearDelay = isExtremelyLowEnd ? 500 : 200;
 					setTimeout(() => {
 						try {
 							if (adStatus) adStatus.style.color = "";
 						} catch(e) {
 							console.log('[ANTI-CHEAT] Clear indicator failed');
 						}
-					}, 200);
+					}, clearDelay);
 				}
 			}
 		};
 		
-		// Add event listeners with error handling
+		// Add event listeners with enhanced error handling
 		try {
 			window.addEventListener('blur', handleBlur);
 			window.addEventListener('focus', handleFocus);
+			console.log('[ANTI-CHEAT] Focus detection setup complete');
 		} catch(e) {
 			console.log('[ANTI-CHEAT] Focus event setup failed:', e);
 		}
@@ -3409,10 +3489,10 @@ function initAntiCheatSystem() {
 	
 	setupFocusDetection();
 	
-	// Enhanced mobile app switching detection with compatibility fallbacks
+	// Ultra-conservative mobile detection for extremely old devices
 	function setupMobileDetection() {
-		// Modern Page Lifecycle API (for newer browsers)
-		if ('document' in window) {
+		// Modern Page Lifecycle API (only for newer browsers)
+		if ('document' in window && !isExtremelyLowEnd) {
 			try {
 				document.addEventListener('freeze', function() {
 					if (adSequenceActive && adVideo && !adVideo.paused) {
@@ -3425,7 +3505,7 @@ function initAntiCheatSystem() {
 				document.addEventListener('resume', function() {
 					if (adSequenceActive && wasAutoPaused) {
 						wasAutoPaused = false;
-						const mobileResumeDelay = isLowEndDevice ? 1500 : 800;
+						const mobileResumeDelay = isLowEndDevice ? 2000 : 800;
 						
 						setTimeout(() => {
 							if (adVideo && adVideo.paused && adVideo.readyState >= 2) {
@@ -3445,26 +3525,33 @@ function initAntiCheatSystem() {
 			}
 		}
 		
-		// Fallback: Visibility API for older browsers
+		// Enhanced Visibility API with ultra-conservative timing
 		try {
 			document.addEventListener('visibilitychange', function() {
 				if (document.hidden) {
-					// Page became hidden (app switch, minimize, etc.)
+					// Page became hidden - use longer delays for old devices
 					if (adSequenceActive && adVideo && !adVideo.paused) {
+						const hideDelay = isExtremelyLowEnd ? 3000 : (isLowEndDevice ? 2000 : 1000);
 						setTimeout(() => {
-							// Double-check after delay to avoid false positives
+							// Triple-check for old devices to avoid false positives
 							if (document.hidden && adVideo && !adVideo.paused) {
 								adVideo.pause();
 								wasAutoPaused = true;
-								console.log('[ANTI-CHEAT] Visibility hidden, video paused');
+								console.log('[ANTI-CHEAT] Visibility hidden, video paused after', hideDelay + 'ms');
 							}
-						}, isLowEndDevice ? 2000 : 1000);
+						}, hideDelay);
 					}
 				} else {
-					// Page became visible again
+					// Page became visible - ultra-conservative resume
 					if (adSequenceActive && wasAutoPaused) {
 						wasAutoPaused = false;
-						const visibilityResumeDelay = isLowEndDevice ? 2000 : 1000;
+						
+						let visibilityResumeDelay = 1000;
+						if (isExtremelyLowEnd) {
+							visibilityResumeDelay = 4000; // Very long for old devices
+						} else if (isLowEndDevice) {
+							visibilityResumeDelay = 2500;
+						}
 						
 						setTimeout(() => {
 							if (adVideo && adVideo.paused && !document.hidden) {
@@ -3484,7 +3571,7 @@ function initAntiCheatSystem() {
 			console.log('[ANTI-CHEAT] Visibility API not supported');
 		}
 		
-		// Additional fallback for very old browsers: beforeunload
+		// Ultra-conservative beforeunload for very old browsers
 		try {
 			window.addEventListener('beforeunload', function() {
 				if (adSequenceActive && adVideo && !adVideo.paused) {
@@ -3495,11 +3582,37 @@ function initAntiCheatSystem() {
 		} catch(e) {
 			console.log('[ANTI-CHEAT] beforeunload not supported');
 		}
+		
+		// Additional fallback for extremely old devices: pagehide/pageshow
+		if (isExtremelyLowEnd) {
+			try {
+				window.addEventListener('pagehide', function() {
+					if (adSequenceActive && adVideo && !adVideo.paused) {
+						adVideo.pause();
+						wasAutoPaused = true;
+						console.log('[ANTI-CHEAT] Page hide detected');
+					}
+				});
+				
+				window.addEventListener('pageshow', function() {
+					if (adSequenceActive && wasAutoPaused) {
+						wasAutoPaused = false;
+						setTimeout(() => {
+							if (adVideo && adVideo.paused) {
+								adVideo.play().catch(() => {});
+							}
+						}, 3000); // Long delay for old devices
+					}
+				});
+			} catch(e) {
+				console.log('[ANTI-CHEAT] pagehide/pageshow not supported');
+			}
+		}
 	}
 	
 	setupMobileDetection();
 	
-	console.log('[ANTI-CHEAT] System initialized with enhanced compatibility for limited devices');
+	console.log('[ANTI-CHEAT] Ultra-conservative system initialized for devices with 250MB+ RAM and old CPUs');
 }
 
 // Initialize anti-cheat system
