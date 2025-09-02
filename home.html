@@ -2387,6 +2387,9 @@ function startSessionPing(){
 startSessionPing();
 let adVideo=document.getElementById('adVideo');
 
+// Track full ad sequence activity for persistent wake lock
+let adSequenceActive=false;
+
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // 🚫 ENHANCED MOBILE MEDIA CONTROL BLOCKING - SPOTIFY FREE VERSION STYLE
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -2394,6 +2397,14 @@ let adVideo=document.getElementById('adVideo');
 // Block all browser media controls and navigation - ENHANCED FOR PHONES
 function blockMediaControls() {
 	console.log('[MEDIA-BLOCK] Implementing comprehensive media control blocking for mobile devices...');
+	
+	// Get adVideo element - retry if not found
+	const adVideo = document.getElementById('adVideo');
+	if (!adVideo) {
+		console.log('[MEDIA-BLOCK] adVideo element not found, retrying in 100ms...');
+		setTimeout(blockMediaControls, 100);
+		return;
+	}
 	
 	// 1. COMPLETELY DISABLE Media Session API (prevents ALL external controls)
 	if ('mediaSession' in navigator) {
@@ -2483,15 +2494,13 @@ function blockMediaControls() {
 			}
 		}
 	}, true);
-		console.log('[MEDIA-BLOCK] Browser media controls disabled');
-	}
 	
-	// 2. Block keyboard shortcuts for media control
-	const blockedKeys = ['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'MediaPlayPause', 'MediaStop', 'MediaTrackNext', 'MediaTrackPrevious'];
+	console.log('[MEDIA-BLOCK] Browser media controls disabled');
 	
+	// 4. Block keyboard shortcuts for media control
 	document.addEventListener('keydown', function(e) {
-		if (adSequenceActive && blockedKeys.includes(e.code)) {
-			console.log('[MEDIA-BLOCK] Blocked key:', e.code);
+		if (adSequenceActive && blockedKeys.includes(e.keyCode)) {
+			console.log('[MEDIA-BLOCK] Blocked key code:', e.keyCode);
 			e.preventDefault();
 			e.stopPropagation();
 			e.stopImmediatePropagation();
@@ -2643,260 +2652,13 @@ function blockMediaControls() {
 	console.log('[MEDIA-BLOCK] All media control blocking systems activated');
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════════════════════
-// 🚫 ENHANCED BROWSER & EXTERNAL MEDIA CONTROLS BLOCKING FOR RENDER SITE
-// ═══════════════════════════════════════════════════════════════════════════════════════════════
-
-function enhancedMediaControlBlocking() {
-	console.log('[ENHANCED-MEDIA-BLOCK] Implementing comprehensive browser & external media control blocking...');
-	
-	// 1. DISABLE BROWSER MEDIA SESSION API COMPLETELY
-	if ('mediaSession' in navigator) {
-		try {
-			// Clear all metadata to prevent browser media notifications
-			navigator.mediaSession.metadata = null;
-			
-			// Disable ALL possible media session actions
-			const mediaActions = [
-				'play', 'pause', 'stop', 'seekbackward', 'seekforward', 
-				'seekto', 'previoustrack', 'nexttrack', 'skipad',
-				'hangup', 'togglemicrophone', 'togglecamera', 'togglecamera'
-			];
-			
-			mediaActions.forEach(action => {
-				try {
-					navigator.mediaSession.setActionHandler(action, null);
-				} catch(e) {
-					// Some actions might not be supported
-				}
-			});
-			
-			// Set playback state to prevent external controls
-			navigator.mediaSession.playbackState = 'none';
-			
-			console.log('[ENHANCED-MEDIA-BLOCK] Browser Media Session API completely disabled');
-		} catch(e) {
-			console.warn('[ENHANCED-MEDIA-BLOCK] Media Session API blocking partial:', e);
-		}
-	}
-	
-	// 2. BLOCK ONLY EXTERNAL HARDWARE CONTROLS (NOT VIDEO PLAYER CONTROLS)
-	document.addEventListener('keydown', function(e) {
-		if (!adSequenceActive) return;
-		
-		// ONLY block external media keys, NOT video player functionality
-		const externalMediaKeys = [
-			'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
-			'MediaTrackNext', 'MediaTrackPrevious', 'MediaRewind',
-			'MediaFastForward', 'VolumeUp', 'VolumeDown', 'VolumeMute'
-		];
-		
-		if (externalMediaKeys.includes(e.code) || externalMediaKeys.includes(e.key)) {
-			console.log('[ENHANCED-MEDIA-BLOCK] External hardware media key blocked:', e.code || e.key);
-			e.preventDefault();
-			e.stopPropagation();
-			e.stopImmediatePropagation();
-			return false;
-		}
-		
-		// REMOVED: No longer block spacebar, arrow keys, or video shortcuts
-		// These are needed for video player controls to work properly
-		
-	}, { capture: true, passive: false });
-	
-	// 3. BLOCK BROWSER NOTIFICATION CONTROLS
-	if ('Notification' in window) {
-		// Override notification API to prevent media controls in notifications
-		const originalNotification = window.Notification;
-		window.Notification = function(...args) {
-			if (adSequenceActive) {
-				console.log('[ENHANCED-MEDIA-BLOCK] Notification blocked during video');
-				return;
-			}
-			return new originalNotification(...args);
-		};
-	}
-	
-	// 4. DISABLE PICTURE-IN-PICTURE COMPLETELY
-	if ('pictureInPictureEnabled' in document) {
-		Object.defineProperty(document, 'pictureInPictureEnabled', {
-			get: function() { return false; },
-			set: function() { return false; }
-		});
-	}
-	
-	// Block all PiP-related events globally
-	['enterpictureinpicture', 'leavepictureinpicture'].forEach(eventName => {
-		document.addEventListener(eventName, function(e) {
-			if (adSequenceActive) {
-				console.log('[ENHANCED-MEDIA-BLOCK] Picture-in-Picture event blocked:', eventName);
-				e.preventDefault();
-				e.stopPropagation();
-				
-				// Force exit PiP if somehow entered
-				if (document.pictureInPictureElement) {
-					document.exitPictureInPicture().catch(() => {});
-				}
-				return false;
-			}
-		}, { capture: true, passive: false });
-	});
-	
-	// 5. BLOCK BROWSER TAB/WINDOW CONTROLS THAT AFFECT MEDIA
-	window.addEventListener('beforeunload', function(e) {
-		if (adSequenceActive) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Page unload blocked during video');
-			e.preventDefault();
-			e.returnValue = 'Video in progress - closing will interrupt playback';
-			return 'Video in progress - closing will interrupt playback';
-		}
-	});
-	
-	// 6. OVERRIDE BROWSER AUDIO CONTEXT TO PREVENT EXTERNAL CONTROL
-	if (window.AudioContext || window.webkitAudioContext) {
-		const OriginalAudioContext = window.AudioContext || window.webkitAudioContext;
-		
-		window.AudioContext = function(...args) {
-			const ctx = new OriginalAudioContext(...args);
-			
-			// Block suspend/resume during video
-			const originalSuspend = ctx.suspend.bind(ctx);
-			const originalResume = ctx.resume.bind(ctx);
-			
-			ctx.suspend = function() {
-				if (adSequenceActive) {
-					console.log('[ENHANCED-MEDIA-BLOCK] AudioContext suspend blocked during video');
-					return Promise.resolve();
-				}
-				return originalSuspend();
-			};
-			
-			ctx.resume = function() {
-				return originalResume();
-			};
-			
-			return ctx;
-		};
-		
-		if (window.webkitAudioContext) {
-			window.webkitAudioContext = window.AudioContext;
-		}
-	}
-	
-	// 7. BLOCK DEVICE ORIENTATION CHANGES DURING VIDEO
-	window.addEventListener('orientationchange', function(e) {
-		if (adSequenceActive) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Orientation change during video - maintaining playback');
-			// Maintain video playback during orientation changes
-			setTimeout(() => {
-				if (adVideo && adVideo.paused) {
-					adVideo.play().catch(() => {});
-				}
-			}, 100);
-		}
-	});
-	
-	// 8. ENHANCED FULLSCREEN CONTROL BLOCKING
-	['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(eventName => {
-		document.addEventListener(eventName, function() {
-			if (adSequenceActive && !document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement && !document.msFullscreenElement) {
-				console.log('[ENHANCED-MEDIA-BLOCK] Fullscreen exit blocked during video');
-				// Optionally force back to fullscreen
-				// adVideo.requestFullscreen().catch(() => {});
-			}
-		});
-	});
-	
-	// 9. CONTROLLED ZOOM BLOCKING (Allow video controls)
-	let lastTouchDistance = 0;
-	document.addEventListener('touchstart', function(e) {
-		if (adSequenceActive && e.touches.length === 2) {
-			// Only block zoom on video element itself, not controls
-			const target = e.target;
-			if (target === adVideo || target.closest('#adVideo')) {
-				const touch1 = e.touches[0];
-				const touch2 = e.touches[1];
-				lastTouchDistance = Math.sqrt(
-					Math.pow(touch2.clientX - touch1.clientX, 2) +
-					Math.pow(touch2.clientY - touch1.clientY, 2)
-				);
-			}
-		}
-	}, { passive: false });
-	
-	document.addEventListener('touchmove', function(e) {
-		if (adSequenceActive && e.touches.length === 2) {
-			// Only block zoom on video element itself, not controls
-			const target = e.target;
-			if (target === adVideo || target.closest('#adVideo')) {
-				const touch1 = e.touches[0];
-				const touch2 = e.touches[1];
-				const currentDistance = Math.sqrt(
-					Math.pow(touch2.clientX - touch1.clientX, 2) +
-					Math.pow(touch2.clientY - touch1.clientY, 2)
-				);
-				
-				// Block pinch-to-zoom gestures only on video
-				if (Math.abs(currentDistance - lastTouchDistance) > 10) {
-					console.log('[ENHANCED-MEDIA-BLOCK] Video zoom blocked, controls allowed');
-					e.preventDefault();
-					return false;
-				}
-			}
-		}
-	}, { passive: false });
-	
-	// 10. MINIMAL NAVIGATION BLOCKING (Don't interfere with video player)
-	window.addEventListener('popstate', function(e) {
-		if (adSequenceActive) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Page navigation blocked during video');
-			// Only block if not related to video controls
-			const target = e.target;
-			if (!target || (!target.closest('.video-shell') && !target.closest('.video-overlay-btn'))) {
-				history.pushState(null, null, window.location.href);
-				e.preventDefault();
-			}
-		}
-	});
-	
-	// Push initial state to enable navigation blocking
-	history.pushState(null, null, window.location.href);
-	
-	// 11. CONTROLLED CONTEXT MENU BLOCKING (Allow video controls)
-	document.addEventListener('contextmenu', function(e) {
-		if (adSequenceActive) {
-			// Only block context menu on video element itself, not controls
-			const target = e.target;
-			if (target === adVideo || target.closest('#adVideo')) {
-				console.log('[ENHANCED-MEDIA-BLOCK] Video context menu blocked, controls allowed');
-				e.preventDefault();
-				return false;
-			}
-		}
-	}, { capture: true });
-	
-	// 12. OVERRIDE BROWSER FOCUS/BLUR TO MAINTAIN VIDEO PLAYBACK
-	window.addEventListener('blur', function() {
-		if (adSequenceActive && adVideo && adVideo.paused) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Window blur - maintaining video playback');
-			setTimeout(() => {
-				adVideo.play().catch(() => {});
-			}, 100);
-		}
-	});
-	
-	window.addEventListener('focus', function() {
-		if (adSequenceActive && adVideo && adVideo.paused) {
-			console.log('[ENHANCED-MEDIA-BLOCK] Window focus - ensuring video continues');
-			adVideo.play().catch(() => {});
-		}
-	});
-	
-	console.log('[ENHANCED-MEDIA-BLOCK] All browser & external media controls blocked successfully');
+// Initialize media control blocking when DOM is ready
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', blockMediaControls);
+} else {
+	// DOM is already loaded
+	blockMediaControls();
 }
-
-// Initialize media control blocking on page load
-blockMediaControls();
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // END MEDIA CONTROL BLOCKING
@@ -2914,8 +2676,6 @@ const toast=document.getElementById('globalToast');
 let adList=[];let currentAdIndex=0;let skipTimer=null;let progressInterval=null;let bundleSizeSelected=0;let adGrantTimeout=null;let skipCountdownStarted=false;let skipFallbackTimer=null;let videoStartStamp=0;let autoSkipTimer=null;let skipCountdownPaused=false;
 // Add cumulative watch time tracking across entire sequence
 let cumulativeWatchTime = 0;
-// Track full ad sequence activity for persistent wake lock
-let adSequenceActive=false;
 // Persisted mute helpers (centralized)
 function getPersistedMute(){ try{ return localStorage.getItem('adMuted'); }catch(e){ return null; } }
 function setPersistedMute(v){ try{ if(v===null) localStorage.removeItem('adMuted'); else localStorage.setItem('adMuted', v); }catch(e){} }
