@@ -330,22 +330,45 @@
 			outline: none !important;
 		}
 		
-		/* FIXED: Allow video player controls and proper landscape display */
+		/* FIXED: Blur red topper and bottom elements during video playback */
 		body.video-playing {
 			/* Only prevent page-level interactions, not video controls */
 			user-select: none !important;
 			-webkit-user-select: none !important;
 			-moz-user-select: none !important;
 			-ms-user-select: none !important;
-			
-			/* REMOVED: No longer block touch actions - let video player work normally */
-			/* REMOVED: No longer hide overflow - let landscape videos display properly */
 		}
 		
-		/* FIXED: Remove interference with video player background */
-		body.video-playing *:not(.video-shell):not(.video-shell *):not(.video-overlay-btn):not(.video-overlay-btn *) {
-			/* Only reduce z-index for non-video elements */
+		/* BLUR RED TOPPER AND HEADER during video playback */
+		body.video-playing header.nav {
+			filter: blur(8px) brightness(0.7) !important;
+			backdrop-filter: blur(8px) !important;
 			z-index: 1 !important;
+			pointer-events: none !important;
+			transition: filter 0.3s ease !important;
+		}
+		
+		/* BLUR FOOTER AND BOTTOM ELEMENTS during video playback */
+		body.video-playing .footer,
+		body.video-playing main.hero,
+		body.video-playing .hero-content,
+		body.video-playing .hero-image {
+			filter: blur(8px) brightness(0.7) !important;
+			backdrop-filter: blur(8px) !important;
+			z-index: 1 !important;
+			pointer-events: none !important;
+			transition: filter 0.3s ease !important;
+		}
+		
+		/* ENSURE VIDEO APPEARS ON TOP of blurred elements */
+		body.video-playing .modal-overlay.active,
+		body.video-playing .ad-player.active,
+		body.video-playing .video-shell {
+			z-index: 999999 !important;
+			position: relative !important;
+			filter: none !important;
+			backdrop-filter: none !important;
+			pointer-events: auto !important;
 		}
 		
 		.video-shell.ad-active {
@@ -2365,25 +2388,101 @@ startSessionPing();
 let adVideo=document.getElementById('adVideo');
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// 🚫 COMPREHENSIVE MEDIA CONTROL BLOCKING - SPOTIFY FREE VERSION STYLE
+// 🚫 ENHANCED MOBILE MEDIA CONTROL BLOCKING - SPOTIFY FREE VERSION STYLE
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-// Block all browser media controls and navigation
+// Block all browser media controls and navigation - ENHANCED FOR PHONES
 function blockMediaControls() {
-	console.log('[MEDIA-BLOCK] Implementing comprehensive media control blocking...');
+	console.log('[MEDIA-BLOCK] Implementing comprehensive media control blocking for mobile devices...');
 	
-	// 1. Disable Media Session API (prevents headphone/Bluetooth controls)
+	// 1. COMPLETELY DISABLE Media Session API (prevents ALL external controls)
 	if ('mediaSession' in navigator) {
+		// Set metadata to null to prevent external control recognition
 		navigator.mediaSession.metadata = null;
-		navigator.mediaSession.setActionHandler('play', null);
-		navigator.mediaSession.setActionHandler('pause', null);
-		navigator.mediaSession.setActionHandler('seekbackward', null);
-		navigator.mediaSession.setActionHandler('seekforward', null);
-		navigator.mediaSession.setActionHandler('previoustrack', null);
-		navigator.mediaSession.setActionHandler('nexttrack', null);
-		navigator.mediaSession.setActionHandler('skipad', null);
-		navigator.mediaSession.setActionHandler('seekto', null);
-		navigator.mediaSession.setActionHandler('stop', null);
+		
+		// ENHANCED: Block ALL possible media session actions for phones
+		const allMediaActions = [
+			'play', 'pause', 'stop', 'seekbackward', 'seekforward', 
+			'seekto', 'previoustrack', 'nexttrack', 'skipad',
+			'togglemicrophone', 'togglecamera', 'hangup',
+			'settrack', 'enterpictureinpicture', 'exitpictureinpicture'
+		];
+		
+		allMediaActions.forEach(action => {
+			try {
+				navigator.mediaSession.setActionHandler(action, null);
+				// PHONE ENHANCEMENT: Set blocking function instead of null
+				navigator.mediaSession.setActionHandler(action, (event) => {
+					console.log(`[MEDIA-BLOCK] Blocked external ${action} control attempt`);
+					event.preventDefault();
+					event.stopPropagation();
+					return false;
+				});
+			} catch (e) {
+				console.log(`[MEDIA-BLOCK] Could not block ${action}:`, e);
+			}
+		});
+		
+		// ENHANCED: Force playback state to prevent external control
+		try {
+			navigator.mediaSession.playbackState = 'none';
+		} catch (e) {
+			console.log('[MEDIA-BLOCK] Could not set playback state:', e);
+		}
+	}
+	
+	// 2. ENHANCED KEYBOARD BLOCKING - Especially for phones with external keyboards
+	const blockedKeys = [
+		32, // Space (play/pause)
+		37, // Left arrow (rewind)
+		39, // Right arrow (forward)
+		38, // Up arrow (volume up)
+		40, // Down arrow (volume down)
+		77, // M (mute)
+		70, // F (fullscreen)
+		75, // K (play/pause)
+		74, // J (rewind)
+		76, // L (forward)
+		179, // Media Play/Pause
+		177, // Media Previous
+		176, // Media Next
+		178, // Media Stop
+		173, // Audio Volume Down
+		174, // Audio Volume Up
+		175  // Audio Volume Mute
+	];
+	
+	// PHONE ENHANCEMENT: Block ALL media keys
+	document.addEventListener('keydown', function(e) {
+		if (document.body.classList.contains('video-playing')) {
+			// Block all media-related keys during video playback
+			if (blockedKeys.includes(e.keyCode) || 
+				e.key.startsWith('Audio') || 
+				e.key.startsWith('Media') ||
+				e.code.startsWith('Audio') || 
+				e.code.startsWith('Media')) {
+				
+				console.log(`[MEDIA-BLOCK] Blocked keyboard control: ${e.key || e.keyCode}`);
+				e.preventDefault();
+				e.stopPropagation();
+				e.stopImmediatePropagation();
+				return false;
+			}
+		}
+	}, true); // Use capture phase for stronger blocking
+	
+	// 3. ENHANCED HARDWARE BUTTON BLOCKING for phones
+	document.addEventListener('keyup', function(e) {
+		if (document.body.classList.contains('video-playing')) {
+			if (blockedKeys.includes(e.keyCode) || 
+				e.key.startsWith('Audio') || 
+				e.key.startsWith('Media')) {
+				e.preventDefault();
+				e.stopPropagation();
+				return false;
+			}
+		}
+	}, true);
 		console.log('[MEDIA-BLOCK] Browser media controls disabled');
 	}
 	
@@ -2796,9 +2895,8 @@ function enhancedMediaControlBlocking() {
 	console.log('[ENHANCED-MEDIA-BLOCK] All browser & external media controls blocked successfully');
 }
 
-// Initialize both blocking systems
+// Initialize media control blocking on page load
 blockMediaControls();
-enhancedMediaControlBlocking();
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // END MEDIA CONTROL BLOCKING
@@ -3172,6 +3270,15 @@ function startAdSequence(bundleSize){
 	document.body.classList.add('video-playing');
 	console.log('[ENHANCED-MEDIA-BLOCK] Global browser & external media controls BLOCKED');
 	
+	// PHONE ENHANCEMENT: Reinforce media blocking when video starts
+	blockMediaControls();
+	
+	// Block any video controls that might still be accessible
+	if (adVideo) {
+		adVideo.controls = false;
+		adVideo.removeAttribute('controls');
+	}
+	
 	// INSTANT UI SETUP - No delays
 	document.querySelector('.bundle-list').style.display='none';
 	document.getElementById('bundleNote').style.display='none';
@@ -3476,17 +3583,52 @@ function playCurrentInlineAd(){
 		adVideo.volume = 1; 
 		adVideo.style.display = 'block'; 
 		adVideo.classList.remove('visible');
-		// FULLY DISABLE BROWSER MEDIA CONTROLS (Spotify Free style)
+		// ENHANCED BROWSER MEDIA CONTROLS BLOCKING (SPOTIFY FREE STYLE) - PHONE OPTIMIZED
 		adVideo.removeAttribute('controls'); // Remove controls attribute
+		adVideo.controls = false; // Force controls to false
 		adVideo.setAttribute('tabindex', '-1'); // Prevent focus
 		adVideo.setAttribute('disableRemotePlayback', 'true'); // Block remote playback
 		adVideo.setAttribute('controlsList', 'nodownload nofullscreen noremoteplayback noplaybackrate'); // Block extra controls
+		adVideo.setAttribute('disablePictureInPicture', 'true'); // Block PiP completely
+		adVideo.setAttribute('webkit-playsinline', 'true'); // Force inline on iOS
+		adVideo.setAttribute('playsinline', 'true'); // Force inline on iOS
+		adVideo.muted = false; // Ensure audio works
+		
+		// PHONE ENHANCEMENT: Block ALL possible control interactions
 		adVideo.addEventListener('contextmenu', e => e.preventDefault()); // Block right-click menu
+		
+		// ENHANCED keyboard blocking for external keyboards on phones
 		adVideo.addEventListener('keydown', e => {
-			// Block space, arrows, media keys
-			if ([32,37,38,39,40,179,176,177,178].includes(e.keyCode)) {
-				e.preventDefault();
-				return false;
+			console.log(`[VIDEO-BLOCK] Blocked video keyboard control: ${e.key || e.keyCode}`);
+			e.preventDefault();
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			return false;
+		}, true);
+		
+		// Block ALL mouse/touch interactions that could trigger browser controls
+		['click', 'dblclick', 'mousedown', 'mouseup', 'touchstart', 'touchend'].forEach(eventType => {
+			adVideo.addEventListener(eventType, e => {
+				// Only allow our custom overlay buttons to work
+				if (!e.target.classList.contains('video-overlay-btn') && 
+					!e.target.closest('.video-overlay-btn')) {
+					e.preventDefault();
+					e.stopPropagation();
+					return false;
+				}
+			}, true);
+		});
+		
+		// PHONE ENHANCEMENT: Block media session events directly on video
+		adVideo.addEventListener('play', () => {
+			if ('mediaSession' in navigator) {
+				navigator.mediaSession.playbackState = 'none';
+			}
+		});
+		
+		adVideo.addEventListener('pause', () => {
+			if ('mediaSession' in navigator) {
+				navigator.mediaSession.playbackState = 'none';
 			}
 		});
 		adVideo.addEventListener('play', () => {
