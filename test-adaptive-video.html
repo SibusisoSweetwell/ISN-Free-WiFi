@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adaptive Video Quality Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { 
+            border: 1px solid #ccc; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 5px;
+        }
+        .device-info { 
+            background: #f0f0f0; 
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .quality-test {
+            background: #e8f4f8;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        video {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #333;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 3px;
+            background: #007acc;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background: #005a99; }
+    </style>
+</head>
+<body>
+    <h1>Adaptive Video Quality Test for ISN Free WiFi</h1>
+    
+    <div class="test-section">
+        <h2>Device Capability Detection</h2>
+        <div id="deviceInfo" class="device-info">
+            <p>Loading device information...</p>
+        </div>
+        <button onclick="testDeviceDetection()">Re-test Device Detection</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Video Quality Selection Test</h2>
+        <div id="qualityInfo" class="quality-test">
+            <p>Testing adaptive quality selection...</p>
+        </div>
+        <button onclick="testQualitySelection()">Test Quality Selection</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Sample Video Test</h2>
+        <video id="testVideo" controls style="width: 100%; max-width: 640px;">
+            <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <br>
+        <button onclick="loadUltraLowQuality()">Load Ultra-Low Quality (20kbps)</button>
+        <button onclick="loadLowQuality()">Load Low Quality (64kbps)</button>
+        <button onclick="loadMediumQuality()">Load Medium Quality (256kbps)</button>
+        <button onclick="loadHighQuality()">Load High Quality (1000kbps)</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Bandwidth Test Simulation</h2>
+        <div id="bandwidthTest" class="quality-test">
+            <p>Simulate different bandwidth conditions:</p>
+        </div>
+        <button onclick="simulateBandwidth(20)">20kbps (Ultra-Low)</button>
+        <button onclick="simulateBandwidth(64)">64kbps (Low)</button>
+        <button onclick="simulateBandwidth(256)">256kbps (Medium)</button>
+        <button onclick="simulateBandwidth(1000)">1000kbps (High)</button>
+    </div>
+
+    <script>
+        // Copy device detection functions from main home.html
+        function detectDeviceCapabilities() {
+            const capabilities = {
+                ram: 4096,
+                gpu: 'unknown',
+                bandwidth: 1000,
+                resolution: { width: 1920, height: 1080 },
+                refreshRate: 60,
+                browser: 'modern',
+                deviceClass: 'high-end',
+                videoQuality: 'high',
+                maxBitrate: 1000
+            };
+            
+            try {
+                // RAM Detection
+                if (navigator.deviceMemory) {
+                    capabilities.ram = navigator.deviceMemory * 1024;
+                }
+                
+                // Screen Resolution & Refresh Rate
+                capabilities.resolution = {
+                    width: screen.width || 1920,
+                    height: screen.height || 1080
+                };
+                
+                if (screen.refreshRate) {
+                    capabilities.refreshRate = screen.refreshRate;
+                }
+                
+                // GPU Detection
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        capabilities.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        
+                        const gpuLower = capabilities.gpu.toLowerCase();
+                        if (gpuLower.includes('intel gma') || 
+                            gpuLower.includes('radeon 9') ||
+                            gpuLower.includes('geforce fx') ||
+                            gpuLower.includes('geforce 6') ||
+                            gpuLower.includes('geforce 7') ||
+                            gpuLower.includes('sis') ||
+                            gpuLower.includes('via') ||
+                            gpuLower.includes('s3') ||
+                            gpuLower.includes('software') ||
+                            gpuLower.includes('mesa')) {
+                            capabilities.gpu = 'legacy-gpu';
+                        }
+                    }
+                } else {
+                    capabilities.gpu = 'no-webgl';
+                }
+                
+                // Connection Bandwidth Detection
+                const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+                if (connection) {
+                    capabilities.bandwidth = (connection.downlink || 1) * 1000;
+                    
+                    switch (connection.effectiveType) {
+                        case 'slow-2g':
+                            capabilities.bandwidth = Math.min(capabilities.bandwidth, 25);
+                            break;
+                        case '2g':
+                            capabilities.bandwidth = Math.min(capabilities.bandwidth, 70);
+                            break;
+                        case '3g':
+                            capabilities.bandwidth = Math.min(capabilities.bandwidth, 400);
+                            break;
+                        case '4g':
+                            capabilities.bandwidth = Math.min(capabilities.bandwidth, 1000);
+                            break;
+                    }
+                }
+                
+                // Browser Detection
+                const userAgent = navigator.userAgent.toLowerCase();
+                if (/android\s[1-4]\./.test(userAgent) || /version\/[1-4]\./.test(userAgent)) {
+                    capabilities.browser = 'legacy';
+                } else if (/ucbrowser|operamini|samsungbrowser/.test(userAgent)) {
+                    capabilities.browser = 'basic';
+                } else {
+                    capabilities.browser = 'modern';
+                }
+                
+                // Device Classification
+                const pixelCount = capabilities.resolution.width * capabilities.resolution.height;
+                const isLowRes = pixelCount < 800 * 600;
+                const isLowRAM = capabilities.ram < 1024;
+                const isSlowConnection = capabilities.bandwidth < 100;
+                const isVerySlowConnection = capabilities.bandwidth < 50;
+                const isLegacyBrowser = capabilities.browser === 'legacy';
+                const isLegacyGPU = capabilities.gpu === 'legacy-gpu' || capabilities.gpu === 'no-webgl';
+                
+                if ((isLowRAM && isLowRes && (isVerySlowConnection || isLegacyBrowser)) || 
+                    (isLegacyGPU && capabilities.bandwidth < 30) ||
+                    capabilities.ram <= 250) {
+                    capabilities.deviceClass = 'ultra-low-end';
+                    capabilities.videoQuality = 'ultra-low';
+                    capabilities.maxBitrate = 20;
+                } else if (isLowRAM || isLowRes || isSlowConnection || capabilities.browser === 'basic' || isLegacyGPU) {
+                    capabilities.deviceClass = 'low-end';
+                    capabilities.videoQuality = 'low';
+                    capabilities.maxBitrate = 64;
+                } else if (capabilities.ram < 2048 || pixelCount < 1920 * 1080 || capabilities.bandwidth < 500) {
+                    capabilities.deviceClass = 'mid-range';
+                    capabilities.videoQuality = 'medium';
+                    capabilities.maxBitrate = 256;
+                } else {
+                    capabilities.deviceClass = 'high-end';
+                    capabilities.videoQuality = 'high';
+                    capabilities.maxBitrate = 1000;
+                }
+                
+            } catch (e) {
+                console.error('Device detection error:', e);
+            }
+            
+            return capabilities;
+        }
+
+        function getAdaptiveVideoUrl(baseUrl, deviceCaps) {
+            if (!deviceCaps) return baseUrl;
+            
+            const quality = deviceCaps.videoQuality;
+            const maxBitrate = deviceCaps.maxBitrate;
+            
+            // Simulate different quality URLs (in real implementation, these would be actual different video files)
+            const qualityUrls = {
+                'ultra-low': baseUrl + '?quality=ultra-low&bitrate=20&res=256x144&fps=15',
+                'low': baseUrl + '?quality=low&bitrate=64&res=426x240&fps=24',
+                'medium': baseUrl + '?quality=medium&bitrate=256&res=640x360&fps=30',
+                'high': baseUrl + '?quality=high&bitrate=1000&res=854x480&fps=30'
+            };
+            
+            return qualityUrls[quality] || baseUrl;
+        }
+
+        function testDeviceDetection() {
+            const deviceCaps = detectDeviceCapabilities();
+            const deviceInfo = document.getElementById('deviceInfo');
+            
+            deviceInfo.innerHTML = `
+                <h3>Detected Device Capabilities:</h3>
+                <p><strong>RAM:</strong> ${deviceCaps.ram}MB</p>
+                <p><strong>GPU:</strong> ${deviceCaps.gpu}</p>
+                <p><strong>Bandwidth:</strong> ${deviceCaps.bandwidth}kbps</p>
+                <p><strong>Resolution:</strong> ${deviceCaps.resolution.width}x${deviceCaps.resolution.height}</p>
+                <p><strong>Refresh Rate:</strong> ${deviceCaps.refreshRate}Hz</p>
+                <p><strong>Browser:</strong> ${deviceCaps.browser}</p>
+                <p><strong>Device Class:</strong> ${deviceCaps.deviceClass}</p>
+                <p><strong>Video Quality:</strong> ${deviceCaps.videoQuality}</p>
+                <p><strong>Max Bitrate:</strong> ${deviceCaps.maxBitrate}kbps</p>
+            `;
+        }
+
+        function testQualitySelection() {
+            const deviceCaps = detectDeviceCapabilities();
+            const baseUrl = 'https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4';
+            const adaptiveUrl = getAdaptiveVideoUrl(baseUrl, deviceCaps);
+            
+            const qualityInfo = document.getElementById('qualityInfo');
+            qualityInfo.innerHTML = `
+                <h3>Adaptive Quality Selection:</h3>
+                <p><strong>Device Class:</strong> ${deviceCaps.deviceClass}</p>
+                <p><strong>Selected Quality:</strong> ${deviceCaps.videoQuality}</p>
+                <p><strong>Max Bitrate:</strong> ${deviceCaps.maxBitrate}kbps</p>
+                <p><strong>Base URL:</strong> ${baseUrl}</p>
+                <p><strong>Adaptive URL:</strong> ${adaptiveUrl}</p>
+            `;
+        }
+
+        function loadUltraLowQuality() {
+            const video = document.getElementById('testVideo');
+            const mockCaps = { videoQuality: 'ultra-low', maxBitrate: 20 };
+            const url = getAdaptiveVideoUrl('https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4', mockCaps);
+            video.src = url;
+            video.style.maxWidth = '256px';
+            video.style.maxHeight = '144px';
+            video.style.imageRendering = 'pixelated';
+            console.log('Loaded ultra-low quality:', url);
+        }
+
+        function loadLowQuality() {
+            const video = document.getElementById('testVideo');
+            const mockCaps = { videoQuality: 'low', maxBitrate: 64 };
+            const url = getAdaptiveVideoUrl('https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4', mockCaps);
+            video.src = url;
+            video.style.maxWidth = '426px';
+            video.style.maxHeight = '240px';
+            video.style.imageRendering = 'auto';
+            console.log('Loaded low quality:', url);
+        }
+
+        function loadMediumQuality() {
+            const video = document.getElementById('testVideo');
+            const mockCaps = { videoQuality: 'medium', maxBitrate: 256 };
+            const url = getAdaptiveVideoUrl('https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4', mockCaps);
+            video.src = url;
+            video.style.maxWidth = '640px';
+            video.style.maxHeight = '360px';
+            video.style.imageRendering = 'auto';
+            console.log('Loaded medium quality:', url);
+        }
+
+        function loadHighQuality() {
+            const video = document.getElementById('testVideo');
+            const mockCaps = { videoQuality: 'high', maxBitrate: 1000 };
+            const url = getAdaptiveVideoUrl('https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4', mockCaps);
+            video.src = url;
+            video.style.maxWidth = '854px';
+            video.style.maxHeight = '480px';
+            video.style.imageRendering = 'auto';
+            console.log('Loaded high quality:', url);
+        }
+
+        function simulateBandwidth(kbps) {
+            const bandwidthTest = document.getElementById('bandwidthTest');
+            const mockCaps = detectDeviceCapabilities();
+            mockCaps.bandwidth = kbps;
+            
+            // Recalculate device class based on simulated bandwidth
+            if (kbps <= 30) {
+                mockCaps.deviceClass = 'ultra-low-end';
+                mockCaps.videoQuality = 'ultra-low';
+                mockCaps.maxBitrate = 20;
+            } else if (kbps <= 100) {
+                mockCaps.deviceClass = 'low-end';
+                mockCaps.videoQuality = 'low';
+                mockCaps.maxBitrate = 64;
+            } else if (kbps <= 500) {
+                mockCaps.deviceClass = 'mid-range';
+                mockCaps.videoQuality = 'medium';
+                mockCaps.maxBitrate = 256;
+            } else {
+                mockCaps.deviceClass = 'high-end';
+                mockCaps.videoQuality = 'high';
+                mockCaps.maxBitrate = 1000;
+            }
+            
+            bandwidthTest.innerHTML = `
+                <h3>Simulated Bandwidth: ${kbps}kbps</h3>
+                <p><strong>Device Class:</strong> ${mockCaps.deviceClass}</p>
+                <p><strong>Video Quality:</strong> ${mockCaps.videoQuality}</p>
+                <p><strong>Selected Bitrate:</strong> ${mockCaps.maxBitrate}kbps</p>
+                <p><strong>Recommendation:</strong> ${mockCaps.maxBitrate <= 20 ? 'Use smallest video dimensions and minimal buffering' : 
+                                                      mockCaps.maxBitrate <= 64 ? 'Use conservative quality settings' :
+                                                      mockCaps.maxBitrate <= 256 ? 'Standard quality acceptable' :
+                                                      'High quality video supported'}</p>
+            `;
+        }
+
+        // Auto-run tests on page load
+        window.onload = function() {
+            testDeviceDetection();
+            testQualitySelection();
+        };
+    </script>
+</body>
+</html>
