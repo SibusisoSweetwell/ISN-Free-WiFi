@@ -3615,318 +3615,6 @@ function initAntiCheatSystem() {
 	console.log('[ANTI-CHEAT] Ultra-conservative system initialized for devices with 250MB+ RAM and old CPUs');
 }
 
-// Advanced Device Capability Detection for Adaptive Video Quality
-function detectDeviceCapabilities() {
-	const capabilities = {
-		ram: 4096, // Default assume 4GB
-		gpu: 'unknown',
-		bandwidth: 1000, // Default 1Mbps in kbps
-		resolution: { width: 1920, height: 1080 },
-		refreshRate: 60,
-		browser: 'modern',
-		deviceClass: 'high-end',
-		videoQuality: 'high',
-		maxBitrate: 1000 // kbps
-	};
-	
-	try {
-		// RAM Detection
-		if (navigator.deviceMemory) {
-			capabilities.ram = navigator.deviceMemory * 1024; // Convert GB to MB
-		}
-		
-		// Screen Resolution & Refresh Rate
-		capabilities.resolution = {
-			width: screen.width || 1920,
-			height: screen.height || 1080
-		};
-		
-		// Attempt to detect refresh rate
-		if (screen.refreshRate) {
-			capabilities.refreshRate = screen.refreshRate;
-		}
-		
-		// GPU Detection (experimental)
-		const canvas = document.createElement('canvas');
-		const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-		if (gl) {
-			const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-			if (debugInfo) {
-				capabilities.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-				
-				// Check for very old/weak GPUs that need special handling
-				const gpuLower = capabilities.gpu.toLowerCase();
-				if (gpuLower.includes('intel gma') || 
-					gpuLower.includes('radeon 9') ||
-					gpuLower.includes('geforce fx') ||
-					gpuLower.includes('geforce 6') ||
-					gpuLower.includes('geforce 7') ||
-					gpuLower.includes('sis') ||
-					gpuLower.includes('via') ||
-					gpuLower.includes('s3') ||
-					gpuLower.includes('software') ||
-					gpuLower.includes('mesa')) {
-					capabilities.gpu = 'legacy-gpu';
-					console.log('[GPU-DETECT] Legacy GPU detected:', capabilities.gpu);
-				}
-			}
-		} else {
-			capabilities.gpu = 'no-webgl'; // No hardware acceleration available
-		}
-		
-		// Connection Bandwidth Detection
-		const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-		if (connection) {
-			capabilities.bandwidth = (connection.downlink || 1) * 1000; // Convert Mbps to kbps
-			
-			// Override with effective type if very slow
-			switch (connection.effectiveType) {
-				case 'slow-2g':
-					capabilities.bandwidth = Math.min(capabilities.bandwidth, 25); // 25kbps max
-					break;
-				case '2g':
-					capabilities.bandwidth = Math.min(capabilities.bandwidth, 70); // 70kbps max
-					break;
-				case '3g':
-					capabilities.bandwidth = Math.min(capabilities.bandwidth, 400); // 400kbps max
-					break;
-				case '4g':
-					capabilities.bandwidth = Math.min(capabilities.bandwidth, 1000); // 1000kbps max
-					break;
-			}
-		}
-		
-		// Browser Capability Detection
-		const userAgent = navigator.userAgent.toLowerCase();
-		if (/android\s[1-4]\./.test(userAgent) || /version\/[1-4]\./.test(userAgent)) {
-			capabilities.browser = 'legacy';
-		} else if (/ucbrowser|operamini|samsungbrowser/.test(userAgent)) {
-			capabilities.browser = 'basic';
-		} else {
-			capabilities.browser = 'modern';
-		}
-		
-		// Device Classification based on combined factors
-		const pixelCount = capabilities.resolution.width * capabilities.resolution.height;
-		const isLowRes = pixelCount < 800 * 600; // Less than 480k pixels
-		const isLowRAM = capabilities.ram < 1024; // Less than 1GB
-		const isSlowConnection = capabilities.bandwidth < 100; // Less than 100kbps
-		const isVerySlowConnection = capabilities.bandwidth < 50; // Less than 50kbps
-		const isLegacyBrowser = capabilities.browser === 'legacy';
-		const isLegacyGPU = capabilities.gpu === 'legacy-gpu' || capabilities.gpu === 'no-webgl';
-		
-		// Device class determination - now including GPU assessment
-		if ((isLowRAM && isLowRes && (isVerySlowConnection || isLegacyBrowser)) || 
-			(isLegacyGPU && capabilities.bandwidth < 30) ||
-			capabilities.ram <= 250) {
-			capabilities.deviceClass = 'ultra-low-end';
-			capabilities.videoQuality = 'ultra-low';
-			capabilities.maxBitrate = 20; // 20kbps for ultra-low-end
-		} else if (isLowRAM || isLowRes || isSlowConnection || capabilities.browser === 'basic' || isLegacyGPU) {
-			capabilities.deviceClass = 'low-end';
-			capabilities.videoQuality = 'low';
-			capabilities.maxBitrate = 64; // 64kbps for low-end
-		} else if (capabilities.ram < 2048 || pixelCount < 1920 * 1080 || capabilities.bandwidth < 500) {
-			capabilities.deviceClass = 'mid-range';
-			capabilities.videoQuality = 'medium';
-			capabilities.maxBitrate = 256; // 256kbps for mid-range
-		} else {
-			capabilities.deviceClass = 'high-end';
-			capabilities.videoQuality = 'high';
-			capabilities.maxBitrate = 1000; // 1000kbps for high-end
-		}
-		
-		console.log('[DEVICE-CAPS] Detected capabilities:', capabilities);
-		
-	} catch (e) {
-		console.log('[DEVICE-CAPS] Detection failed, using ultra-safe defaults:', e);
-		// Ultra-safe defaults for unknown devices
-		capabilities.deviceClass = 'ultra-low-end';
-		capabilities.videoQuality = 'ultra-low';
-		capabilities.maxBitrate = 20;
-		capabilities.bandwidth = 25;
-	}
-	
-	return capabilities;
-}
-
-// Global device capabilities (detect once on load)
-const deviceCaps = detectDeviceCapabilities();
-
-// Global Speed Optimization System
-function enableSpeedOptimizations() {
-	console.log('[SPEED-OPT] Enabling global speed optimizations for device class:', deviceCaps.deviceClass);
-	
-	// DNS prefetch for faster loading
-	const dnsPrefetch = document.createElement('link');
-	dnsPrefetch.rel = 'dns-prefetch';
-	dnsPrefetch.href = '//storage.googleapis.com';
-	document.head.appendChild(dnsPrefetch);
-	
-	// Preconnect for immediate connection
-	const preconnect = document.createElement('link');
-	preconnect.rel = 'preconnect';
-	preconnect.href = 'https://storage.googleapis.com';
-	document.head.appendChild(preconnect);
-	
-	// Enable faster page rendering
-	if (deviceCaps.bandwidth > 200) {
-		document.documentElement.style.contentVisibility = 'auto';
-	}
-	
-	console.log('[SPEED-OPT] Global speed optimizations enabled');
-}
-
-// Initialize speed optimizations immediately
-enableSpeedOptimizations();
-
-// Adaptive Video URL Generation with Quality Selection
-function getAdaptiveVideoUrl(originalUrl, forceQuality = null) {
-	if (!originalUrl) return originalUrl;
-	
-	const quality = forceQuality || deviceCaps.videoQuality;
-	const maxBitrate = forceQuality ? 
-		(forceQuality === 'ultra-low' ? 20 : forceQuality === 'low' ? 64 : forceQuality === 'medium' ? 256 : 1000) : 
-		deviceCaps.maxBitrate;
-	
-	console.log(`[ADAPTIVE-VIDEO] Selecting ${quality} quality (${maxBitrate}kbps) for device class: ${deviceCaps.deviceClass}`);
-	
-	// If it's already a Google CDN URL, try to modify it for quality
-	if (originalUrl.includes('googlevideo.com') || originalUrl.includes('commondatastorage.googleapis.com')) {
-		try {
-			const url = new URL(originalUrl);
-			
-			// Add quality parameters for Google Videos
-			switch (quality) {
-				case 'ultra-low':
-					url.searchParams.set('itag', '160'); // 144p MP4
-					url.searchParams.set('mime', 'video/mp4');
-					url.searchParams.set('quality', 'tiny');
-					url.searchParams.set('fps', '15');
-					break;
-				case 'low':
-					url.searchParams.set('itag', '133'); // 240p MP4
-					url.searchParams.set('mime', 'video/mp4');
-					url.searchParams.set('quality', 'small');
-					url.searchParams.set('fps', '24');
-					break;
-				case 'medium':
-					url.searchParams.set('itag', '134'); // 360p MP4
-					url.searchParams.set('mime', 'video/mp4');
-					url.searchParams.set('quality', 'medium');
-					url.searchParams.set('fps', '30');
-					break;
-				case 'high':
-					url.searchParams.set('itag', '135'); // 480p MP4
-					url.searchParams.set('mime', 'video/mp4');
-					url.searchParams.set('quality', 'large');
-					url.searchParams.set('fps', '30');
-					break;
-			}
-			
-			// Add bandwidth limit
-			url.searchParams.set('rbuf', Math.min(maxBitrate * 2, 2000).toString()); // Buffer size
-			url.searchParams.set('ratebypass', 'yes');
-			
-			console.log(`[ADAPTIVE-VIDEO] Modified Google URL for ${quality} quality`);
-			return url.toString();
-			
-		} catch (e) {
-			console.log('[ADAPTIVE-VIDEO] Failed to modify Google URL, using original:', e);
-		}
-	}
-	
-	// For other URLs, try to append quality parameters
-	try {
-		const url = new URL(originalUrl);
-		
-		// Generic quality parameters
-		url.searchParams.set('quality', quality);
-		url.searchParams.set('bitrate', maxBitrate.toString());
-		
-		// Resolution parameters based on quality
-		switch (quality) {
-			case 'ultra-low':
-				url.searchParams.set('width', '256');
-				url.searchParams.set('height', '144');
-				url.searchParams.set('fps', '15');
-				break;
-			case 'low':
-				url.searchParams.set('width', '426');
-				url.searchParams.set('height', '240');
-				url.searchParams.set('fps', '24');
-				break;
-			case 'medium':
-				url.searchParams.set('width', '640');
-				url.searchParams.set('height', '360');
-				url.searchParams.set('fps', '30');
-				break;
-			case 'high':
-				url.searchParams.set('width', '854');
-				url.searchParams.set('height', '480');
-				url.searchParams.set('fps', '30');
-				break;
-		}
-		
-		return url.toString();
-		
-	} catch (e) {
-		console.log('[ADAPTIVE-VIDEO] Failed to modify URL parameters, using original:', e);
-	}
-	
-	// Fallback: return original URL
-	return originalUrl;
-}
-
-// Ultra-Low Bandwidth Video Processor for 20kbps support with FAST LOADING
-function processUltraLowBandwidthVideo(videoElement) {
-	if (deviceCaps.maxBitrate <= 50) { // For connections under 50kbps
-		console.log('[ULTRA-LOW-BW] Applying ultra-low bandwidth optimizations with FAST LOADING');
-		
-		// Reduce video element size to save bandwidth
-		videoElement.style.maxWidth = '256px';
-		videoElement.style.maxHeight = '144px';
-		
-		// Enable faster loading with minimal preload
-		videoElement.preload = 'metadata';
-		
-		// FAST LOADING optimizations
-		videoElement.setAttribute('playsinline', 'true');
-		videoElement.setAttribute('webkit-playsinline', 'true');
-		videoElement.muted = true; // Start muted for faster autoplay
-		
-		// Set very conservative buffer settings
-		if (videoElement.buffered && videoElement.buffered.length > 0) {
-			try {
-				// FASTER playback for quick completion
-				if (deviceCaps.bandwidth < 30) {
-					videoElement.playbackRate = 1.2; // FASTER playback to complete videos quickly
-				} else {
-					videoElement.playbackRate = 1.1; // Slightly faster for better user experience
-				}
-			} catch (e) {
-				console.log('[ULTRA-LOW-BW] Playback rate adjustment failed:', e);
-			}
-		}
-		
-		// Add loading optimization for ultra-slow connections
-		videoElement.addEventListener('loadstart', function() {
-			console.log('[ULTRA-LOW-BW] Video loading started - optimizing for 20kbps');
-		});
-		
-		videoElement.addEventListener('progress', function() {
-			if (this.buffered.length > 0) {
-				const bufferedEnd = this.buffered.end(this.buffered.length - 1);
-				const duration = this.duration;
-				if (duration > 0) {
-					const bufferedPercent = (bufferedEnd / duration) * 100;
-					console.log(`[ULTRA-LOW-BW] Buffered: ${bufferedPercent.toFixed(1)}%`);
-				}
-			}
-		});
-	}
-}
-
 // Initialize anti-cheat system
 initAntiCheatSystem();
 
@@ -4168,28 +3856,19 @@ function allowHighQualityAds(){
 async function setupAdaptivePlayback(manifest){
 	// manifest.type: hls | dash
 	if(manifest.type==='hls'){
-		const adaptiveUrl = getAdaptiveVideoUrl(manifest.url);
 		if(supportsNativeHls()){
-			adVideo.src=proxyUrl(adaptiveUrl); adVideo.load();
+			adVideo.src=proxyUrl(manifest.url); adVideo.load();
 		} else if(await ensureHls()){
 			if(window.Hls.isSupported()){
-				const hls=new window.Hls({ 
-					maxMaxBufferLength: deviceCaps.maxBitrate <= 50 ? 10 : 30,
-					maxBufferLength: deviceCaps.maxBitrate <= 50 ? 5 : 15,
-					maxBufferSize: deviceCaps.maxBitrate * 1000 // Adaptive buffer size
-				});
-				hls.loadSource(proxyUrl(adaptiveUrl)); hls.attachMedia(adVideo);
-			} else { adVideo.src=proxyUrl(adaptiveUrl); }
+				const hls=new window.Hls({ maxMaxBufferLength:30 });
+				hls.loadSource(proxyUrl(manifest.url)); hls.attachMedia(adVideo);
+			} else { adVideo.src=proxyUrl(manifest.url); }
 		} else { throw new Error('HLS lib failed'); }
 	} else if(manifest.type==='dash'){
-		const adaptiveUrl = getAdaptiveVideoUrl(manifest.url);
 		if(await ensureDash()){
 			const player=window.dashjs.MediaPlayer().create();
-			// Configure DASH for low bandwidth
-			player.getSettings().streaming.buffer.bufferTimeAtTopQuality = deviceCaps.maxBitrate <= 50 ? 5 : 20;
-			player.getSettings().streaming.buffer.bufferTimeAtTopQualityLongForm = deviceCaps.maxBitrate <= 50 ? 10 : 40;
-			player.initialize(adVideo, proxyUrl(adaptiveUrl), true);
-		} else { adVideo.src=proxyUrl(adaptiveUrl); }
+			player.initialize(adVideo, proxyUrl(manifest.url), true);
+		} else { adVideo.src=proxyUrl(manifest.url); }
 	}
 }
 
@@ -4666,12 +4345,7 @@ function playCurrentInlineAd(){
 		
 		// INSTANT VIDEO LOADING WITH GOOGLE CDN OPTIMIZATION
 		const videoUrl = entry.url; // Direct Google CDN URL for maximum speed
-		console.log('[GOOGLE-CDN] Loading fast Google video with adaptive quality');
-		
-		// Apply adaptive video quality based on device capabilities
-		const adaptiveVideoUrl = getAdaptiveVideoUrl(videoUrl);
-		console.log(`[ADAPTIVE-VIDEO] Original: ${videoUrl.substring(0, 100)}...`);
-		console.log(`[ADAPTIVE-VIDEO] Adaptive: ${adaptiveVideoUrl.substring(0, 100)}...`);
+		console.log('[GOOGLE-CDN] Loading fast Google video:', videoUrl);
 		
 		// Use preloaded video if available for instant start
 		if (preloadedVideos[videoUrl]) {
@@ -4681,38 +4355,8 @@ function playCurrentInlineAd(){
 			adVideo.src = preloadedVid.src;
 			adVideo.currentTime = 0;
 		} else {
-			console.log('[GOOGLE-CDN] Loading adaptive quality video for device class:', deviceCaps.deviceClass);
-			adVideo.src = adaptiveVideoUrl;
-		}
-		
-		// Apply ultra-low bandwidth optimizations if needed
-		processUltraLowBandwidthVideo(adVideo);
-		
-		// Device-specific video element configuration
-		if (deviceCaps.deviceClass === 'ultra-low-end') {
-			adVideo.style.maxWidth = '256px';
-			adVideo.style.maxHeight = '144px';
-			adVideo.preload = 'none';
-			// Force lower resolution rendering
-			adVideo.style.imageRendering = 'pixelated';
-		} else if (deviceCaps.deviceClass === 'low-end') {
-			adVideo.style.maxWidth = '426px';
-			adVideo.style.maxHeight = '240px';
-			adVideo.preload = 'metadata';
-		} else if (deviceCaps.deviceClass === 'mid-range') {
-			adVideo.style.maxWidth = '640px';
-			adVideo.style.maxHeight = '360px';
-			adVideo.preload = 'metadata';
-		}
-		
-		// Bandwidth-specific buffering strategy
-		if (deviceCaps.bandwidth <= 50) {
-			// Ultra-low bandwidth: minimal buffering
-			console.log('[ULTRA-LOW-BW] Configuring for 20-50kbps bandwidth');
-			adVideo.style.filter = 'blur(0.5px)'; // Slight blur to reduce visual artifacts
-		} else if (deviceCaps.bandwidth <= 200) {
-			// Low bandwidth: conservative buffering
-			console.log('[LOW-BW] Configuring for low bandwidth');
+			console.log('[GOOGLE-CDN] Loading Google video directly for fast response');
+			adVideo.src = videoUrl;
 		}
 		
 		// OPTIMIZED SETUP FOR GOOGLE CDN VIDEOS
@@ -4721,24 +4365,6 @@ function playCurrentInlineAd(){
 		adVideo.volume = 1; 
 		adVideo.style.display = 'block'; 
 		adVideo.classList.remove('visible');
-		
-		// Device-specific network optimization for video playback
-		if (deviceCaps && deviceCaps.deviceClass === 'ultra-low-end') {
-			// Ultra-conservative settings for weakest devices
-			adVideo.autoplay = false; // Disable autoplay for ultra-low-end
-			if (deviceCaps.bandwidth <= 30) {
-				// Emergency bandwidth mode
-				adVideo.playbackRate = 0.9; // Slightly slower playback
-				adVideo.style.filter = (adVideo.style.filter || '') + ' brightness(1.1)';
-				console.log('[EMERGENCY-BW] Ultra-low bandwidth optimizations applied');
-			}
-		} else if (deviceCaps && deviceCaps.deviceClass === 'low-end') {
-			// Conservative settings for low-end devices
-			if (deviceCaps.bandwidth <= 100) {
-				adVideo.playbackRate = 0.95;
-			}
-		}
-		
 		// ENHANCED BROWSER MEDIA CONTROLS BLOCKING (SPOTIFY FREE STYLE) - PHONE OPTIMIZED
 		adVideo.removeAttribute('controls'); // Remove controls attribute
 		adVideo.controls = false; // Force controls to false
@@ -4810,59 +4436,16 @@ function playCurrentInlineAd(){
 			videoLoading.classList.add('hidden');
 			adVideo.classList.add('visible');
 			
-			// Device-specific playback optimization
-			if (deviceCaps) {
-				// Refresh rate optimization
-				if (deviceCaps.refreshRate <= 30) {
-					console.log('[LOW-REFRESH] Optimizing for low refresh rate display');
-					adVideo.style.transform = 'translateZ(0)'; // Force hardware acceleration
+			// INSTANT PLAY - Google CDN should respond fast
+			adVideo.play().then(() => {
+				console.log('[GOOGLE-CDN] Video playing successfully from Google CDN');
+			}).catch(e => {
+				console.warn('[GOOGLE-CDN] Auto-play blocked, trying muted:', e.message);
+				if (!adVideo.muted) {
+					adVideo.muted = true;
+					adVideo.play().catch(console.error);
 				}
-				
-				// Browser-specific optimizations
-				if (deviceCaps.browser.includes('Opera Mini')) {
-					adVideo.style.willChange = 'auto'; // Reduce resource usage
-					console.log('[OPERA-MINI] Applied Opera Mini optimizations');
-				} else if (deviceCaps.browser.includes('WebView')) {
-					adVideo.style.webkitTransform = 'translateZ(0)'; // WebView acceleration
-					console.log('[WEBVIEW] Applied WebView optimizations');
-				}
-				
-				// Ultra-low bandwidth final checks
-				if (deviceCaps.bandwidth <= 20) {
-					console.log('[20KBPS] Emergency bandwidth mode - final optimizations');
-					adVideo.style.imageRendering = 'crisp-edges';
-					// Reduce video dimensions for emergency bandwidth
-					if (adVideo.videoWidth > 256) {
-						adVideo.style.width = '256px';
-						adVideo.style.height = 'auto';
-					}
-				}
-			}
-			
-			// ULTRA-FAST INSTANT PLAY - Google CDN optimized for speed
-			const playPromise = adVideo.play();
-			if (playPromise !== undefined) {
-				playPromise.then(() => {
-					console.log('[GOOGLE-CDN] Video playing ULTRA-FAST from Google CDN');
-					// Enable faster playback for quicker completion
-					if (deviceCaps && deviceCaps.bandwidth > 500) {
-						adVideo.playbackRate = 1.25; // 25% faster for high bandwidth
-					} else if (deviceCaps && deviceCaps.bandwidth > 200) {
-						adVideo.playbackRate = 1.1; // 10% faster for medium bandwidth
-					}
-				}).catch(e => {
-					console.warn('[GOOGLE-CDN] Auto-play blocked, trying muted fast play:', e.message);
-					if (!adVideo.muted) {
-						adVideo.muted = true;
-						adVideo.play().then(() => {
-							// Apply fast playback even when muted
-							if (deviceCaps && deviceCaps.bandwidth > 200) {
-								adVideo.playbackRate = 1.2; // Faster when muted
-							}
-						}).catch(console.error);
-					}
-				});
-			}
+			});
 		};
 		
 		const onPlaying = () => {
@@ -4907,30 +4490,11 @@ function playCurrentInlineAd(){
 		adVideo.addEventListener('playing', onPlaying, { once: true });
 		adVideo.addEventListener('error', onError, { once: true });
 		
-		// ULTRA-FAST LOADING FOR GOOGLE CDN - SPEED OPTIMIZED
-		console.log('[GOOGLE-CDN] Starting ULTRA-FAST Google video load process');
-		
-		// Enable all fast loading attributes
-		adVideo.setAttribute('playsinline', 'true');
-		adVideo.setAttribute('webkit-playsinline', 'true');
-		adVideo.setAttribute('x-webkit-airplay', 'allow');
-		
-		// Preload optimization based on device capability
-		if (deviceCaps && deviceCaps.bandwidth > 200) {
-			adVideo.preload = 'auto'; // Aggressive preloading for fast connections
-		} else {
-			adVideo.preload = 'metadata'; // Conservative for slower connections
-		}
-		
-		// Force immediate load start
+		// FAST LOADING FOR GOOGLE CDN
+		console.log('[GOOGLE-CDN] Starting Google video load process');
 		adVideo.load();
 		
-		// Try to start loading immediately if possible
-		if (adVideo.readyState >= 1) {
-			console.log('[FAST-LOAD] Video metadata already available, attempting immediate play');
-		}
-		
-		console.log('[GOOGLE-CDN] ULTRA-FAST Google video setup complete - optimized for speed');
+		console.log('[GOOGLE-CDN] Google video setup complete - should load very fast');
 		
 		currentAdViewLogged=false;
 		
