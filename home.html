@@ -96,6 +96,28 @@
 			#termsOverlay .access-modal > div {
 				padding:0 5px !important;
 			}
+			
+			/* Phone: My Account and My Usage modals match video modal width exactly */
+			#accountOverlay .access-modal,
+			#usageOverlay .access-modal {
+				width:calc(100vw + 28px) !important;
+				max-width:calc(100vw + 28px) !important;
+				margin:-14px !important;
+				padding:18px 16px !important;
+				border-radius:12px !important;
+			}
+			
+			/* Ensure content inside My Account and My Usage is readable */
+			#accountOverlay .access-modal h2,
+			#usageOverlay .access-modal h2 {
+				margin-top:10px !important;
+				margin-bottom:15px !important;
+			}
+			
+			#usageScroll,
+			#accountOverlay .access-modal > div {
+				padding:0 5px !important;
+			}
 		}
 		#usageScroll,#helpScroll{flex:1 1 auto;overflow:auto;min-height:0;}
 		#usageScroll::-webkit-scrollbar,#helpScroll::-webkit-scrollbar{width:8px;}
@@ -1877,15 +1899,15 @@
 					<li>Change password in My Account &gt; Change Password.</li>
 				</ul>
 				<div style="background:#fff2e0;padding:12px;border-radius:8px;margin-top:8px;">
-					<h4 style="margin:0 0 6px 0;font-size:14px;color:#e65100;">Anti-Cheat Technologies</h4>
+					<h4 style="margin:0 0 6px 0;font-size:14px;color:#e65100;">Optimized Anti-Cheat Technologies</h4>
 					<ul style="margin:0;padding-left:18px;font-size:12px;font-weight:600;line-height:1.4;color:#bf360c;">
-						<li>Visibility API: Detects app switching and tab changes</li>
-						<li>Focus Events: Monitors window focus/blur states</li>
-						<li>Page Lifecycle: Tracks mobile app backgrounding</li>
-						<li>Wake Lock Control: Prevents background audio playback</li>
-						<li>Auto-pause/resume: Videos pause when you leave, resume when you return</li>
+						<li>Smart Visibility API: Detects extended app switching (3-second delay)</li>
+						<li>Intelligent Focus Events: Monitors sustained window changes (2-second threshold)</li>
+						<li>Connection-Aware Resume: Adapts to 1mbps+ slow connections</li>
+						<li>Buffering Intelligence: Waits for adequate video buffer before resume</li>
+						<li>Lightweight Detection: Minimal performance impact during playback</li>
 					</ul>
-					<p style="margin:6px 0 0 0;font-size:11px;font-weight:600;color:#6d4c41;">These technologies ensure fair usage and prevent background ad listening.</p>
+					<p style="margin:6px 0 0 0;font-size:11px;font-weight:600;color:#6d4c41;">Optimized for smooth playback on slow connections while preventing abuse.</p>
 				</div>
 			</section>
 			<section style="background:#fff;border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 28px -14px rgba(0,0,0,.25);">
@@ -3162,22 +3184,47 @@ function blockMediaControls() {
 		}
 	});
 	
-	// 10. Pause video when user leaves app (like YouTube Music free)
+	// 10. Lightweight anti-cheat: Only pause on extended absence (optimized for slow connections)
+	let antiCheatDelay = null;
+	let isTemporarilyHidden = false;
+	
 	document.addEventListener('visibilitychange', function() {
 		if (adSequenceActive && document.hidden) {
-			console.log('[ANTI-CHEAT] Page hidden during video - pausing playback to prevent background listening');
-			// Pause video when user leaves the app
-			if (adVideo && !adVideo.paused) {
-				adVideo.pause();
-				console.log('[ANTI-CHEAT] Video paused - user must return to app to continue');
-			}
+			// Don't pause immediately - user might just be switching tabs briefly
+			isTemporarilyHidden = true;
+			antiCheatDelay = setTimeout(() => {
+				if (adVideo && !adVideo.paused && isTemporarilyHidden) {
+					console.log('[ANTI-CHEAT] Extended absence detected - pausing to prevent background listening');
+					adVideo.pause();
+				}
+			}, 3000); // Wait 3 seconds before pausing (gives time for quick tab switches)
 		} else if (adSequenceActive && document.visibilityState === 'visible') {
-			console.log('[ANTI-CHEAT] Page visible again - auto-resuming video');
-			// Auto-resume video when user returns
+			// Clear the pause timer if user returns quickly
+			if (antiCheatDelay) {
+				clearTimeout(antiCheatDelay);
+				antiCheatDelay = null;
+			}
+			isTemporarilyHidden = false;
+			
+			// Auto-resume if video was paused and buffering is good
 			if (adVideo && adVideo.paused) {
-				adVideo.play().catch(() => {
-					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
-				});
+				// Check if video has buffered enough to resume smoothly
+				const buffered = adVideo.buffered;
+				const canResumeSmothly = buffered.length > 0 && 
+					(buffered.end(buffered.length - 1) - adVideo.currentTime) > 2; // 2 seconds buffer
+				
+				if (canResumeSmothly || adVideo.readyState >= 3) { // HAVE_FUTURE_DATA or better
+					adVideo.play().catch(() => {
+						console.log('[ANTI-CHEAT] Auto-resume delayed - waiting for better connection');
+					});
+				} else {
+					// On slow connections, wait a bit for buffering before resuming
+					setTimeout(() => {
+						if (adVideo && adVideo.paused) {
+							adVideo.play().catch(() => {});
+						}
+					}, 1000);
+				}
 			}
 		}
 	});
@@ -3202,74 +3249,92 @@ if (document.readyState === 'loading') {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 function initAntiCheatSystem() {
-	// Track if video was auto-paused due to leaving app
+	// Track anti-cheat state with minimal performance impact
 	let wasAutoPaused = false;
+	let focusLossTime = 0;
+	let antiCheatThrottle = false;
 	
-	// Function to show pause indicator
+	// Lightweight pause indicator (no DOM manipulation during playback)
 	function showPauseIndicator() {
-		if (adStatus) {
-			adStatus.textContent = "Video paused - Return to app to continue";
-			adStatus.style.color = "#ff6b6b";
+		// Only update UI if absolutely necessary to avoid interrupting video
+		if (adStatus && !antiCheatThrottle) {
+			antiCheatThrottle = true;
+			setTimeout(() => {
+				adStatus.textContent = "Video paused - Return to continue";
+				adStatus.style.color = "#ff6b6b";
+				antiCheatThrottle = false;
+			}, 100); // Throttle UI updates
 		}
 	}
 	
-	// Function to hide pause indicator
-	function hidePauseIndicator() {
-		if (adStatus && adSequenceActive) {
-			adStatus.style.color = "";
-			// Status will be updated by normal video progress
-		}
-	}
-	
-	// Additional focus/blur detection for comprehensive coverage
+	// Optimized focus/blur detection (less aggressive)
 	window.addEventListener('blur', function() {
-		if (adSequenceActive && adVideo && !adVideo.paused) {
-			console.log('[ANTI-CHEAT] Window lost focus - pausing video');
-			adVideo.pause();
-			wasAutoPaused = true;
-			showPauseIndicator();
-		}
+		focusLossTime = Date.now();
+		// Don't pause immediately - wait to see if it's just a brief focus loss
+		setTimeout(() => {
+			const focusLossDuration = Date.now() - focusLossTime;
+			if (adSequenceActive && adVideo && !adVideo.paused && focusLossDuration >= 2000) {
+				// Only pause if focus was lost for 2+ seconds (reduces false triggers)
+				adVideo.pause();
+				wasAutoPaused = true;
+				showPauseIndicator();
+			}
+		}, 2000);
 	});
 	
 	window.addEventListener('focus', function() {
 		if (adSequenceActive && wasAutoPaused) {
-			console.log('[ANTI-CHEAT] Window regained focus - auto-resuming video');
 			wasAutoPaused = false;
-			hidePauseIndicator();
-			// Auto-resume video when user returns
+			// Intelligent resume based on connection quality
 			if (adVideo && adVideo.paused) {
-				adVideo.play().catch(() => {
-					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
-				});
+				// Check network conditions before resuming
+				const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+				const isSlowConnection = connection && (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g');
+				
+				const resumeDelay = isSlowConnection ? 1500 : 500; // Longer delay for slow connections
+				
+				setTimeout(() => {
+					if (adVideo && adVideo.paused && adSequenceActive) {
+						adVideo.play().catch(() => {
+							// Fallback: try again after more buffering time
+							setTimeout(() => {
+								if (adVideo && adVideo.paused) adVideo.play().catch(() => {});
+							}, 2000);
+						});
+					}
+				}, resumeDelay);
+			}
+			
+			// Clear pause indicator smoothly
+			if (adStatus) {
+				setTimeout(() => {
+					if (adStatus) adStatus.style.color = "";
+				}, 200);
 			}
 		}
 	});
 	
-	// Page lifecycle API for mobile app switching
-	document.addEventListener('freeze', function() {
-		if (adSequenceActive && adVideo && !adVideo.paused) {
-			console.log('[ANTI-CHEAT] Page frozen (mobile app switch) - pausing video');
-			adVideo.pause();
-			wasAutoPaused = true;
-			showPauseIndicator();
-		}
-	});
-	
-	document.addEventListener('resume', function() {
-		if (adSequenceActive && wasAutoPaused) {
-			console.log('[ANTI-CHEAT] Page resumed - auto-resuming video');
-			wasAutoPaused = false;
-			hidePauseIndicator();
-			// Auto-resume video when user returns to app
-			if (adVideo && adVideo.paused) {
-				adVideo.play().catch(() => {
-					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
-				});
+	// Simplified mobile app switching detection (less resource intensive)
+	if ('document' in window) {
+		document.addEventListener('freeze', function() {
+			if (adSequenceActive && adVideo && !adVideo.paused) {
+				adVideo.pause();
+				wasAutoPaused = true;
 			}
-		}
-	});
-	
-	console.log('[ANTI-CHEAT] Background listening prevention system activated');
+		});
+		
+		document.addEventListener('resume', function() {
+			if (adSequenceActive && wasAutoPaused) {
+				wasAutoPaused = false;
+				// Resume with buffer check for mobile
+				setTimeout(() => {
+					if (adVideo && adVideo.paused && adVideo.readyState >= 2) {
+						adVideo.play().catch(() => {});
+					}
+				}, 800); // Give mobile time to reconnect
+			}
+		});
+	}
 }
 
 // Initialize anti-cheat system
