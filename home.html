@@ -107,6 +107,11 @@
 				border-radius:12px !important;
 			}
 			
+			/* Phone: My Account modal height should match My Usage modal */
+			#accountOverlay .access-modal {
+				max-height:88vh !important;
+			}
+			
 			/* Ensure content inside My Account and My Usage is readable */
 			#accountOverlay .access-modal h2,
 			#usageOverlay .access-modal h2 {
@@ -3249,92 +3254,252 @@ if (document.readyState === 'loading') {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 function initAntiCheatSystem() {
-	// Track anti-cheat state with minimal performance impact
+	// Enhanced compatibility for small phones and limited browsers
 	let wasAutoPaused = false;
 	let focusLossTime = 0;
 	let antiCheatThrottle = false;
+	let isLowEndDevice = false;
 	
-	// Lightweight pause indicator (no DOM manipulation during playback)
+	// Detect low-end devices and limited browsers
+	try {
+		const userAgent = navigator.userAgent.toLowerCase();
+		const isOldAndroid = /android\s[1-4]\./.test(userAgent);
+		const isOldWebView = /android.*version\/[1-4]\./.test(userAgent);
+		const isBasicBrowser = /ucbrowser|samsungbrowser|miuibrowser/.test(userAgent);
+		const hasLimitedRAM = navigator.deviceMemory && navigator.deviceMemory < 2;
+		
+		isLowEndDevice = isOldAndroid || isOldWebView || isBasicBrowser || hasLimitedRAM;
+		console.log('[ANTI-CHEAT] Device compatibility:', {
+			isLowEndDevice,
+			userAgent: userAgent.substr(0, 50) + '...',
+			deviceMemory: navigator.deviceMemory || 'unknown'
+		});
+	} catch(e) {
+		console.log('[ANTI-CHEAT] Device detection failed, assuming limited device');
+		isLowEndDevice = true;
+	}
+	
+	// Lightweight pause indicator with fallbacks
 	function showPauseIndicator() {
-		// Only update UI if absolutely necessary to avoid interrupting video
 		if (adStatus && !antiCheatThrottle) {
 			antiCheatThrottle = true;
-			setTimeout(() => {
-				adStatus.textContent = "Video paused - Return to continue";
-				adStatus.style.color = "#ff6b6b";
+			// Use simpler approach for limited browsers
+			const updateUI = () => {
+				try {
+					adStatus.textContent = "Video paused - Return to continue";
+					adStatus.style.color = "#ff6b6b";
+				} catch(e) {
+					console.log('[ANTI-CHEAT] UI update failed');
+				}
 				antiCheatThrottle = false;
-			}, 100); // Throttle UI updates
+			};
+			
+			if (isLowEndDevice) {
+				updateUI(); // Immediate for slow devices
+			} else {
+				setTimeout(updateUI, 100);
+			}
 		}
 	}
 	
-	// Optimized focus/blur detection (less aggressive)
-	window.addEventListener('blur', function() {
-		focusLossTime = Date.now();
-		// Don't pause immediately - wait to see if it's just a brief focus loss
-		setTimeout(() => {
-			const focusLossDuration = Date.now() - focusLossTime;
-			if (adSequenceActive && adVideo && !adVideo.paused && focusLossDuration >= 2000) {
-				// Only pause if focus was lost for 2+ seconds (reduces false triggers)
-				adVideo.pause();
-				wasAutoPaused = true;
-				showPauseIndicator();
+	// Enhanced connection detection with fallbacks
+	function getConnectionInfo() {
+		try {
+			const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+			if (connection) {
+				return {
+					effectiveType: connection.effectiveType || '3g',
+					downlink: connection.downlink || 1,
+					rtt: connection.rtt || 500
+				};
 			}
-		}, 2000);
-	});
-	
-	window.addEventListener('focus', function() {
-		if (adSequenceActive && wasAutoPaused) {
-			wasAutoPaused = false;
-			// Intelligent resume based on connection quality
-			if (adVideo && adVideo.paused) {
-				// Check network conditions before resuming
-				const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-				const isSlowConnection = connection && (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g');
-				
-				const resumeDelay = isSlowConnection ? 1500 : 500; // Longer delay for slow connections
-				
-				setTimeout(() => {
-					if (adVideo && adVideo.paused && adSequenceActive) {
-						adVideo.play().catch(() => {
-							// Fallback: try again after more buffering time
-							setTimeout(() => {
-								if (adVideo && adVideo.paused) adVideo.play().catch(() => {});
-							}, 2000);
-						});
-					}
-				}, resumeDelay);
-			}
-			
-			// Clear pause indicator smoothly
-			if (adStatus) {
-				setTimeout(() => {
-					if (adStatus) adStatus.style.color = "";
-				}, 200);
-			}
+		} catch(e) {
+			console.log('[ANTI-CHEAT] Connection API not available');
 		}
-	});
-	
-	// Simplified mobile app switching detection (less resource intensive)
-	if ('document' in window) {
-		document.addEventListener('freeze', function() {
-			if (adSequenceActive && adVideo && !adVideo.paused) {
-				adVideo.pause();
-				wasAutoPaused = true;
-			}
-		});
 		
-		document.addEventListener('resume', function() {
+		// Fallback: assume slow connection for safety
+		return {
+			effectiveType: isLowEndDevice ? 'slow-2g' : '3g',
+			downlink: 0.5,
+			rtt: 800
+		};
+	}
+	
+	// Enhanced focus/blur detection with browser compatibility
+	function setupFocusDetection() {
+		// Enhanced blur handler with compatibility checks
+		const handleBlur = function() {
+			focusLossTime = Date.now();
+			const pauseDelay = isLowEndDevice ? 3000 : 2000; // Longer delay for slower devices
+			
+			setTimeout(() => {
+				const focusLossDuration = Date.now() - focusLossTime;
+				if (adSequenceActive && adVideo && !adVideo.paused && focusLossDuration >= pauseDelay) {
+					try {
+						adVideo.pause();
+						wasAutoPaused = true;
+						showPauseIndicator();
+					} catch(e) {
+						console.log('[ANTI-CHEAT] Pause failed:', e);
+					}
+				}
+			}, pauseDelay);
+		};
+		
+		// Enhanced focus handler with intelligent resume
+		const handleFocus = function() {
 			if (adSequenceActive && wasAutoPaused) {
 				wasAutoPaused = false;
-				// Resume with buffer check for mobile
-				setTimeout(() => {
-					if (adVideo && adVideo.paused && adVideo.readyState >= 2) {
-						adVideo.play().catch(() => {});
+				
+				if (adVideo && adVideo.paused) {
+					const connInfo = getConnectionInfo();
+					const isSlowConnection = connInfo.effectiveType === 'slow-2g' || 
+						connInfo.effectiveType === '2g' || connInfo.downlink < 0.5;
+					
+					// Adaptive resume delay based on device and connection
+					let resumeDelay = 500;
+					if (isLowEndDevice && isSlowConnection) {
+						resumeDelay = 3000; // Very slow devices need more time
+					} else if (isLowEndDevice || isSlowConnection) {
+						resumeDelay = 1500;
 					}
-				}, 800); // Give mobile time to reconnect
+					
+					setTimeout(() => {
+						if (adVideo && adVideo.paused && adSequenceActive) {
+							try {
+								adVideo.play().catch(() => {
+									// Enhanced fallback with multiple retries for limited browsers
+									console.log('[ANTI-CHEAT] First resume failed, retrying...');
+									setTimeout(() => {
+										if (adVideo && adVideo.paused) {
+											adVideo.play().catch(() => {
+												console.log('[ANTI-CHEAT] Resume failed completely');
+											});
+										}
+									}, isLowEndDevice ? 3000 : 2000);
+								});
+							} catch(e) {
+								console.log('[ANTI-CHEAT] Resume error:', e);
+							}
+						}
+					}, resumeDelay);
+				}
+				
+				// Clear pause indicator with fallback
+				if (adStatus) {
+					setTimeout(() => {
+						try {
+							if (adStatus) adStatus.style.color = "";
+						} catch(e) {
+							console.log('[ANTI-CHEAT] Clear indicator failed');
+						}
+					}, 200);
+				}
 			}
-		});
+		};
+		
+		// Add event listeners with error handling
+		try {
+			window.addEventListener('blur', handleBlur);
+			window.addEventListener('focus', handleFocus);
+		} catch(e) {
+			console.log('[ANTI-CHEAT] Focus event setup failed:', e);
+		}
 	}
+	
+	setupFocusDetection();
+	
+	// Enhanced mobile app switching detection with compatibility fallbacks
+	function setupMobileDetection() {
+		// Modern Page Lifecycle API (for newer browsers)
+		if ('document' in window) {
+			try {
+				document.addEventListener('freeze', function() {
+					if (adSequenceActive && adVideo && !adVideo.paused) {
+						adVideo.pause();
+						wasAutoPaused = true;
+						console.log('[ANTI-CHEAT] Page frozen, video paused');
+					}
+				});
+				
+				document.addEventListener('resume', function() {
+					if (adSequenceActive && wasAutoPaused) {
+						wasAutoPaused = false;
+						const mobileResumeDelay = isLowEndDevice ? 1500 : 800;
+						
+						setTimeout(() => {
+							if (adVideo && adVideo.paused && adVideo.readyState >= 2) {
+								try {
+									adVideo.play().catch(() => {
+										console.log('[ANTI-CHEAT] Mobile resume failed');
+									});
+								} catch(e) {
+									console.log('[ANTI-CHEAT] Mobile resume error:', e);
+								}
+							}
+						}, mobileResumeDelay);
+					}
+				});
+			} catch(e) {
+				console.log('[ANTI-CHEAT] Page Lifecycle API not supported');
+			}
+		}
+		
+		// Fallback: Visibility API for older browsers
+		try {
+			document.addEventListener('visibilitychange', function() {
+				if (document.hidden) {
+					// Page became hidden (app switch, minimize, etc.)
+					if (adSequenceActive && adVideo && !adVideo.paused) {
+						setTimeout(() => {
+							// Double-check after delay to avoid false positives
+							if (document.hidden && adVideo && !adVideo.paused) {
+								adVideo.pause();
+								wasAutoPaused = true;
+								console.log('[ANTI-CHEAT] Visibility hidden, video paused');
+							}
+						}, isLowEndDevice ? 2000 : 1000);
+					}
+				} else {
+					// Page became visible again
+					if (adSequenceActive && wasAutoPaused) {
+						wasAutoPaused = false;
+						const visibilityResumeDelay = isLowEndDevice ? 2000 : 1000;
+						
+						setTimeout(() => {
+							if (adVideo && adVideo.paused && !document.hidden) {
+								try {
+									adVideo.play().catch(() => {
+										console.log('[ANTI-CHEAT] Visibility resume failed');
+									});
+								} catch(e) {
+									console.log('[ANTI-CHEAT] Visibility resume error:', e);
+								}
+							}
+						}, visibilityResumeDelay);
+					}
+				}
+			});
+		} catch(e) {
+			console.log('[ANTI-CHEAT] Visibility API not supported');
+		}
+		
+		// Additional fallback for very old browsers: beforeunload
+		try {
+			window.addEventListener('beforeunload', function() {
+				if (adSequenceActive && adVideo && !adVideo.paused) {
+					adVideo.pause();
+					console.log('[ANTI-CHEAT] Page unloading, video paused');
+				}
+			});
+		} catch(e) {
+			console.log('[ANTI-CHEAT] beforeunload not supported');
+		}
+	}
+	
+	setupMobileDetection();
+	
+	console.log('[ANTI-CHEAT] System initialized with enhanced compatibility for limited devices');
 }
 
 // Initialize anti-cheat system
@@ -5094,21 +5259,48 @@ adVideo.addEventListener('timeupdate',()=>{
 		if(pct>=75 && !adQuartilesSent[75]){ adQuartilesSent[75]=true; logAdEvent('quartile75',{watchSeconds:Math.round(adVideo.currentTime)}); }
 	}
 });
-adVideo.addEventListener('waiting',()=>{ if(!adVideo.paused) videoLoading.classList.remove('hidden'); });
-adVideo.addEventListener('canplay',()=>{ 
-	console.log('[VIDEO-CANPLAY] Video can play, hiding loading indicator');
-	videoLoading.classList.add('hidden');
-	forceVideoFrameReveal(); 
-	if(!skipCountdownStarted) {/* skip countdown still waits for playing */} 
+// Consolidated video loading and visibility management
+let isVideoReady = false;
+let hasVideoFrames = false;
+
+adVideo.addEventListener('waiting',()=>{ 
+	if(!adVideo.paused && !isVideoReady) {
+		videoLoading.classList.remove('hidden');
+	}
 });
+
+adVideo.addEventListener('canplay',()=>{ 
+	console.log('[VIDEO-CANPLAY] Video can play, preparing surface');
+	isVideoReady = true;
+	videoLoading.classList.add('hidden');
+	
+	// Only call frame reveal if we haven't shown video frames yet
+	if (!hasVideoFrames) {
+		setTimeout(() => {
+			forceVideoFrameReveal();
+		}, 100); // Small delay to ensure video is truly ready
+	}
+});
+
 adVideo.addEventListener('playing',()=>{ 
-	console.log('[VIDEO-PLAYING] Video started playing, hiding loading indicator');
+	console.log('[VIDEO-PLAYING] Video started playing');
+	isVideoReady = true;
+	hasVideoFrames = true;
 	videoLoading.classList.add('hidden');
 	adStatus.textContent = 'Playing...';
+	
+	// Ensure video surface is visible when playing
+	adVideo.classList.add('visible');
 });
+
 adVideo.addEventListener('loadeddata',()=>{ 
-	console.log('[VIDEO-LOADEDDATA] Video data loaded, hiding loading indicator');
-	videoLoading.classList.add('hidden');
+	console.log('[VIDEO-LOADEDDATA] Video data loaded');
+	// Don't immediately hide loading here, wait for canplay or playing
+	setTimeout(() => {
+		if (adVideo.readyState >= 3) { // HAVE_FUTURE_DATA
+			forceVideoFrameReveal();
+		}
+	}, 200);
 });
 function nextInlineAd(){
 	clearAdTimers();
@@ -5321,31 +5513,74 @@ function tryShowFrame(){
 	}
 }
 function forceVideoFrameReveal(){
-	if(adVideo.videoWidth>0 || adVideo.readyState>=2 || adVideo.currentTime>0){
+	// Check if video actually has visual content
+	if(adVideo.videoWidth > 0 && adVideo.videoHeight > 0 && adVideo.readyState >= 2) {
 		showVideoSurface();
 		return;
 	}
-	if(!adVideo._nudge){
-		adVideo._nudge=true;
-		// Try a couple of quick seeks to jump past potential initial black frames.
-		[0.05,0.15,0.25].forEach((t,i)=> setTimeout(()=>{ try{ adVideo.currentTime=t; }catch{} }, i*120));
-		setTimeout(()=>{ if(adVideo.videoWidth>0 || adVideo.currentTime>0) showVideoSurface(); },420);
-		// Hard timeout: attempt reload then force surface so user doesn't just see black.
-		setTimeout(()=>{ if(!adVideo.classList.contains('visible')){ try{ const cur=adVideo.src; adVideo.pause(); adVideo.load(); if(cur) adVideo.src=cur; adVideo.play().catch(()=>{}); }catch{} showVideoSurface(true); } },1200);
+	
+	// Only try gentle nudging if video seems stuck
+	if(!adVideo._nudge && adVideo.readyState >= 1) {
+		adVideo._nudge = true;
+		console.log('[VIDEO-REVEAL] Attempting gentle video frame reveal');
+		
+		// More conservative approach - just try to start playback
+		setTimeout(() => {
+			if (adVideo.paused) {
+				adVideo.play().catch(() => {
+					console.log('[VIDEO-REVEAL] Play failed, trying surface reveal anyway');
+					showVideoSurface(true);
+				});
+			} else if (adVideo.videoWidth > 0) {
+				showVideoSurface();
+			}
+		}, 300);
+		
+		// Fallback: if still no video after reasonable time, show surface
+		setTimeout(() => {
+			if (!adVideo.classList.contains('visible')) {
+				console.log('[VIDEO-REVEAL] Timeout reached, forcing surface display');
+				showVideoSurface(true);
+			}
+		}, 2000); // Increased timeout for slow connections
 	}
 }
 function showVideoSurface(forceDecor=false){
+	console.log('[VIDEO-SURFACE] Showing video surface');
 	adVideo.classList.add('visible');
-	videoLoading.classList.add('hidden');
-	// Basic brightness sniff to detect fully black first frame
+	adVideo.style.visibility = 'visible';
+	adVideo.style.opacity = '1';
+	adVideo.style.pointerEvents = 'auto';
+	
+	// Only hide loading indicator if video has actual content
+	if (adVideo.videoWidth > 0 && adVideo.videoHeight > 0) {
+		videoLoading.classList.add('hidden');
+		console.log(`[VIDEO-SURFACE] Video has content: ${adVideo.videoWidth}x${adVideo.videoHeight}`);
+	} else if (forceDecor) {
+		// Force show even without dimensions in emergency cases
+		videoLoading.classList.add('hidden');
+		console.log('[VIDEO-SURFACE] Force showing without dimensions');
+	}
+	
+	// Simplified background handling - only if truly black frame detected
 	try{
 		if(adVideo.videoWidth>0 && adVideo.videoHeight>0){
-			const c=document.createElement('canvas'); c.width=32; c.height=18; const ctx=c.getContext('2d'); ctx.drawImage(adVideo,0,0,32,18); const data=ctx.getImageData(0,0,32,18).data; let sum=0; for(let i=0;i<data.length;i+=4) sum+=data[i]+data[i+1]+data[i+2]; const avg=sum/(data.length/4)/3; if(avg<5 || forceDecor){ adVideo.style.background='linear-gradient(135deg,#111,#222)'; }
+			const c=document.createElement('canvas'); 
+			c.width=Math.min(32, adVideo.videoWidth); 
+			c.height=Math.min(18, adVideo.videoHeight); 
+			const ctx=c.getContext('2d'); 
+			ctx.drawImage(adVideo,0,0,c.width,c.height); 
+			const data=ctx.getImageData(0,0,c.width,c.height).data; 
+			let sum=0; 
+			for(let i=0;i<data.length;i+=4) sum+=data[i]+data[i+1]+data[i+2]; 
+			const avg=sum/(data.length/4)/3; 
+			if(avg<8) { // Increased threshold slightly
+				console.log('[VIDEO-SURFACE] Black frame detected, adding background');
+				adVideo.style.background='linear-gradient(135deg,#1a1a1a,#333)'; 
+			}
 		}
-	}catch{}
-	// Capture frame as poster for stubborn desktop black playback
-	if(!adVideo._frameCaptured){
-		try{ if(adVideo.videoWidth>0){ const c=document.createElement('canvas'); c.width=adVideo.videoWidth; c.height=Math.min(adVideo.videoHeight, adVideo.videoWidth*9/16); const ctx=c.getContext('2d'); ctx.drawImage(adVideo,0,0,c.width,c.height); const dataUrl=c.toDataURL('image/jpeg',0.6); adVideo.setAttribute('poster', dataUrl); adVideo._frameCaptured=true; } }catch{}
+	}catch(e){
+		console.log('[VIDEO-SURFACE] Canvas analysis failed:', e);
 	}
 }
 
@@ -5471,10 +5706,9 @@ function startFrameMonitor(){
 }
 function clearFrameMonitor(){ if(frameMonitorTimer){ cancelAnimationFrame(frameMonitorTimer); frameMonitorTimer=null; } }
 function visibilityLoop(){
-	if(!adVideo.src) return;
-	if(adVideo.videoWidth>0){ adVideo.classList.add('visible'); videoLoading.classList.add('hidden'); return; }
-	if(performance.now()-videoStartStamp>3500){ adVideo.classList.add('visible'); videoLoading.classList.add('hidden'); return; }
-	requestAnimationFrame(visibilityLoop);
+	// Disabled aggressive visibility loop to prevent loading indicator conflicts
+	// Video surface management is now handled by consolidated event listeners
+	console.log('[DEPRECATED] visibilityLoop disabled - using consolidated video management');
 }
 function simulateYouTubeProgress(){ /* handled in startInlineProgress for yt */ }
 function showToast(msg, type = 'info'){
