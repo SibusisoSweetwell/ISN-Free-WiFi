@@ -31,7 +31,7 @@
 			--radius:26px;
 		}
 		*{box-sizing:border-box;}
-		body{margin:0;font-family:"Segoe UI",Arial,sans-serif;color:var(--text-dark);background:#fafafa;min-height:100vh;display:flex;flex-direction:column;padding-top:92px;overflow-x:hidden;} /* prevent horizontal scroll */
+		body{margin:0;font-family:"Segoe UI",Arial,sans-serif;color:var(--text-dark);background:#fafafa;min-height:100vh;display:flex;flex-direction:column;padding-top:92px;overflow-x:hidden;position:relative;} /* prevent horizontal scroll */
 		header.nav{
 			display:flex;align-items:center;justify-content:space-between;padding:14px 38px;background:linear-gradient(90deg,var(--brand),#ff2929);color:#fff;box-shadow:0 4px 18px -4px rgba(0,0,0,.35);position:fixed;top:0;left:0;right:0;z-index:50;position:fixed;
 		}
@@ -47,15 +47,63 @@
 		/* Ensure account modal has vertical breathing space */
 		#accountOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow:auto;}
 		/* For Usage & Help we move scroll to inner wrapper so outer stays visually static */
-		#usageOverlay .access-modal,#helpOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
-		@media (max-height:760px){ #usageOverlay .access-modal,#helpOverlay .access-modal{margin-top:40px;margin-bottom:40px;max-height:calc(100vh - 80px);} }
+		#usageOverlay .access-modal,#helpOverlay .access-modal,#termsOverlay .access-modal{margin-top:70px;margin-bottom:70px;max-height:calc(100vh - 140px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
+		@media (max-height:760px){ #usageOverlay .access-modal,#helpOverlay .access-modal,#termsOverlay .access-modal{margin-top:40px;margin-bottom:40px;max-height:calc(100vh - 80px);} }
+		
+		/* Mobile optimization for Help & Support and Terms modals */
+		@media (max-width:700px) {
+			#helpOverlay .access-modal,#termsOverlay .access-modal{
+				margin:20px;
+				max-width:calc(100vw - 40px);
+				padding:30px 25px;
+				gap:20px;
+				max-height:70vh;
+			}
+			#helpOverlay h2,#termsOverlay h2{
+				font-size:24px !important;
+			}
+		}
+		
+		/* Desktop modal sizing - make Help & Support and Terms & Conditions match video modal width */
+		#helpOverlay .access-modal {
+			max-width:640px !important;
+			max-height:75vh;
+		}
+		#termsOverlay .access-modal {
+			max-width:640px !important;
+			max-height:75vh;
+		}
+		
+		/* Phone: Help & Support and Terms modals match video modal width exactly */
+		@media (max-width:700px) {
+			#helpOverlay .access-modal,
+			#termsOverlay .access-modal {
+				width:calc(100vw + 28px) !important;
+				max-width:calc(100vw + 28px) !important;
+				margin:-14px !important;
+				padding:18px 16px !important;
+				border-radius:12px !important;
+			}
+			
+			/* Ensure content inside Help & Support and Terms is readable */
+			#helpOverlay .access-modal h2,
+			#termsOverlay .access-modal h2 {
+				margin-top:10px !important;
+				margin-bottom:15px !important;
+			}
+			
+			#helpScroll,
+			#termsOverlay .access-modal > div {
+				padding:0 5px !important;
+			}
+		}
 		#usageScroll,#helpScroll{flex:1 1 auto;overflow:auto;min-height:0;}
 		#usageScroll::-webkit-scrollbar,#helpScroll::-webkit-scrollbar{width:8px;}
 		#usageScroll::-webkit-scrollbar-thumb,#helpScroll::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px;}
 		/* Unified modal internal scroll (avoid touching viewport edges) */
-		#accountOverlay .access-modal,#usageOverlay .access-modal,#helpOverlay .access-modal{scrollbar-width:thin;}
-		#accountOverlay .access-modal::-webkit-scrollbar,#usageOverlay .access-modal::-webkit-scrollbar,#helpOverlay .access-modal::-webkit-scrollbar{width:8px;}
-		#accountOverlay .access-modal::-webkit-scrollbar-thumb,#usageOverlay .access-modal::-webkit-scrollbar-thumb,#helpOverlay .access-modal::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px;}
+		#accountOverlay .access-modal,#usageOverlay .access-modal,#helpOverlay .access-modal,#termsOverlay .access-modal{scrollbar-width:thin;}
+		#accountOverlay .access-modal::-webkit-scrollbar,#usageOverlay .access-modal::-webkit-scrollbar,#helpOverlay .access-modal::-webkit-scrollbar,#termsOverlay .access-modal::-webkit-scrollbar{width:8px;}
+		#accountOverlay .access-modal::-webkit-scrollbar-thumb,#usageOverlay .access-modal::-webkit-scrollbar-thumb,#helpOverlay .access-modal::-webkit-scrollbar-thumb,#termsOverlay .access-modal::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px;}
 		@media (max-height:760px){ #accountOverlay .access-modal{margin-top:40px;margin-bottom:40px;max-height:calc(100vh - 80px);} }
 		.profile-menu{position:absolute;top:62px;right:0;background:#fff;border-radius:18px;box-shadow:0 12px 40px -8px rgba(0,0,0,.35);padding:14px 18px;display:none;flex-direction:column;gap:8px;min-width:230px;}
 		.profile-menu button,.profile-menu a{background:var(--brand);color:#fff;border:none;padding:10px 14px;border-radius:14px;font-weight:600;font-size:14px;text-decoration:none;text-align:center;cursor:pointer;}
@@ -82,27 +130,108 @@
 	/* When .stable is applied to root, reduce transitions that can cause visual jitter on phones */
 	:root.stable * { transition: none !important; animation: none !important; }
 
-				/* Access bundle modal */
-				.modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(9px) saturate(140%);background:rgba(0,0,0,.35);padding:40px 24px;opacity:0;pointer-events:none;transition:opacity .45s ease;}
+				/* Access bundle modal - Enhanced White Popup */
+				.modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(12px) saturate(150%);background:rgba(0,0,0,.45);padding:40px 24px;opacity:0;pointer-events:none;transition:opacity .45s ease;}
 				.modal-overlay.active{opacity:1;pointer-events:auto;}
-				.access-modal{width:100%;max-width:640px;background:rgba(255,255,255,.9);border-radius:30px;box-shadow:0 28px 70px -20px rgba(0,0,0,.55);padding:50px 54px;display:flex;flex-direction:column;gap:30px;position:relative;transform:translateY(40px) scale(.95);opacity:0;transition:transform .6s cubic-bezier(.16,.8,.3,1),opacity .6s ease;}
+				.access-modal{width:100%;max-width:640px;background:#ffffff;border-radius:30px;box-shadow:0 32px 80px -20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.15);padding:50px 54px;display:flex;flex-direction:column;gap:30px;position:relative;transform:translateY(40px) scale(.95);opacity:0;transition:transform .6s cubic-bezier(.16,.8,.3,1),opacity .6s ease;border:2px solid rgba(255,255,255,.2);}
 				.modal-overlay.active .access-modal{transform:translateY(0) scale(1);opacity:1;}
+				
+				/* Reduce height of video modal specifically - mobile only */
+				@media (max-width:700px) {
+					body.video-playing .access-modal,
+					.ad-player.active ~ .access-modal,
+					.access-modal:has(.ad-player.active) {
+						max-height: 70vh !important;
+						padding: 35px 54px !important;
+					}
+				}
+				
+				/* Ensure access modal appears above all content */
+				#accessModal {
+					z-index: 9999 !important;
+					position: fixed !important;
+					top: 0 !important;
+					left: 0 !important;
+					right: 0 !important;
+					bottom: 0 !important;
+					width: 100vw !important;
+					height: 100vh !important;
+				}
+				
+				/* Enhanced z-index for video player modal when active */
+				#accessModal.active {
+					z-index: 99999 !important;
+				}
 				@media (prefers-reduced-motion:reduce){
 					.modal-overlay{transition:none;}
 					.access-modal{transition:none;}
 				}
-				.access-modal h2{margin:0;font-size:28px;font-weight:700;text-align:center;}
-				.access-modal p.lead{margin:0;font-size:15px;line-height:1.5;text-align:center;max-width:520px;align-self:center;}
+				.access-modal h2{margin:0;font-size:28px;font-weight:700;text-align:center;color:#1a1a1a;}
+				.access-modal p.lead{margin:0;font-size:15px;line-height:1.5;text-align:center;max-width:520px;align-self:center;color:#4a4a4a;}
 				.bundle-list{display:flex;flex-direction:column;gap:22px;}
-				.bundle-btn{background:var(--brand);border:none;color:#fff;padding:16px 20px;font-size:16px;font-weight:700;border-radius:12px;cursor:pointer;box-shadow:0 10px 28px -10px rgba(0,0,0,.5);letter-spacing:.5px;transition:background .25s, transform .25s;}
-				.bundle-btn:hover,.bundle-btn:focus{background:var(--brand-dark);outline:none;transform:translateY(-3px);} 
-				.modal-close{position:absolute;top:10px;right:14px;font-size:30px;background:none;border:none;color:#333;cursor:pointer;line-height:1;font-weight:700;}
-				.bundle-note{font-size:13px;color:#333;text-align:center;line-height:1.4;}
+				.bundle-btn{background:var(--brand);border:none;color:#fff;padding:18px 24px;font-size:17px;font-weight:700;border-radius:14px;cursor:pointer;box-shadow:0 12px 32px -12px rgba(0,0,0,.4), 0 4px 16px -4px rgba(255,65,108,.3);letter-spacing:.5px;transition:all .25s cubic-bezier(.16,.8,.3,1);position:relative;overflow:hidden;}
+				.bundle-btn:hover,.bundle-btn:focus{background:var(--brand-dark);outline:none;transform:translateY(-4px);box-shadow:0 16px 40px -12px rgba(0,0,0,.5), 0 6px 20px -4px rgba(255,65,108,.4);} 
+				.bundle-btn::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transition:left .6s;z-index:1;}
+				.bundle-btn:hover::before{left:100%;}
+				.modal-close{position:absolute;top:12px;right:16px;font-size:32px;background:rgba(255,255,255,.9);border:2px solid rgba(0,0,0,.1);color:#333;cursor:pointer;line-height:1;font-weight:700;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:all .2s ease;}
+				.modal-close:hover{background:#f5f5f5;transform:scale(1.05);border-color:rgba(0,0,0,.2);}
+				.bundle-note{font-size:13px;color:#666;text-align:center;line-height:1.4;background:rgba(255,255,255,.6);padding:12px 20px;border-radius:12px;border:1px solid rgba(0,0,0,.05);}
 
 				@media (max-width:700px){
-					.access-modal{padding:46px 30px;border-radius:26px;}
-					.bundle-btn{font-size:15px;padding:14px 16px;}
+					.access-modal{padding:36px 8px;border-radius:20px;max-height:95vh;overflow-y:auto;margin:8px;}
+					.bundle-btn{font-size:16px;padding:16px 20px;}
 					.access-modal h2{font-size:24px;}
+					.access-modal p.lead{font-size:14px;}
+					.modal-close{width:36px;height:36px;font-size:24px;top:8px;right:8px;}
+					.ad-player{padding:8px;border-radius:16px;gap:16px;}
+					.video-shell{border-radius:12px;aspect-ratio:16/9;max-height:50vh;}
+				}
+				
+				/* Enhanced mobile video optimizations for phones */
+				@media (max-width:480px){
+					.access-modal{padding:0px;margin:-14px;max-height:114vh;width:calc(100vw + 28px);max-width:calc(100vw + 28px);}
+					.access-modal h2{font-size:22px;margin-bottom:8px;}
+					.access-modal p.lead{font-size:13px;margin-bottom:16px;}
+					.ad-player{padding:0px;gap:0px;width:calc(100% + 28px);margin:-14px;margin-top:-20px;margin-bottom:10px;position:relative;}
+					.video-shell{
+						border-radius:0px;
+						aspect-ratio:16/9;
+						max-height:70vh;
+						min-height:200px;
+						width:calc(100% + 28px);
+						margin:-14px auto;
+						position:relative;
+					}
+					.video-controls{
+						position:absolute;
+						top:10px;
+						left:50%;
+						transform:translateX(-50%);
+						z-index:1000;
+						display:flex;
+						gap:8px;
+						background:rgba(0,0,0,0.7);
+						padding:8px 12px;
+						border-radius:20px;
+						backdrop-filter:blur(10px);
+					}
+					.video-controls button{
+						background:rgba(255,255,255,0.9);
+						border:none;
+						padding:8px 12px;
+						border-radius:15px;
+						color:#333;
+						font-weight:500;
+						font-size:11px;
+						cursor:pointer;
+						transition:all 0.2s ease;
+					}
+					.video-controls button:hover{
+						background:rgba(255,255,255,1);
+						transform:scale(1.05);
+					}
+					.bundle-btn{font-size:15px;padding:14px 18px;border-radius:12px;}
+					.modal-close{width:32px;height:32px;font-size:20px;top:6px;right:6px;}
 				}
 		/* Ensure hero image container is truly flush to the right edge */
 		.hero-image{position:relative;overflow:hidden;height:854px;margin-top:-92px;margin-left:auto;margin-right:0;padding:0;right:0;align-self:stretch;} /* stretches and sits flush right */
@@ -120,18 +249,49 @@
 		.work-head{font-size:22px;margin:0;font-weight:700;}
 		.foot-grid{display:flex;flex-direction:column;gap:26px;}
 
-		/* Inline ad player inside bundle modal */
-		.ad-player{display:none;flex-direction:column;gap:18px;}
-		.ad-player.active{display:flex;}
-		/* VIDEO STABILIZATION - YouTube/Facebook/Spotify Style */
+		/* Inline ad player inside bundle modal - Enhanced White Popup */
+		.ad-player{display:none;flex-direction:column;gap:20px;background:#ffffff;border-radius:30px;padding:24px;border:2px solid rgba(255,255,255,.2);box-shadow:0 32px 80px -20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.15);position:relative;transform:translateY(20px) scale(.98);opacity:0;transition:transform .4s cubic-bezier(.16,.8,.3,1),opacity .4s ease;}
+		.ad-player.active{display:flex;transform:translateY(0) scale(1);opacity:1;}
+		
+		/* Hide lead text on phones ONLY during actual video playback, NOT during bundle selection */
+		@media (max-width:700px) {
+			/* Only hide when video is actually playing (iframe visible) */
+			.access-modal:has(.ad-player.active iframe) .lead,
+			body.video-playing .access-modal:has(.ad-player.active iframe) .lead {
+				display: none !important;
+			}
+			
+			/* Forceful hiding class for phones during video only */
+			.phone-hidden {
+				display: none !important;
+				visibility: hidden !important;
+				opacity: 0 !important;
+				height: 0 !important;
+				overflow: hidden !important;
+			}
+			
+			/* Lower the "Select Your Access Bundle" title in video mode on phones */
+			body.video-playing .access-modal h2,
+			.ad-player.active ~ h2 {
+				margin-top: 15px !important;
+				padding-top: 10px !important;
+			}
+		}
+		
+		/* Keep modal title visible in video mode */
+		.ad-player.active ~ h2,
+		.modal-overlay.active .access-modal h2 {
+			display: block !important;
+		}
+		/* VIDEO STABILIZATION - Enhanced YouTube/Facebook/Spotify Style for White Popup */
 		.video-shell{
 			position:relative;
 			width:100%;
 			aspect-ratio:16/9;
 			background:#000;
-			border-radius:22px;
+			border-radius:16px;
 			overflow:hidden;
-			box-shadow:0 18px 42px -12px rgba(0,0,0,.55);
+			box-shadow:0 12px 32px -8px rgba(0,0,0,.4), 0 4px 16px -4px rgba(0,0,0,.2);
 			/* STABLE FOUNDATION - No vibrations, no conflicts */
 			isolation:isolate;
 			contain:layout style;
@@ -140,6 +300,7 @@
 			-webkit-backface-visibility:hidden;
 			transform:translateZ(0);
 			-webkit-transform:translateZ(0);
+			border:2px solid rgba(255,255,255,.15);
 		}
 
 		/* VIDEO ELEMENTS - Enhanced for verified working videos */
@@ -165,6 +326,37 @@
 			-webkit-image-rendering:optimizeQuality;
 		}
 		
+		/* Enhanced mobile video rendering for phones */
+		@media (max-width:700px){
+			.video-shell video,
+			.video-shell iframe{
+				object-fit:contain;
+				width:100%;
+				height:100%;
+				max-width:100%;
+				max-height:100%;
+			}
+		}
+		
+		/* Ultra-mobile video optimizations */
+		@media (max-width:480px){
+			.video-shell{
+				/* Ensure video container is properly sized on small phones */
+				position:relative;
+				overflow:hidden;
+				background:#000;
+				min-height:180px;
+				max-height:calc(100vh - 300px);
+			}
+			.video-shell video,
+			.video-shell iframe{
+				object-fit:contain;
+				object-position:center;
+				/* Prevent video from being too small on phones */
+				min-height:180px;
+			}
+		}
+		
 		/* Enhanced video visibility for Google CDN instant appearance */
 		.video-shell video{
 			opacity:0; /* Start hidden for instant transition */
@@ -178,6 +370,41 @@
 			-webkit-touch-callout:none;
 			/* GPU ACCELERATION FOR INSTANT APPEARANCE */
 			will-change:opacity, transform;
+		}
+		
+		/* Mobile video loading optimizations */
+		@media (max-width:700px){
+			.video-shell video{
+				/* Faster mobile loading */
+				transition:opacity 0.15s ease, transform 0.15s ease;
+				/* Mobile-specific rendering */
+				-webkit-transform:translateZ(0);
+				transform:translateZ(0);
+				will-change:transform;
+			}
+		}
+		
+		/* Video ready state for instant appearance */
+		.video-shell.video-ready video{
+			opacity:1;
+			transform:scale(1);
+		}
+		
+		/* Loading state styling for mobile */
+		@media (max-width:480px){
+			.video-loading{
+				font-size:14px;
+				padding:10px 16px;
+				background:rgba(0,0,0,.9);
+				color:white;
+				border-radius:10px;
+				position:absolute;
+				top:50%;
+				left:50%;
+				transform:translate(-50%, -50%);
+				z-index:20;
+				backdrop-filter:blur(6px);
+			}
 		}
 		
 		/* ═══════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -339,12 +566,12 @@
 			-ms-user-select: none !important;
 		}
 		
-		/* BLUR RED TOPPER AND HEADER during video playback */
+		/* LIGHT BLUR FOR HEADER during video playback - keep it visible and functional */
 		body.video-playing header.nav {
-			filter: blur(8px) brightness(0.7) !important;
-			backdrop-filter: blur(8px) !important;
-			z-index: 1 !important;
-			pointer-events: none !important;
+			filter: blur(2px) brightness(0.9) !important;
+			backdrop-filter: blur(2px) !important;
+			z-index: 45 !important;
+			pointer-events: auto !important;
 			transition: filter 0.3s ease !important;
 		}
 		
@@ -365,10 +592,15 @@
 		body.video-playing .ad-player.active,
 		body.video-playing .video-shell {
 			z-index: 999999 !important;
-			position: relative !important;
 			filter: none !important;
 			backdrop-filter: none !important;
 			pointer-events: auto !important;
+		}
+		
+		/* Keep modal overlay fixed positioned during video playback */
+		body.video-playing .modal-overlay.active {
+			position: fixed !important;
+			inset: 0 !important;
 		}
 		
 		.video-shell.ad-active {
@@ -511,33 +743,38 @@
 		}
 		.video-shell.loading-thumb #adThumb{display:block;}
 
-		/* STABLE OVERLAY CONTROLS - Like YouTube/Facebook */
+		/* STABLE OVERLAY CONTROLS - Small buttons at top of video */
 		.video-overlay-btn{
 			position:absolute;
-			top:12px;
-			right:12px;
+			top:8px;
+			left:8px;
+			right:8px;
 			display:flex;
-			gap:10px;
+			gap:4px;
+			justify-content:flex-start;
+			align-items:flex-start;
+			flex-wrap:nowrap;
 			/* STABLE OVERLAY - No conflicts */
 			z-index:15;
 			isolation:isolate;
 			contain:layout;
 			pointer-events:auto;
 		}
-	/* STABLE VIDEO CONTROL BUTTONS - Like YouTube/Facebook/Spotify */
+	/* COMPACT VIDEO CONTROL BUTTONS - Small and at top */
 	.video-overlay-btn button{
-		background:rgba(0,0,0,.65);
+		background:rgba(0,0,0,.8);
 		color:#fff;
 		border:none;
-		padding:8px 16px;
-		border-radius:30px;
-		font-size:13px;
+		padding:4px 8px;
+		border-radius:12px;
+		font-size:11px;
 		font-weight:600;
 		cursor:not-allowed;
 		backdrop-filter:blur(6px);
 		display:flex;
 		align-items:center;
-		gap:6px;
+		gap:4px;
+		min-height:24px;
 		/* STABLE BUTTON RENDERING */
 		position:relative;
 		isolation:isolate;
@@ -549,42 +786,222 @@
 		-webkit-backface-visibility:hidden;
 		/* SMOOTH TRANSITIONS - No jerky movements */
 		transition:all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+		white-space:nowrap;
+		flex:0 0 auto;
 	}
 		.video-overlay-btn button#playPauseBtn,
-		.video-overlay-btn button#fsBtn{cursor:pointer;background:rgba(0,0,0,.55);}
+		.video-overlay-btn button#fsBtn,
+		.video-overlay-btn button#skipBtn{cursor:pointer;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.2);}
 		.video-overlay-btn button#playPauseBtn:hover,
-		.video-overlay-btn button#fsBtn:hover{background:var(--brand-dark);}
-		/* Phone-friendly overlay button layout */
-		@media (max-width:600px){
-			.video-overlay-btn{top:calc(6px + env(safe-area-inset-top,0));right:6px;left:auto;flex-wrap:nowrap;gap:6px;justify-content:flex-end;padding:0;background:none;border-radius:0;z-index:10;}
-			.video-overlay-btn button{padding:6px 10px;font-size:11px;line-height:1.1;min-width:auto;background:rgba(0,0,0,.55);}
-			.video-overlay-btn button:hover{background:rgba(0,0,0,.7);}
-			.video-overlay-btn #skipBtn{order:0;}
-			.video-overlay-btn #muteBtn{order:1;}
-			.video-overlay-btn #playPauseBtn{order:2;}
-			.video-overlay-btn #fsBtn{order:3;}
+		.video-overlay-btn button#fsBtn:hover,
+		.video-overlay-btn button#skipBtn:hover{background:var(--brand-dark);box-shadow:0 2px 6px rgba(255,65,108,.3);padding:8px 12px;width:auto;min-width:fit-content;transition:all 0.2s ease;}
+		
+		/* Position skip button at left edge separately */
+		.video-overlay-btn button#skipBtn{
+			position:absolute !important;
+			left:-98px !important;
+			top:0 !important;
 		}
-		/* Keep buttons visible inside fullscreen */
+		
+		/* Reset skip button positioning for desktop */
+		@media (min-width: 769px) {
+			.video-overlay-btn button#skipBtn{
+				position:relative !important;
+				left:auto !important;
+				top:auto !important;
+			}
+			.access-modal{
+				padding:35px 54px !important;
+			}
+		}
+		
+		/* Skip button gets priority positioning */
+		.video-overlay-btn #skipBtn{
+			order:1;
+			background:var(--brand);
+			flex:1 1 auto;
+			max-width:90px;
+			min-width:45px;
+			text-align:center;
+			display:flex;
+			align-items:center;
+			justify-content:center;
+		}
+		.video-overlay-btn #muteBtn{order:2;flex:0 0 auto;}
+		.video-overlay-btn #playPauseBtn{order:3;flex:0 0 auto;}
+		.video-overlay-btn #fsBtn{order:4;flex:0 0 auto;}
+		/* Simplified mobile controls - keep buttons small at top */
+		@media (max-width:700px){
+			.video-overlay-btn{
+				top:6px;
+				left:6px;
+				right:6px;
+				gap:1px;
+			}
+			.video-overlay-btn button{
+				padding:3px 6px;
+				font-size:10px;
+				min-height:22px;
+				border-radius:10px;
+			}
+			.video-overlay-btn #skipBtn{
+				max-width:75px;
+				min-width:35px;
+			}
+		}
+		
+		/* Ultra-mobile - even smaller buttons */
+		@media (max-width:480px){
+			.video-overlay-btn{
+				top:4px;
+				left:4px;
+				right:4px;
+				gap:1px;
+			}
+			.video-overlay-btn button{
+				padding:2px 5px;
+				font-size:9px;
+				min-height:20px;
+				border-radius:8px;
+			}
+			.video-overlay-btn #skipBtn{
+				max-width:65px;
+				min-width:30px;
+			}
+		}
+		
+		/* Keep buttons visible inside fullscreen - small and at top */
 		.video-shell:fullscreen .video-overlay-btn,
-		.video-shell:-webkit-full-screen .video-overlay-btn{top:8px;right:8px;left:auto;}
-		.video-overlay-btn button.enabled{cursor:pointer;background:var(--brand);} 
-		.video-overlay-btn button.enabled:hover{background:var(--brand-dark);} 
+		.video-shell:-webkit-full-screen .video-overlay-btn{
+			top:6px;
+			left:6px;
+			right:6px;
+		}
+		.video-overlay-btn button.enabled{cursor:pointer;background:var(--brand);border:1px solid rgba(255,255,255,.3);} 
+		.video-overlay-btn button.enabled:hover{background:var(--brand-dark);box-shadow:0 4px 12px rgba(255,65,108,.4), 0 2px 6px rgba(0,0,0,.15);} 
 	/* Make overlay buttons circular when appropriate */
 	.video-overlay-btn button.icon-like{padding:0;width:48px;height:48px;border-radius:50%;display:inline-grid;place-items:center;font-size:12px;min-width:48px}
-	/* Generic pressable button style used across overlay controls */
-	.pressable{transition:background .12s, transform .06s, box-shadow .12s, backdrop-filter .12s; cursor:pointer; backdrop-filter:blur(4px);}
-	.pressable:active{transform:scale(.98);}
+	/* Generic pressable button style used across overlay controls - Enhanced for White Popup & Mobile */
+	.pressable{transition:all .15s cubic-bezier(.16,.8,.3,1); cursor:pointer; backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.2); box-shadow:0 2px 8px rgba(0,0,0,.15), 0 1px 3px rgba(0,0,0,.1);}
+	.pressable:active{transform:scale(.96);}
+	.pressable:hover{box-shadow:0 4px 12px rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.15); border-color:rgba(255,255,255,.3);}
+	
+	/* Enhanced mobile touch interaction for small video buttons */
+	@media (max-width:700px){
+		.video-overlay-btn .pressable{
+			/* Appropriate touch targets for small video buttons */
+			min-height:22px;
+			min-width:auto;
+			/* Better touch feedback */
+			-webkit-tap-highlight-color:rgba(255,65,108,.2);
+			user-select:none;
+			-webkit-user-select:none;
+		}
+		.video-overlay-btn .pressable:active{
+			transform:scale(.92);
+			background:rgba(0,0,0,.9) !important;
+		}
+	}
+	
+	/* Ultra-mobile touch optimizations for small video buttons */
+	@media (max-width:480px){
+		.video-overlay-btn .pressable{
+			min-height:20px;
+			min-width:auto;
+			font-size:9px !important;
+			padding:2px 5px !important;
+		}
+		.video-overlay-btn .pressable:active{
+			transform:scale(.90);
+			box-shadow:0 1px 4px rgba(255,65,108,.4);
+		}
+	}
 	/* Disabled / loading state shows the translucent blur */
 	.pressable[disabled]{background:rgba(0,0,0,.45) !important; color:#fff !important; opacity:0.95; backdrop-filter:blur(6px); box-shadow:0 6px 18px -8px rgba(0,0,0,.35);}
 	/* Use brand red for active/pressed visual state and stronger blur/halo */
 	.pressable.pressed, .pressable:active{background:var(--brand-red) !important; color:#fff !important; backdrop-filter:blur(6px); box-shadow:0 12px 34px -12px rgba(246,0,0,.45);} 
 	/* Mute button: rounded rectangle when active (not too circular) */
-	.mute-btn{cursor:pointer;background:rgba(0,0,0,.55)!important;opacity:0.95;border-radius:12px;padding:6px 12px;height:40px;display:inline-grid;place-items:center;font-size:12px;font-weight:700;color:#fff;border:none;white-space:nowrap;text-align:center}
-	.mute-btn.active{background:var(--brand-red)!important;opacity:1 !important;color:#fff !important;box-shadow:0 8px 22px -6px rgba(0,0,0,.22);backdrop-filter:blur(6px);} 
-		.ad-info-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-content:space-between;font-size:13px;font-weight:600;}
-		.ad-progress-bar{flex:1;height:10px;min-width:160px;background:#e3e3e3;border-radius:6px;overflow:hidden;position:relative;}
-		.ad-progress-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand),#ff4d4d);transition:width .25s linear;}
-		.video-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#fff;background:linear-gradient(135deg,#222,#000);letter-spacing:.5px;animation:pulse 1.2s ease-in-out infinite;}
+	.mute-btn{cursor:pointer;background:rgba(0,0,0,.8)!important;opacity:0.95;border-radius:12px;padding:4px 8px;min-height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;border:none;white-space:nowrap;text-align:center;flex:0 0 auto;}
+	.mute-btn.active{background:var(--brand-red)!important;opacity:1 !important;color:#fff !important;box-shadow:0 2px 6px rgba(255,65,108,.3);backdrop-filter:blur(6px);} 
+		.ad-info-row{display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between;font-size:13px;font-weight:600;background:rgba(255,255,255,.7);padding:12px 16px;border-radius:12px;border:1px solid rgba(0,0,0,.06);color:#4a4a4a;margin-top:12px;}
+		.ad-progress-bar{flex:1;height:12px;min-width:160px;background:rgba(0,0,0,.08);border-radius:8px;overflow:hidden;position:relative;box-shadow:inset 0 1px 3px rgba(0,0,0,.1);}
+		.ad-progress-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand) 0%, #ff4d6b 50%, var(--brand) 100%);transition:width .25s linear;border-radius:8px;box-shadow:0 1px 3px rgba(255,65,108,.3);}
+		
+		/* Enhanced mobile ad-info-row for phones */
+		@media (max-width:700px){
+			.ad-info-row{
+				gap:12px;
+				padding:10px 14px;
+				font-size:12px;
+				flex-direction:column;
+				align-items:stretch;
+			}
+			.ad-progress-bar{
+				width:100%;
+				min-width:100%;
+				height:14px;
+				order:1;
+				background:rgba(0,0,0,.15);
+				border-radius:10px;
+				box-shadow:inset 0 1px 4px rgba(0,0,0,.2);
+			}
+			.ad-progress-bar span{
+				border-radius:10px;
+				background:linear-gradient(90deg,var(--brand) 0%, #ff4d6b 50%, var(--brand) 100%);
+				box-shadow:0 2px 6px rgba(255,65,108,.4);
+			}
+			#adSequenceLabel,
+			#adStatus{
+				order:0;
+				text-align:center;
+				font-size:12px;
+			}
+		}
+		
+		/* Ultra-mobile optimizations for very small phones */
+		@media (max-width:480px){
+			.ad-info-row{
+				gap:8px;
+				padding:8px 12px;
+				font-size:11px;
+				border-radius:10px;
+			}
+			.ad-progress-bar{
+				height:12px;
+				border-radius:8px;
+				background:rgba(0,0,0,.15);
+				box-shadow:inset 0 1px 4px rgba(0,0,0,.2);
+			}
+			.ad-progress-bar span{
+				border-radius:8px;
+				background:linear-gradient(90deg,var(--brand) 0%, #ff4d6b 50%, var(--brand) 100%);
+				box-shadow:0 2px 6px rgba(255,65,108,.4);
+			}
+			#adSequenceLabel,
+			#adStatus{
+				font-size:11px;
+				line-height:1.3;
+			}
+		}
+		.video-loading{
+			position:absolute;
+			top:50%;
+			left:50%;
+			transform:translate(-50%, -50%);
+			display:flex;
+			align-items:center;
+			justify-content:center;
+			font-size:16px;
+			font-weight:600;
+			color:#fff;
+			background:rgba(0,0,0,.85);
+			padding:12px 20px;
+			border-radius:12px;
+			letter-spacing:.5px;
+			animation:pulse 1.2s ease-in-out infinite;
+			z-index:20;
+			backdrop-filter:blur(8px);
+		}
 		.video-loading.hidden{display:none;}
 		@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
 		.toast{position:fixed;bottom:24px;right:24px;background:#111;color:#fff;padding:16px 20px;border-radius:18px;font-size:14px;font-weight:600;box-shadow:0 14px 40px -10px rgba(0,0,0,.5);opacity:0;transform:translateY(15px);transition:.45s;z-index:120;}
@@ -860,15 +1277,26 @@
 		   Do not let the white modal stretch to the full viewport height. Constrain video to a
 		   reasonable height so the panel remains tidy on phones. */
 		@media (max-width:700px){
+			/* Ensure modal header content is always visible in video mode */
+			#accessModal h2,
+			#accessModal .lead {
+				display: block !important;
+				margin-bottom: 8px;
+				font-size: 15px;
+			}
+			
 			/* Restore lead and bundle controls on phones but keep the video-shell constrained so the white modal stays compact.
 			   Do NOT force display with !important so the JS can hide/show these elements as intended. */
 			#accessModal .bundle-list,
-			#accessModal .bundle-note,
-			#accessModal .lead{display:block;margin-bottom:8px;font-size:15px;}
+			#accessModal .bundle-note {
+				display: block;
+				margin-bottom: 8px;
+				font-size: 15px;
+			}
 
 			/* Keep ad-player layout rules but don't force it visible; the active class controls display. */
 			#accessModal .ad-player{flex-direction:column;gap:12px;}
-			#accessModal .video-shell{aspect-ratio:unset;height:min(40vh,360px);border-radius:12px;}
+			#accessModal .video-shell{aspect-ratio:unset;height:min(35vh,300px);border-radius:12px;}
 
 			/* Ensure <video> and iframe both letterbox (contain) so landscape recordings aren't cropped in portrait phones */
 			#accessModal .video-shell video,
@@ -879,6 +1307,80 @@
 
 			/* Keep modal compact and scrollable if content exceeds the available space */
 			#accessModal .access-modal{padding:18px 16px;border-radius:12px;max-width:100%;width:100%;max-height:calc(100vh - 80px);overflow:auto;}
+			
+			/* Further reduce height for video mode on phones */
+			body.video-playing #accessModal .access-modal,
+			#accessModal .access-modal:has(.ad-player.active) {
+				max-height: calc(100vh - 120px) !important;
+				padding: 12px 16px !important;
+			}
+		}
+
+		/* Ensure main content stays below modals */
+		body {
+			position: relative;
+			z-index: 1;
+		}
+		
+		main {
+			position: relative;
+			z-index: 2;
+		}
+		
+		footer {
+			position: relative;
+			z-index: 2;
+		}
+		
+		/* Enhanced z-index for video player modal when active */
+		#accessModal.active {
+			z-index: 99999 !important;
+		}
+		
+		/* Prevent body scroll when modal is open */
+		body.modal-open {
+			overflow: hidden !important;
+			position: fixed !important;
+			width: 100% !important;
+		}
+		
+		/* Enhanced mobile progress bar styling for phones */
+		@media (max-width: 700px) {
+			.mobile-progress-bar {
+				display: block !important;
+				width: 100%;
+				height: 16px;
+				background: rgba(255, 255, 255, 0.2);
+				border-radius: 8px;
+				overflow: hidden;
+				margin: 8px 0;
+				border: 1px solid rgba(255, 0, 0, 0.3);
+				box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+			}
+			
+			.mobile-progress-fill {
+				display: block;
+				height: 100%;
+				width: 0%;
+				background: linear-gradient(90deg, #ff0000 0%, #ff4444 30%, #ff6666 60%, #ff0000 100%);
+				border-radius: 8px;
+				transition: width 0.2s ease;
+				box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+			}
+		}
+		
+		@media (max-width: 480px) {
+			.mobile-progress-bar {
+				height: 14px;
+				margin: 6px 0;
+			}
+		}
+		
+		/* Hide mobile progress bar on desktop */
+		@media (min-width: 701px) {
+			.mobile-progress-bar {
+				display: none !important;
+			}
 		}
 	</style>
 </head>
@@ -931,7 +1433,7 @@
 					<iframe id="ytPlayer" allow="autoplay; encrypted-media" title="Ad video" style="display:none;"></iframe>
 					<div id="imgFallback" class="img-fallback"><div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div></div>
 					<div class="video-overlay-btn">
-						<button id="skipBtn" type="button" class="pressable">Skip (15)</button>
+						<button id="skipBtn" type="button" class="pressable">Skip(15)</button>
 						<button id="muteBtn" type="button" class="mute-btn pressable" aria-label="Toggle sound">Mute</button>
 						<button id="playPauseBtn" type="button" class="pressable" aria-label="Pause ad">Pause</button>
 						<button id="fsBtn" type="button" class="pressable" aria-label="Fullscreen video">Fullscreen</button>
@@ -942,6 +1444,9 @@
 					<div id="adSequenceLabel">Ad 1 / 1</div>
 					<div class="ad-progress-bar"><span id="adProgressInline"></span></div>
 					<div id="adStatus">Preparing...</div>
+					<div class="mobile-progress-bar" id="mobileProgressBar">
+						<span class="mobile-progress-fill" id="mobileProgressFill"></span>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -975,7 +1480,7 @@
 
 	<!-- Account Modal -->
 	<div id="accountOverlay" class="modal-overlay" aria-hidden="true" style="backdrop-filter:blur(10px) saturate(140%);">
-		<div class="access-modal" style="max-width:720px;display:flex;flex-direction:column;" role="dialog" aria-label="My Account">
+		<div class="access-modal" style="max-width:640px;display:flex;flex-direction:column;" role="dialog" aria-label="My Account">
 			<button class="modal-close" aria-label="Close" onclick="closeAccountModal()">&times;</button>
 			<h2 style="margin-top:0;flex:0 0 auto;">My Account</h2>
 			<div id="accountContent" style="display:flex;flex-direction:column;gap:24px;overflow:auto;flex:1 1 auto;min-height:0;">
@@ -1296,7 +1801,7 @@
 
 	<!-- Terms & Conditions Overlay -->
 	<div id="termsOverlay" class="modal-overlay" aria-hidden="true" style="backdrop-filter:blur(12px) saturate(160%);">
-		<div class="access-modal" role="dialog" aria-label="Terms & Conditions" style="max-width:880px;display:flex;flex-direction:column;gap:28px;">
+		<div class="access-modal" role="dialog" aria-label="Terms & Conditions" style="display:flex;flex-direction:column;gap:28px;">
 			<button class="modal-close" aria-label="Close" onclick="closeTerms()">&times;</button>
 			<h2 style="margin:0;font-size:34px;">Terms and Conditions</h2>
 			<div style="font-size:14px;line-height:1.55;font-weight:600;max-height:60vh;overflow:auto;padding-right:6px;">
@@ -1332,10 +1837,10 @@
 
 <!-- Help & Support Overlay (moved outside Terms so it opens instantly) -->
 <div id="helpOverlay" class="modal-overlay" aria-hidden="true" style="backdrop-filter:blur(12px) saturate(160%);">
-	<div class="access-modal" role="dialog" aria-label="Help & Support" style="max-width:860px;display:flex;flex-direction:column;gap:26px;">
+	<div class="access-modal" role="dialog" aria-label="Help & Support" style="display:flex;flex-direction:column;gap:26px;">
 		<button class="modal-close" aria-label="Close" onclick="closeHelp()">&times;</button>
-		<h2 style="margin:0;font-size:32px;">Help &amp; Support</h2>
-		<div id="helpScroll" style="display:flex;flex-direction:column;gap:26px;">
+		<h2 style="margin:0;font-size:28px;">Help &amp; Support</h2>
+		<div id="helpScroll" style="display:flex;flex-direction:column;gap:20px;">
 		<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:22px;">
 			<section style="background:#fff;border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 28px -14px rgba(0,0,0,.25);">
 				<h3 style="margin:0;font-size:18px;">Connect Devices (Proxy)</h3>
@@ -1371,6 +1876,17 @@
 					<li>Black video? It auto switches to images or another ad.</li>
 					<li>Change password in My Account &gt; Change Password.</li>
 				</ul>
+				<div style="background:#fff2e0;padding:12px;border-radius:8px;margin-top:8px;">
+					<h4 style="margin:0 0 6px 0;font-size:14px;color:#e65100;">Anti-Cheat Technologies</h4>
+					<ul style="margin:0;padding-left:18px;font-size:12px;font-weight:600;line-height:1.4;color:#bf360c;">
+						<li>Visibility API: Detects app switching and tab changes</li>
+						<li>Focus Events: Monitors window focus/blur states</li>
+						<li>Page Lifecycle: Tracks mobile app backgrounding</li>
+						<li>Wake Lock Control: Prevents background audio playback</li>
+						<li>Auto-pause/resume: Videos pause when you leave, resume when you return</li>
+					</ul>
+					<p style="margin:6px 0 0 0;font-size:11px;font-weight:600;color:#6d4c41;">These technologies ensure fair usage and prevent background ad listening.</p>
+				</div>
 			</section>
 			<section style="background:#fff;border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 28px -14px rgba(0,0,0,.25);">
 				<h3 style="margin:0;font-size:18px;">Contact</h3>
@@ -2311,6 +2827,10 @@ function openAccessModal(adMode=false){
 	lastFocusedBeforeModal=document.activeElement;
 	accessModal.classList.add('active');
 	accessModal.removeAttribute('aria-hidden');
+	
+	// Prevent body scroll and ensure proper positioning
+	document.body.classList.add('modal-open');
+	
 	if(!adMode){
 		// show bundle list
 		document.querySelector('.bundle-list').style.display='flex';
@@ -2320,8 +2840,8 @@ function openAccessModal(adMode=false){
 		document.getElementById('adPlayer').classList.remove('active');
 		setTimeout(()=>{ try{ const first=accessModal.querySelector('.bundle-btn'); if(first && !isTouchDevice()){ first.focus(); } }catch(e){} },50);
 	}else{
-		// hide lead immediately on phones when opening into ad mode
-		try{ if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){ const l=accessModal.querySelector('.lead'); if(l) l.style.display='none'; } }catch{}
+		// Keep lead and title visible on all devices when opening into ad mode
+		// Only hide bundle selection elements, not the header content
 		setTimeout(()=>{ try{
 			// Don't shift focus to the mute button on touch devices (this can cause visual 'vibrate' effects)
 			if(!(('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints>0))){
@@ -2332,12 +2852,6 @@ function openAccessModal(adMode=false){
 	}
 	trapFocus(accessModal);
 }
-function closeAccessModal(){
-	accessModal.classList.remove('active');
-	accessModal.setAttribute('aria-hidden','true');
-	releaseFocusTrap();
-	if(lastFocusedBeforeModal && !isTouchDevice()) lastFocusedBeforeModal.focus();
-}
 function chooseBundle(size){
 	console.log('[FAST-START] Bundle selected:', size, 'MB - Starting INSTANT video playback');
 	console.log('[FAST-START] Available videos:', mp4Ads);
@@ -2345,11 +2859,21 @@ function chooseBundle(size){
 	// INSTANT VIDEO START - No delays, no selection screens
 	adStatus.textContent = 'Starting instant video playback...';
 	
-	openAccessModal(true); // keep modal open but switch to ad player
+	// Don't call openAccessModal(true) - modal is already open
+	// Just transition to ad mode directly
 	startAdSequence(size);
 }
-// Close on overlay click
-accessModal.addEventListener('click',e=>{ if(e.target===accessModal) closeAccessModal(); });
+// Close on overlay click - but prevent accidental closes during video playback
+accessModal.addEventListener('click',e=>{ 
+	if(e.target===accessModal) {
+		// Extra confirmation for video mode to prevent accidental closes
+		if(adSequenceActive && document.body.classList.contains('video-playing')) {
+			console.log('[MODAL-CLOSE] Video is playing, confirming close action...');
+			// Allow close but ensure full cleanup
+		}
+		closeAccessModal(); 
+	} 
+});
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && accessModal.classList.contains('active')) closeAccessModal(); });
 
 // Basic focus trap implementation
@@ -2638,13 +3162,22 @@ function blockMediaControls() {
 		}
 	});
 	
-	// 10. Block page visibility changes that could pause video
+	// 10. Pause video when user leaves app (like YouTube Music free)
 	document.addEventListener('visibilitychange', function() {
 		if (adSequenceActive && document.hidden) {
-			console.log('[MEDIA-BLOCK] Page hidden during video - maintaining playback');
-			// Keep video playing even when page is hidden
-			if (adVideo.paused) {
-				adVideo.play().catch(() => {});
+			console.log('[ANTI-CHEAT] Page hidden during video - pausing playback to prevent background listening');
+			// Pause video when user leaves the app
+			if (adVideo && !adVideo.paused) {
+				adVideo.pause();
+				console.log('[ANTI-CHEAT] Video paused - user must return to app to continue');
+			}
+		} else if (adSequenceActive && document.visibilityState === 'visible') {
+			console.log('[ANTI-CHEAT] Page visible again - auto-resuming video');
+			// Auto-resume video when user returns
+			if (adVideo && adVideo.paused) {
+				adVideo.play().catch(() => {
+					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
+				});
 			}
 		}
 	});
@@ -2664,6 +3197,84 @@ if (document.readyState === 'loading') {
 // END MEDIA CONTROL BLOCKING
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ANTI-CHEAT SYSTEM: Prevent background ad listening (like YouTube Music)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+function initAntiCheatSystem() {
+	// Track if video was auto-paused due to leaving app
+	let wasAutoPaused = false;
+	
+	// Function to show pause indicator
+	function showPauseIndicator() {
+		if (adStatus) {
+			adStatus.textContent = "Video paused - Return to app to continue";
+			adStatus.style.color = "#ff6b6b";
+		}
+	}
+	
+	// Function to hide pause indicator
+	function hidePauseIndicator() {
+		if (adStatus && adSequenceActive) {
+			adStatus.style.color = "";
+			// Status will be updated by normal video progress
+		}
+	}
+	
+	// Additional focus/blur detection for comprehensive coverage
+	window.addEventListener('blur', function() {
+		if (adSequenceActive && adVideo && !adVideo.paused) {
+			console.log('[ANTI-CHEAT] Window lost focus - pausing video');
+			adVideo.pause();
+			wasAutoPaused = true;
+			showPauseIndicator();
+		}
+	});
+	
+	window.addEventListener('focus', function() {
+		if (adSequenceActive && wasAutoPaused) {
+			console.log('[ANTI-CHEAT] Window regained focus - auto-resuming video');
+			wasAutoPaused = false;
+			hidePauseIndicator();
+			// Auto-resume video when user returns
+			if (adVideo && adVideo.paused) {
+				adVideo.play().catch(() => {
+					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
+				});
+			}
+		}
+	});
+	
+	// Page lifecycle API for mobile app switching
+	document.addEventListener('freeze', function() {
+		if (adSequenceActive && adVideo && !adVideo.paused) {
+			console.log('[ANTI-CHEAT] Page frozen (mobile app switch) - pausing video');
+			adVideo.pause();
+			wasAutoPaused = true;
+			showPauseIndicator();
+		}
+	});
+	
+	document.addEventListener('resume', function() {
+		if (adSequenceActive && wasAutoPaused) {
+			console.log('[ANTI-CHEAT] Page resumed - auto-resuming video');
+			wasAutoPaused = false;
+			hidePauseIndicator();
+			// Auto-resume video when user returns to app
+			if (adVideo && adVideo.paused) {
+				adVideo.play().catch(() => {
+					console.log('[ANTI-CHEAT] Auto-resume failed, user interaction required');
+				});
+			}
+		}
+	});
+	
+	console.log('[ANTI-CHEAT] Background listening prevention system activated');
+}
+
+// Initialize anti-cheat system
+initAntiCheatSystem();
+
 const skipBtn=document.getElementById('skipBtn');
 const muteBtn=document.getElementById('muteBtn');
 const playPauseBtn=document.getElementById('playPauseBtn');
@@ -2671,6 +3282,7 @@ const fsBtn=document.getElementById('fsBtn');
 const adSequenceLabel=document.getElementById('adSequenceLabel');
 const adStatus=document.getElementById('adStatus');
 const adProgressInline=document.getElementById('adProgressInline');
+const mobileProgressFill=document.getElementById('mobileProgressFill');
 const videoLoading=document.getElementById('videoLoading');
 const toast=document.getElementById('globalToast');
 let adList=[];let currentAdIndex=0;let skipTimer=null;let progressInterval=null;let bundleSizeSelected=0;let adGrantTimeout=null;let skipCountdownStarted=false;let skipFallbackTimer=null;let videoStartStamp=0;let autoSkipTimer=null;let skipCountdownPaused=false;
@@ -2975,10 +3587,20 @@ function playYouTubeAd(id){
 }
 function simulateYtProgress(){
 	cancelAnimationFrame(progressInterval); adProgressInline.style.width='0%';
+	const mobileProgressFill = document.getElementById('mobileProgressFill');
+	if(mobileProgressFill) mobileProgressFill.style.width='0%';
+	
 	function frame(){
 		if(!ytPlayerInstance) return;
 		let d=0,c=0; try{ d=ytPlayerInstance.getDuration(); c=ytPlayerInstance.getCurrentTime(); }catch{}
-		if(d && c>=0){ adProgressInline.style.width=Math.min(100,(c/d)*100)+'%'; }
+		if(d && c>=0){ 
+			const pct = Math.min(100,(c/d)*100);
+			adProgressInline.style.width=pct+'%';
+			// Update mobile progress bar for phones
+			if(mobileProgressFill) {
+				mobileProgressFill.style.width=pct+'%';
+			}
+		}
 		if(ytPlayerInstance.getPlayerState && ytPlayerInstance.getPlayerState()===YT.PlayerState.PLAYING) progressInterval=requestAnimationFrame(frame);
 	}
 	progressInterval=requestAnimationFrame(frame);
@@ -3040,9 +3662,66 @@ function startAdSequence(bundleSize){
 	}
 	
 	// INSTANT UI SETUP - No delays
+	// Hide bundle selection but keep header content visible
 	document.querySelector('.bundle-list').style.display='none';
 	document.getElementById('bundleNote').style.display='none';
+	
+	// Ensure modal header content remains visible
+	const modalTitle = accessModal.querySelector('h2');
+	const modalLead = accessModal.querySelector('.lead');
+	if(modalTitle) modalTitle.style.display='block';
+	
+	// FORCEFULLY REMOVE lead text on phones during video mode ONLY when iframe is present
+	if(modalLead) {
+		// Check if we're on a phone (max-width: 700px)
+		if(window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+			// Create a function to hide text only when video iframe is loaded
+			const hideTextWhenVideoLoads = () => {
+				const adPlayerIframe = adPlayer?.querySelector('iframe');
+				if (adPlayerIframe) {
+					// Only hide during VIDEO mode when iframe is actually present
+					modalLead.style.display='none !important';
+					modalLead.style.visibility='hidden';
+					modalLead.style.opacity='0';
+					modalLead.style.height='0';
+					modalLead.style.overflow='hidden';
+					modalLead.setAttribute('hidden', 'true');
+					modalLead.classList.add('phone-hidden');
+					console.log('[PHONE-FIX] Lead text hidden only when video iframe loaded');
+				}
+			};
+			
+			// Check immediately and also after ad player becomes active
+			setTimeout(hideTextWhenVideoLoads, 200);
+		} else {
+			// Show on desktop during video
+			modalLead.style.display='block';
+			modalLead.style.visibility='visible';
+			modalLead.style.opacity='1';
+			modalLead.style.height='auto';
+			modalLead.style.overflow='visible';
+			modalLead.removeAttribute('hidden');
+			modalLead.classList.remove('phone-hidden');
+		}
+	}
+	
 	adPlayer.classList.add('active');
+	
+	// BACKUP: Double-check to forcefully hide lead text on phones after ad player is active
+	setTimeout(() => {
+		if(window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+			const leadElements = accessModal.querySelectorAll('.lead');
+			leadElements.forEach(lead => {
+				lead.style.display='none !important';
+				lead.style.visibility='hidden';
+				lead.style.opacity='0';
+				lead.style.height='0';
+				lead.setAttribute('hidden', 'true');
+				lead.classList.add('phone-hidden');
+			});
+			console.log('[PHONE-FIX] Lead text forcefully hidden on phone');
+		}
+	}, 100);
 	
 	// START FIRST VIDEO IMMEDIATELY
 	playCurrentInlineAd();
@@ -3293,7 +3972,7 @@ function playCurrentInlineAd(){
 	
 	// INSTANT STATUS UPDATE
 	adStatus.textContent=`Starting video ${currentAdIndex + 1} of ${adList.length}...`;
-	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip (15)';
+	skipBtn.classList.remove('enabled'); skipBtn.disabled=true; skipBtn.textContent='Skip(15)';
 	skipCountdownStarted=false;
 	adProgressInline.style.width='0%';
 	imgFallback.classList.remove('active');
@@ -3691,12 +4370,11 @@ function maybeStartSkipCountdown(){
 }
 function startSkipCountdown(sec){
 	let remaining=sec; 
-	skipBtn.textContent='Skip ('+remaining+')';
+	skipBtn.textContent='Skip('+remaining+')';
 	
 	function updateCountdown() {
 		if (skipCountdownPaused || adVideo.paused) {
-			// Don't countdown while paused
-			skipBtn.textContent='Skip ('+remaining+' - Paused)';
+			// Don't countdown while paused - just keep current number
 			return;
 		}
 		
@@ -3707,7 +4385,7 @@ function startSkipCountdown(sec){
 			skipBtn.classList.add('enabled'); 
 			skipBtn.textContent='Skip'; 
 		} else { 
-			skipBtn.textContent='Skip ('+remaining+')'; 
+			skipBtn.textContent='Skip('+remaining+')'; 
 		} 
 	}
 	
@@ -3715,16 +4393,31 @@ function startSkipCountdown(sec){
 }
 function startInlineProgress(){
 		const current=adList[currentAdIndex];
+		const mobileProgressFill = document.getElementById('mobileProgressFill');
+		
 		if(current.type==='mp4'){
 			function frame(){
 				if(adVideo.duration && !isNaN(adVideo.duration)){
-					const pct=(adVideo.currentTime/adVideo.duration)*100; adProgressInline.style.width=pct+'%';
+					const pct=(adVideo.currentTime/adVideo.duration)*100; 
+					adProgressInline.style.width=pct+'%';
+					// Update mobile progress bar for phones
+					if(mobileProgressFill) {
+						mobileProgressFill.style.width=pct+'%';
+					}
 				}
 				if(!adVideo.ended) progressInterval=requestAnimationFrame(frame);
 			}
 			progressInterval=requestAnimationFrame(frame);
 		} else { // YouTube simulated until skip or next
-			let pct=0; const step=()=>{ pct+=0.6; if(pct>100) pct=100; adProgressInline.style.width=pct+'%'; if(pct<100 && currentAdIndex<adList.length) progressInterval=requestAnimationFrame(step); }; step();
+			let pct=0; const step=()=>{ 
+				pct+=0.6; if(pct>100) pct=100; 
+				adProgressInline.style.width=pct+'%';
+				// Update mobile progress bar for phones
+				if(mobileProgressFill) {
+					mobileProgressFill.style.width=pct+'%';
+				}
+				if(pct<100 && currentAdIndex<adList.length) progressInterval=requestAnimationFrame(step); 
+			}; step();
 		}
 }
 skipBtn.addEventListener('click',()=>{ 
@@ -3864,7 +4557,7 @@ adVideo.addEventListener('ended',()=> {
 	
 	// Auto-skip to next video after 3 seconds if user doesn't click skip
 	adStatus.textContent = 'Video completed! Next video in 3 seconds...';
-	skipBtn.textContent = 'Skip (Auto-skip in 3s)';
+	skipBtn.textContent = 'Skip(Auto-skipin3s)';
 	skipBtn.disabled = false;
 	skipBtn.classList.add('enabled');
 	
@@ -4183,10 +4876,34 @@ function stopAdWakeLockReinforcement() {
 function closeAccessModal(){
 	accessModal.classList.remove('active');
 	accessModal.setAttribute('aria-hidden','true');
+	
+	// CRITICAL FIX: Remove modal-open class to restore page functionality
+	document.body.classList.remove('modal-open');
+	
 	releaseFocusTrap();
 	if(lastFocusedBeforeModal) lastFocusedBeforeModal.focus();
+	
 	// End sequence if still active and release all wake lock systems
 	adSequenceActive=false;
+	
+	// ═══ COMPREHENSIVE STATE CLEANUP ═══
+	// Stop any playing video
+	if(adVideo) {
+		adVideo.pause();
+		adVideo.currentTime = 0;
+		adVideo.src = '';
+	}
+	
+	// Reset ad player state
+	const adPlayer = document.getElementById('adPlayer');
+	if(adPlayer) {
+		adPlayer.classList.remove('active');
+	}
+	
+	// Clear all timers and intervals
+	if(skipTimer) { clearTimeout(skipTimer); skipTimer = null; }
+	if(progressInterval) { cancelAnimationFrame(progressInterval); progressInterval = null; }
+	if(autoSkipTimer) { clearTimeout(autoSkipTimer); autoSkipTimer = null; }
 	
 	// ═══ DEACTIVATE COMPREHENSIVE MEDIA CONTROL BLOCKING ═══
 	const videoShell = document.querySelector('.video-shell');
@@ -4197,12 +4914,37 @@ function closeAccessModal(){
 	
 	// Remove global video-playing class from body
 	document.body.classList.remove('video-playing');
+	
+	// RESTORE LEAD TEXT: Ensure bundle selection text is visible when returning to bundle mode
+	const modalLead = accessModal.querySelector('.lead');
+	if(modalLead) {
+		modalLead.style.display = 'block';
+		modalLead.style.visibility = 'visible';
+		modalLead.style.opacity = '1';
+		modalLead.style.height = 'auto';
+		modalLead.style.overflow = 'visible';
+		modalLead.removeAttribute('hidden');
+		modalLead.classList.remove('phone-hidden');
+		console.log('[PHONE-FIX] Lead text restored for bundle selection');
+	}
+	
+	// Show bundle selection elements
+	const bundleList = document.querySelector('.bundle-list');
+	if(bundleList) bundleList.style.display = 'flex';
+	
+	const bundleNote = document.getElementById('bundleNote');
+	if(bundleNote) bundleNote.style.display = 'block';
+	
+	// Ensure page scroll is fully restored
+	document.body.style.overflow = '';
+	document.documentElement.style.overflow = '';
+	
 	console.log('[ENHANCED-MEDIA-BLOCK] Global browser & external media controls UNBLOCKED');
 	stopAdWakeLockReinforcement(); // Stop the reinforcement system
 	releaseWakeLock();
 	disableSpatialAudioSimulation();
 	stopMobileKeepAwake();
-	console.log('[WAKE-LOCK] Modal closed - all wake lock systems stopped');
+	console.log('[WAKE-LOCK] Modal closed - all wake lock systems stopped - page fully restored');
 }
 adVideo.addEventListener('error',(e)=>{ 
 	console.error('[VIDEO-ERROR]', {
@@ -5034,7 +5776,13 @@ if(!window._wakeAudioInit){
 		}catch{}
 	}
 	let rAFWakeId=null; function startRafWake(){ if(rAFWakeId) return; function loop(){ if(adSequenceActive){ rAFWakeId=requestAnimationFrame(loop);} else { rAFWakeId=null; } } rAFWakeId=requestAnimationFrame(loop); }
-	document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && adSequenceActive){ ensureSilentAudioWake(); startRafWake(); } });
+	document.addEventListener('visibilitychange',()=>{ 
+		if(document.visibilityState==='visible' && adSequenceActive && adVideo && !adVideo.paused){ 
+			// Only restart wake systems if video is actually playing (not paused by anti-cheat)
+			ensureSilentAudioWake(); 
+			startRafWake(); 
+		} 
+	});
 	const _origStartAdSeqRef=startAdSequence; startAdSequence=function(b){ ensureSilentAudioWake(); startRafWake(); requestWakeLock(); return _origStartAdSeqRef(b); };
 
 	// Reassert wake lock & audio on common gestures (helps some Android variants)
