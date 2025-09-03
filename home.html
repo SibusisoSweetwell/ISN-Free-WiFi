@@ -310,12 +310,12 @@
 		.modal-overlay.active .access-modal h2 {
 			display: block !important;
 		}
-		/* VIDEO STABILIZATION - Enhanced YouTube/Facebook/Spotify Style for White Popup */
+		/* VIDEO STABILIZATION - Enhanced YouTube/Netflix Style with Dynamic Background */
 		.video-shell{
 			position:relative;
 			width:100%;
-			aspect-ratio:16/9;
-			background:#000;
+			aspect-ratio:1/1;
+			background:transparent;
 			border-radius:16px;
 			overflow:hidden;
 			box-shadow:0 12px 32px -8px rgba(0,0,0,.4), 0 4px 16px -4px rgba(0,0,0,.2);
@@ -327,17 +327,61 @@
 			-webkit-backface-visibility:hidden;
 			transform:translateZ(0);
 			-webkit-transform:translateZ(0);
-			border:2px solid rgba(255,255,255,.15);
+			border:none;
 		}
 
-		/* VIDEO ELEMENTS - Enhanced for verified working videos */
+		/* Dynamic Background Canvas - Netflix/YouTube Style */
+		.video-shell::before {
+			content: '';
+			position: absolute;
+			top: -10px;
+			left: -10px;
+			right: -10px;
+			bottom: -10px;
+			background: linear-gradient(45deg, #1a1a1a, #2d2d2d);
+			filter: blur(20px);
+			transform: scale(1.1);
+			z-index: 1;
+			opacity: 0.7;
+			transition: all 0.5s ease;
+			will-change: background;
+		}
+
+		/* Dynamic background for active videos */
+		.video-shell.dynamic-bg::before {
+			background: var(--dynamic-bg, linear-gradient(45deg, #1a1a1a, #2d2d2d));
+			opacity: 0.8;
+			filter: blur(25px);
+			transform: scale(1.2);
+		}
+
+		/* Enhanced mobile dynamic background */
+		@media (max-width: 768px) {
+			.video-shell::before {
+				top: -20px;
+				left: -20px;
+				right: -20px;
+				bottom: -20px;
+				filter: blur(40px);
+				transform: scale(1.4);
+				opacity: 0.9;
+			}
+			
+			.video-shell.dynamic-bg::before {
+				filter: blur(40px);
+				transform: scale(1.4);
+				opacity: 0.9;
+			}
+		}
+
+		/* VIDEO ELEMENTS - Enhanced for landscape centering and dynamic backgrounds */
 		.video-shell video,
 		.video-shell iframe{
 			width:100%;
 			height:100%;
 			object-fit:contain;
 			display:block;
-			background:#000;
+			background:transparent;
 			border:0;
 			/* ENHANCED STABILITY FOR VERIFIED VIDEOS */
 			position:absolute;
@@ -348,39 +392,86 @@
 			will-change:auto;
 			backface-visibility:hidden;
 			-webkit-backface-visibility:hidden;
-			/* IMPROVED RENDERING FOR VERIFIED CONTENT */
-			image-rendering:optimizeQuality;
-			-webkit-image-rendering:optimizeQuality;
+			z-index: 2; /* Above dynamic background */
+		}
+
+		/* Mobile landscape video centering */
+		@media (max-width: 768px) {
+			.video-shell video {
+				object-fit: contain;
+				object-position: center;
+				/* Center landscape videos properly on mobile */
+				transform: translateZ(0) translateX(0) translateY(0);
+				width: 100%;
+				height: 100%;
+				max-width: 100%;
+				max-height: 100%;
+			}
 		}
 		
-		/* Enhanced mobile video rendering for phones */
+		/* Enhanced mobile video rendering for phones - Perfect centering */
 		@media (max-width:700px){
+			.video-shell {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				position: relative;
+				/* Square container on mobile */
+				aspect-ratio: 1/1;
+				width: 100%;
+				max-width: 320px;
+				margin: 0 auto;
+			}
+			
 			.video-shell video,
 			.video-shell iframe{
-				object-fit:contain;
-				width:100%;
-				height:100%;
-				max-width:100%;
-				max-height:100%;
+				object-fit: contain;
+				object-position: center center;
+				width: 100%;
+				height: 100%;
+				max-width: 100%;
+				max-height: 100%;
+			}
+			
+			/* Landscape videos need special handling for proper sizing */
+			.video-shell.landscape-video {
+				align-items: center;
+				justify-content: center;
+				/* Keep square container for landscape videos too */
+				aspect-ratio: 1/1;
+			}
+			
+			.video-shell.landscape-video video,
+			.video-shell.landscape-video iframe {
+				width: 100%;
+				height: 100%;
+				object-fit: contain;
+				object-position: center center;
+				position: relative;
+				top: auto;
+				left: auto;
+				transform: none;
 			}
 		}
 		
 		/* Ultra-mobile video optimizations */
 		@media (max-width:480px){
 			.video-shell{
-				/* Ensure video container is properly sized on small phones */
+				/* Square container for small phones */
 				position:relative;
 				overflow:hidden;
-				background:#000;
-				min-height:180px;
-				max-height:calc(100vh - 300px);
+				background:transparent;
+				aspect-ratio: 1/1;
+				width: 100%;
+				max-width: 280px;
+				margin: 0 auto;
 			}
 			.video-shell video,
 			.video-shell iframe{
 				object-fit:contain;
 				object-position:center;
-				/* Prevent video from being too small on phones */
-				min-height:180px;
+				width: 100%;
+				height: 100%;
 			}
 		}
 		
@@ -719,7 +810,7 @@
 		/* Loading state optimization for verified videos */
 		.video-shell video[data-verified="true"] {
 			/* Enhanced settings for verified working videos */
-			background:#000 url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="640" height="360"%3E%3Crect width="640" height="360" fill="%23000"/%3E%3Ctext x="50%25" y="50%25" fill="%23fff" font-size="24" font-family="Arial" text-anchor="middle" dominant-baseline="middle"%3ELoading verified content...%3C/text%3E%3C/svg%3E') center/contain no-repeat;
+			background:transparent;
 		}
 		/* STABLE IMAGE FALLBACK - No vibrations */
 		.img-fallback{
@@ -728,7 +819,7 @@
 			display:none;
 			align-items:center;
 			justify-content:center;
-			background:#000;
+			background:transparent;
 			color:#fff;
 			font-weight:600;
 			font-size:20px;
@@ -815,6 +906,11 @@
 		transition:all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
 		white-space:nowrap;
 		flex:0 0 auto;
+		/* Touch-friendly for mobile */
+		-webkit-tap-highlight-color:transparent;
+		touch-action:manipulation;
+		user-select:none;
+		-webkit-user-select:none;
 	}
 		/* All video overlay buttons have consistent styling */
 		.video-overlay-btn button#playPauseBtn,
@@ -845,30 +941,34 @@
 			transition:all 0.2s ease;
 		}
 		
-		/* Position skip button at left edge separately */
+		/* Skip button positioning - keep in view for mobile */
 		.video-overlay-btn button#skipBtn{
-			position:absolute !important;
-			left:-98px !important;
-			top:0 !important;
+			order:1;
+			position:relative !important;
+			left:auto !important;
+			top:auto !important;
 		}
 		
-		/* Reset skip button positioning for desktop */
+		/* Desktop layout adjustments */
 		@media (min-width: 769px) {
-			.video-overlay-btn button#skipBtn{
-				position:relative !important;
-				left:auto !important;
-				top:auto !important;
+			.video-overlay-btn{
+				gap:6px;
+			}
+			.video-overlay-btn button{
+				padding:6px 12px;
+				font-size:11px;
+				min-height:28px;
 			}
 			.access-modal{
 				padding:35px 54px !important;
 			}
 		}
 		
-		/* Skip button gets priority positioning */
+		/* Button order and layout */
 		.video-overlay-btn #skipBtn{
 			order:1;
 			background:var(--brand);
-			flex:1 1 auto;
+			flex:0 0 auto;
 			max-width:90px;
 			min-width:45px;
 			text-align:center;
@@ -879,43 +979,93 @@
 		.video-overlay-btn #muteBtn{order:2;flex:0 0 auto;}
 		.video-overlay-btn #playPauseBtn{order:3;flex:0 0 auto;}
 		.video-overlay-btn #fsBtn{order:4;flex:0 0 auto;}
-		/* Simplified mobile controls - keep buttons small at top */
+		/* Simplified mobile controls - keep buttons small at top and all visible */
 		@media (max-width:700px){
 			.video-overlay-btn{
 				top:6px;
 				left:6px;
 				right:6px;
-				gap:1px;
+				gap:3px;
+				display:flex !important;
+				justify-content:flex-start !important;
+				align-items:center !important;
+				flex-wrap:nowrap !important;
 			}
 			.video-overlay-btn button{
-				padding:3px 6px;
+				padding:4px 8px;
 				font-size:10px;
-				min-height:22px;
+				min-height:24px;
 				border-radius:10px;
+				position:relative !important;
+				left:auto !important;
+				top:auto !important;
+				/* Better touch target for mobile */
+				min-width:44px;
+				touch-action:manipulation;
 			}
 			.video-overlay-btn #skipBtn{
-				max-width:75px;
-				min-width:35px;
+				order:1;
+				max-width:80px;
+				min-width:40px;
+				flex:0 0 auto;
+			}
+			.video-overlay-btn #muteBtn{
+				order:2;
+				flex:0 0 auto;
+			}
+			.video-overlay-btn #playPauseBtn{
+				order:3;
+				flex:0 0 auto;
+			}
+			.video-overlay-btn #fsBtn{
+				order:4;
+				flex:0 0 auto;
 			}
 		}
 		
-		/* Ultra-mobile - even smaller buttons */
+		/* Ultra-mobile - even smaller buttons but all visible */
 		@media (max-width:480px){
 			.video-overlay-btn{
 				top:4px;
 				left:4px;
 				right:4px;
-				gap:1px;
+				gap:2px;
+				display:flex !important;
+				justify-content:flex-start !important;
+				align-items:center !important;
 			}
 			.video-overlay-btn button{
-				padding:2px 5px;
+				padding:3px 6px;
 				font-size:9px;
 				min-height:20px;
 				border-radius:8px;
+				position:relative !important;
+				left:auto !important;
+				top:auto !important;
+				/* Minimum touch target even on small screens */
+				min-width:40px;
+				touch-action:manipulation;
 			}
 			.video-overlay-btn #skipBtn{
-				max-width:65px;
+				order:1;
+				max-width:60px;
 				min-width:30px;
+				flex:0 0 auto;
+			}
+			.video-overlay-btn #muteBtn{
+				order:2;
+				flex:0 0 auto;
+				padding:3px 5px;
+			}
+			.video-overlay-btn #playPauseBtn{
+				order:3;
+				flex:0 0 auto;
+				padding:3px 5px;
+			}
+			.video-overlay-btn #fsBtn{
+				order:4;
+				flex:0 0 auto;
+				padding:3px 5px;
 			}
 		}
 		
@@ -1478,7 +1628,7 @@
 			<div class="ad-player" id="adPlayer">
 				<div class="video-shell">
 					<img id="adThumb" alt="Ad thumbnail" loading="lazy" />
-					<video id="adVideo" playsinline webkit-playsinline autoplay muted preload="auto" crossorigin="anonymous" disablepictureinpicture disableremoteplayback controlslist="nodownload nofullscreen noremoteplayback" poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23000'/%3E%3Ctext x='50%' y='50%' fill='%23fff' font-size='28' font-family='Arial' text-anchor='middle' dominant-baseline='middle'%3ELoading...%3C/text%3E%3C/svg%3E" style="background:#000;"></video>
+					<video id="adVideo" playsinline webkit-playsinline autoplay muted preload="none" disablepictureinpicture disableremoteplayback controlslist="nodownload nofullscreen noremoteplayback noplaybackrate" x-webkit-airplay="deny" style="background:transparent;max-width:100%;height:auto;"></video>
 					<iframe id="ytPlayer" allow="autoplay; encrypted-media" title="Ad video" style="display:none;"></iframe>
 					<div id="imgFallback" class="img-fallback"><div style="position:absolute;bottom:12px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;">Sponsored</div></div>
 					<div class="video-overlay-btn">
@@ -3211,7 +3361,7 @@ function blockMediaControls() {
 		}
 	});
 	
-	// 10. Lightweight anti-cheat: Only pause on extended absence (optimized for slow connections)
+	// 10. Ultra-lenient anti-cheat: Much longer delays for smooth playback
 	let antiCheatDelay = null;
 	let isTemporarilyHidden = false;
 	
@@ -3224,7 +3374,7 @@ function blockMediaControls() {
 					console.log('[ANTI-CHEAT] Extended absence detected - pausing to prevent background listening');
 					adVideo.pause();
 				}
-			}, 3000); // Wait 3 seconds before pausing (gives time for quick tab switches)
+			}, 15000); // Wait 15 seconds before pausing (much more lenient for better UX)
 		} else if (adSequenceActive && document.visibilityState === 'visible') {
 			// Clear the pause timer if user returns quickly
 			if (antiCheatDelay) {
@@ -3237,20 +3387,21 @@ function blockMediaControls() {
 			if (adVideo && adVideo.paused) {
 				// Check if video has buffered enough to resume smoothly
 				const buffered = adVideo.buffered;
+				// Even more lenient buffer requirements for weak browsers
 				const canResumeSmothly = buffered.length > 0 && 
-					(buffered.end(buffered.length - 1) - adVideo.currentTime) > 2; // 2 seconds buffer
+					(buffered.end(buffered.length - 1) - adVideo.currentTime) > 0.5; // Very minimal buffer requirement
 				
-				if (canResumeSmothly || adVideo.readyState >= 3) { // HAVE_FUTURE_DATA or better
+				if (canResumeSmothly || adVideo.readyState >= 1) { // Most lenient ready state (HAVE_METADATA)
 					adVideo.play().catch(() => {
 						console.log('[ANTI-CHEAT] Auto-resume delayed - waiting for better connection');
 					});
 				} else {
-					// On slow connections, wait a bit for buffering before resuming
+					// For weak browsers, wait minimal time for buffering before resuming
 					setTimeout(() => {
 						if (adVideo && adVideo.paused) {
 							adVideo.play().catch(() => {});
 						}
-					}, 1000);
+					}, 300); // Much shorter wait time
 				}
 			}
 		}
@@ -3276,14 +3427,15 @@ if (document.readyState === 'loading') {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 function initAntiCheatSystem() {
-	// Enhanced compatibility for extremely low-end devices (250MB RAM, old CPUs)
+	// Enhanced compatibility for extremely low-end devices and weak browsers
 	let wasAutoPaused = false;
 	let focusLossTime = 0;
 	let antiCheatThrottle = false;
 	let isLowEndDevice = false;
 	let isExtremelyLowEnd = false;
+	let isWeakBrowser = false;
 	
-	// Comprehensive device detection for very old phones and desktops
+	// Comprehensive device and browser detection for maximum compatibility
 	try {
 		const userAgent = navigator.userAgent.toLowerCase();
 		const isOldAndroid = /android\s[1-4]\./.test(userAgent);
@@ -3292,6 +3444,14 @@ function initAntiCheatSystem() {
 		const isBasicBrowser = /ucbrowser|samsungbrowser|miuibrowser|operamini/.test(userAgent);
 		const isOldDesktop = /windows\s(95|98|xp|2000)|mac\sos\sx\s10\.[0-8]/.test(userAgent);
 		const isOldMobile = /nokia|blackberry|palm|symbian/.test(userAgent);
+		
+		// Weak browser detection for ultra-lenient anti-cheat
+		const isOldChrome = /chrome\/[1-5][0-9]\./.test(userAgent); // Chrome 50-59
+		const isOldFirefox = /firefox\/[1-4][0-9]\./.test(userAgent); // Firefox 40-49
+		const isOldSafari = /version\/[1-9]\./.test(userAgent); // Safari 9 and below
+		const isOldEdge = /edge\/[1-1][0-8]\./.test(userAgent); // Old Edge
+		const isInternetExplorer = /trident|msie/.test(userAgent);
+		isWeakBrowser = isOldChrome || isOldFirefox || isOldSafari || isOldEdge || isInternetExplorer || isBasicBrowser;
 		
 		// RAM and hardware detection
 		const deviceMemory = navigator.deviceMemory;
@@ -3305,13 +3465,16 @@ function initAntiCheatSystem() {
 		const connectionSpeed = navigator.connection ? navigator.connection.downlink : 0;
 		const isSlowConnection = connectionSpeed && connectionSpeed < 0.5;
 		
-		isLowEndDevice = isOldAndroid || isOldWebView || isBasicBrowser || hasLimitedRAM || hasSingleCore;
+		// Include weak browsers in low-end device detection for ultra-lenient anti-cheat
+		isLowEndDevice = isOldAndroid || isOldWebView || isBasicBrowser || hasLimitedRAM || hasSingleCore || isWeakBrowser;
 		isExtremelyLowEnd = isVeryOldAndroid || isOldDesktop || isOldMobile || hasVeryLimitedRAM || 
-			(hasSingleCore && hasLimitedRAM) || (isOldAndroid && isSlowConnection);
+			(hasSingleCore && hasLimitedRAM) || (isOldAndroid && isSlowConnection) || 
+			(isWeakBrowser && (hasLimitedRAM || isSlowConnection));
 		
-		console.log('[ANTI-CHEAT] Enhanced device compatibility:', {
+		console.log('[ANTI-CHEAT] Enhanced device and browser compatibility:', {
 			isLowEndDevice,
 			isExtremelyLowEnd,
+			isWeakBrowser,
 			deviceMemory: deviceMemory || 'unknown',
 			hardwareConcurrency,
 			userAgent: userAgent.substr(0, 50) + '...',
@@ -3327,6 +3490,319 @@ function initAntiCheatSystem() {
 	function showPauseIndicator() {
 		if (adStatus && !antiCheatThrottle) {
 			antiCheatThrottle = true;
+			
+			// YouTube Music-style Ultra-Lightweight Video Optimization for 10MB RAM Devices
+			// Based on how YouTube Music handles extremely low-end devices
+			const ULTRA_LOW_SETTINGS = {
+				// Video quality tiers for different device capabilities
+				quality: {
+					ultraLow: { 
+						resolution: '144p', 
+						bitrate: 20, // 20 kbps like YouTube Music lowest quality
+						fps: 15,
+						codec: 'h264',
+						profile: 'baseline'
+					},
+					veryLow: { 
+						resolution: '240p', 
+						bitrate: 64, 
+						fps: 20,
+						codec: 'h264',
+						profile: 'baseline'
+					},
+					low: { 
+						resolution: '360p', 
+						bitrate: 256, 
+						fps: 24,
+						codec: 'h264',
+						profile: 'main'
+					},
+					standard: { 
+						resolution: '480p', 
+						bitrate: 1000, 
+						fps: 30,
+						codec: 'h264',
+						profile: 'main'
+					}
+				},
+				
+				// Memory management like YouTube Music
+				memory: {
+					ultraLow: {
+						preloadSeconds: 2,      // Preload only 2 seconds ahead
+						bufferSize: 1,          // 1 second buffer maximum
+						garbageCollectInterval: 5000, // Clean memory every 5 seconds
+						videoElementRecycle: true,     // Reuse video elements
+						disablePreloading: true,       // No video preloading
+						maxConcurrentVideos: 1         // Only 1 video in memory
+					},
+					veryLow: {
+						preloadSeconds: 3,
+						bufferSize: 2,
+						garbageCollectInterval: 8000,
+						videoElementRecycle: true,
+						disablePreloading: false,
+						maxConcurrentVideos: 1
+					},
+					low: {
+						preloadSeconds: 5,
+						bufferSize: 3,
+						garbageCollectInterval: 10000,
+						videoElementRecycle: false,
+						disablePreloading: false,
+						maxConcurrentVideos: 2
+					}
+				},
+				
+				// Performance optimizations - More lenient for better playback
+				performance: {
+					ultraLow: {
+						useWorkers: false,              // No web workers to save RAM
+						disableAnimations: true,        // No CSS animations
+						reducedAntiCheat: true,         // Much lighter anti-cheat system
+						simplifiedUI: true,            // Minimal UI elements
+						disableAnalytics: true,        // No tracking to save resources
+						useRequestIdleCallback: false, // No idle callbacks
+						debounceInterval: 2000         // 2 second debounce for events (more lenient)
+					},
+					veryLow: {
+						useWorkers: false,
+						disableAnimations: false,
+						reducedAntiCheat: true,
+						simplifiedUI: false,
+						disableAnalytics: false,
+						useRequestIdleCallback: false,
+						debounceInterval: 1500         // 1.5 second debounce (more lenient)
+					},
+					low: {
+						useWorkers: true,
+						disableAnimations: false,
+						reducedAntiCheat: true,         // Enable reduced anti-cheat for all devices
+						simplifiedUI: false,
+						disableAnalytics: false,
+						useRequestIdleCallback: true,
+						debounceInterval: 1000         // 1 second debounce (more lenient)
+					}
+				}
+			};
+			
+			// Determine device tier like YouTube Music does
+			let deviceTier = 'standard';
+			let settings = ULTRA_LOW_SETTINGS.quality.standard;
+			let memorySettings = ULTRA_LOW_SETTINGS.memory.low;
+			let performanceSettings = ULTRA_LOW_SETTINGS.performance.low;
+			
+			if (isExtremelyLowEnd) {
+				deviceTier = 'ultraLow';
+				settings = ULTRA_LOW_SETTINGS.quality.ultraLow;
+				memorySettings = ULTRA_LOW_SETTINGS.memory.ultraLow;
+				performanceSettings = ULTRA_LOW_SETTINGS.performance.ultraLow;
+				console.log('[YOUTUBE-MUSIC-MODE] Ultra-low-end device detected: 10MB RAM mode activated');
+			} else if (isLowEndDevice) {
+				deviceTier = 'veryLow';
+				settings = ULTRA_LOW_SETTINGS.quality.veryLow;
+				memorySettings = ULTRA_LOW_SETTINGS.memory.veryLow;
+				performanceSettings = ULTRA_LOW_SETTINGS.performance.veryLow;
+				console.log('[YOUTUBE-MUSIC-MODE] Low-end device detected: 64MB RAM mode activated');
+			} else if (navigator.deviceMemory && navigator.deviceMemory <= 1) {
+				deviceTier = 'low';
+				settings = ULTRA_LOW_SETTINGS.quality.low;
+				memorySettings = ULTRA_LOW_SETTINGS.memory.low;
+				performanceSettings = ULTRA_LOW_SETTINGS.performance.low;
+				console.log('[YOUTUBE-MUSIC-MODE] Limited device detected: 1GB RAM mode activated');
+			}
+			
+			console.log(`[YOUTUBE-MUSIC-MODE] Device tier: ${deviceTier}`, {
+				quality: settings,
+				memory: memorySettings,
+				performance: performanceSettings
+			});
+			
+			// Apply YouTube Music-style optimizations globally
+			window.YOUTUBE_MUSIC_MODE = {
+				tier: deviceTier,
+				quality: settings,
+				memory: memorySettings,
+				performance: performanceSettings,
+				
+				// YouTube Music-style video URL modifier for quality
+				getOptimizedVideoUrl: function(originalUrl) {
+					if (!originalUrl) return originalUrl;
+					
+					// Add quality parameters like YouTube does
+					const separator = originalUrl.includes('?') ? '&' : '?';
+					let optimizedUrl = originalUrl;
+					
+					// For extremely low-end devices, request lowest possible quality
+					if (deviceTier === 'ultraLow') {
+						optimizedUrl += `${separator}quality=tiny&fmt=18&itag=17&vq=tiny`;
+					} else if (deviceTier === 'veryLow') {
+						optimizedUrl += `${separator}quality=small&fmt=18&itag=36&vq=small`;
+					} else if (deviceTier === 'low') {
+						optimizedUrl += `${separator}quality=medium&fmt=34&itag=43&vq=medium`;
+					}
+					
+					// Add bandwidth hints
+					optimizedUrl += `&bandwidth=${settings.bitrate}000&maxres=${settings.resolution}`;
+					
+					return optimizedUrl;
+				},
+				
+				// YouTube Music-style memory cleanup
+				cleanupMemory: function() {
+					if (performanceSettings.disableAnalytics) {
+						// Clear any analytics data
+						if (window.gtag) window.gtag('config', 'disable');
+					}
+					
+					// Force garbage collection if available
+					if (window.gc && typeof window.gc === 'function') {
+						try {
+							window.gc();
+							console.log('[YOUTUBE-MUSIC-MODE] Manual garbage collection triggered');
+						} catch(e) {}
+					}
+					
+					// Clear video element if recycling is enabled
+					if (memorySettings.videoElementRecycle && adVideo) {
+						try {
+							adVideo.removeAttribute('src');
+							adVideo.load();
+							console.log('[YOUTUBE-MUSIC-MODE] Video element recycled');
+						} catch(e) {}
+					}
+				},
+				
+				// YouTube Music-style progressive enhancement
+				optimizeVideoElement: function(videoElement) {
+					if (!videoElement) return;
+					
+					// Set video attributes for ultra-low-end devices
+					if (deviceTier === 'ultraLow') {
+						videoElement.preload = 'none';           // No preloading at all
+						videoElement.setAttribute('playsinline', 'true');
+						videoElement.setAttribute('webkit-playsinline', 'true');
+						videoElement.muted = true;               // Always muted for performance
+						videoElement.setAttribute('disablepictureinpicture', 'true');
+						videoElement.style.backgroundColor = 'transparent'; // No black background
+						
+						// Remove high-memory attributes
+						videoElement.removeAttribute('poster');
+						videoElement.removeAttribute('crossorigin');
+					} else if (deviceTier === 'veryLow') {
+						videoElement.preload = 'metadata';
+						videoElement.setAttribute('playsinline', 'true');
+						videoElement.muted = true;
+					}
+					
+					console.log(`[YOUTUBE-MUSIC-MODE] Video element optimized for ${deviceTier} devices`);
+				}
+			};
+			
+			// Apply optimizations to current video element if it exists
+			if (adVideo) {
+				window.YOUTUBE_MUSIC_MODE.optimizeVideoElement(adVideo);
+			}
+			
+			// Set up memory cleanup interval like YouTube Music
+			if (memorySettings.garbageCollectInterval) {
+				setInterval(() => {
+					window.YOUTUBE_MUSIC_MODE.cleanupMemory();
+				}, memorySettings.garbageCollectInterval);
+			}
+			
+			// Ultra-lightweight anti-cheat for extremely low-end devices
+			if (performanceSettings.reducedAntiCheat) {
+				console.log('[YOUTUBE-MUSIC-MODE] Reduced anti-cheat mode for performance');
+				
+				// YouTube Music-style ultra-lenient anti-cheat for smooth playback
+				const ULTRA_LENIENT_DELAYS = {
+					ultraLow: {
+						visibilityHideDelay: 30000,     // 30 seconds before pausing (very lenient)
+						visibilityResumeDelay: 2000,    // Quick resume (2 seconds)
+						focusLossDelay: 25000,          // 25 seconds for focus loss
+						tabSwitchDelay: 35000,          // 35 seconds for tab switching
+						pageLifecycleDelay: 20000,      // 20 seconds for page lifecycle
+						minimumToleranceTime: 45000,    // 45 seconds minimum before any anti-cheat triggers
+						maxToleranceEvents: 10          // Allow 10 tolerance events before strict mode
+					},
+					veryLow: {
+						visibilityHideDelay: 20000,     // 20 seconds before pausing
+						visibilityResumeDelay: 1500,    // Quick resume (1.5 seconds)
+						focusLossDelay: 18000,          // 18 seconds for focus loss
+						tabSwitchDelay: 22000,          // 22 seconds for tab switching
+						pageLifecycleDelay: 15000,      // 15 seconds for page lifecycle
+						minimumToleranceTime: 30000,    // 30 seconds minimum tolerance
+						maxToleranceEvents: 8           // Allow 8 tolerance events
+					}
+				};
+				
+				const delays = deviceTier === 'ultraLow' ? 
+					ULTRA_LENIENT_DELAYS.ultraLow : 
+					ULTRA_LENIENT_DELAYS.veryLow;
+				
+				// Store the lenient delays globally for use in event handlers
+				window.YOUTUBE_MUSIC_ANTI_CHEAT = {
+					delays: delays,
+					toleranceEventsCount: 0,
+					startTime: Date.now(),
+					
+					// YouTube Music-style tolerance checker
+					shouldAllowEvent: function() {
+						const elapsed = Date.now() - this.startTime;
+						
+						// Always allow events in the first tolerance period
+						if (elapsed < this.delays.minimumToleranceTime) {
+							console.log('[YOUTUBE-MUSIC-MODE] Event allowed: within tolerance period');
+							return true;
+						}
+						
+						// Allow up to maximum tolerance events
+						if (this.toleranceEventsCount < this.delays.maxToleranceEvents) {
+							this.toleranceEventsCount++;
+							console.log(`[YOUTUBE-MUSIC-MODE] Event allowed: tolerance event ${this.toleranceEventsCount}/${this.delays.maxToleranceEvents}`);
+							return true;
+						}
+						
+						// After tolerance period and events exhausted, apply normal rules
+						return false;
+					},
+					
+					// Reset tolerance when video starts
+					resetTolerance: function() {
+						this.toleranceEventsCount = 0;
+						this.startTime = Date.now();
+						console.log('[YOUTUBE-MUSIC-MODE] Anti-cheat tolerance reset');
+					}
+				};
+				
+				console.log('[YOUTUBE-MUSIC-MODE] Ultra-lenient anti-cheat configured:', delays);
+			}
+			
+			// Apply ultra-lenient anti-cheat delays for smooth playback
+			function getAntiCheatDelay(eventType) {
+				if (!window.YOUTUBE_MUSIC_ANTI_CHEAT) {
+					// Ultra-lenient delays for smooth video playback in all browsers
+					const defaultDelays = {
+						visibilityHide: isExtremelyLowEnd ? 45000 : (isLowEndDevice ? 30000 : 20000),   // Much longer delays
+						visibilityResume: isExtremelyLowEnd ? 1000 : (isLowEndDevice ? 800 : 500),      // Quick resume
+						focusLoss: isExtremelyLowEnd ? 60000 : (isLowEndDevice ? 40000 : 25000),        // Very tolerant
+						tabSwitch: isExtremelyLowEnd ? 90000 : (isLowEndDevice ? 60000 : 30000)         // Extremely tolerant
+					};
+					return defaultDelays[eventType] || 5000; // Default 5 seconds (was 1 second)
+				}
+				
+				// Ultra-lenient delays for YouTube Music mode
+				const delays = window.YOUTUBE_MUSIC_ANTI_CHEAT.delays;
+				switch(eventType) {
+					case 'visibilityHide': return delays.visibilityHideDelay;
+					case 'visibilityResume': return delays.visibilityResumeDelay;
+					case 'focusLoss': return delays.focusLossDelay;
+					case 'tabSwitch': return delays.tabSwitchDelay;
+					case 'pageLifecycle': return delays.pageLifecycleDelay;
+					default: return delays.visibilityHideDelay;
+				}
+			}
 			
 			// Ultra-simple approach for extremely low-end devices
 			const updateUI = () => {
@@ -3396,12 +3872,12 @@ function initAntiCheatSystem() {
 		const handleBlur = function() {
 			focusLossTime = Date.now();
 			
-			// Ultra-conservative delays for very old devices
-			let pauseDelay = 2000; // Default
+			// Ultra-lenient delays for smooth playback experience
+			let pauseDelay = 10000; // Default 10 seconds (much more lenient)
 			if (isExtremelyLowEnd) {
-				pauseDelay = 5000; // Very long delay for extremely old devices
+				pauseDelay = 30000; // 30 seconds for extremely old devices (very lenient)
 			} else if (isLowEndDevice) {
-				pauseDelay = 3500; // Longer delay for low-end devices
+				pauseDelay = 20000; // 20 seconds for low-end devices (very lenient)
 			}
 			
 			setTimeout(() => {
@@ -3429,14 +3905,14 @@ function initAntiCheatSystem() {
 					const isSlowConnection = connInfo.effectiveType === 'slow-2g' || 
 						connInfo.effectiveType === '2g' || connInfo.downlink < 0.5;
 					
-					// Ultra-adaptive resume delay based on device capability
-					let resumeDelay = 500;
+					// Ultra-fast resume delays for smooth playback experience
+					let resumeDelay = 200; // Much faster default resume
 					if (isExtremelyLowEnd) {
-						resumeDelay = isSlowConnection ? 6000 : 4000; // Very long for old devices
+						resumeDelay = isSlowConnection ? 1500 : 1000; // Faster even for old devices
 					} else if (isLowEndDevice && isSlowConnection) {
-						resumeDelay = 3000;
+						resumeDelay = 800;
 					} else if (isLowEndDevice || isSlowConnection) {
-						resumeDelay = 1500;
+						resumeDelay = 500;
 					}
 					
 					console.log('[ANTI-CHEAT] Resuming after', resumeDelay + 'ms delay');
@@ -3446,8 +3922,8 @@ function initAntiCheatSystem() {
 							try {
 								adVideo.play().catch(() => {
 									console.log('[ANTI-CHEAT] First resume failed, retrying...');
-									// Ultra-conservative retry for old devices
-									const retryDelay = isExtremelyLowEnd ? 5000 : (isLowEndDevice ? 3000 : 2000);
+									// Shorter retry delays for better user experience
+									const retryDelay = isExtremelyLowEnd ? 2000 : (isLowEndDevice ? 1500 : 1000);
 									setTimeout(() => {
 										if (adVideo && adVideo.paused) {
 											adVideo.play().catch(() => {
@@ -3491,11 +3967,17 @@ function initAntiCheatSystem() {
 	
 	// Ultra-conservative mobile detection for extremely old devices
 	function setupMobileDetection() {
-		// Modern Page Lifecycle API (only for newer browsers)
+		// Modern Page Lifecycle API (only for newer browsers) + YouTube Music tolerance
 		if ('document' in window && !isExtremelyLowEnd) {
 			try {
 				document.addEventListener('freeze', function() {
 					if (adSequenceActive && adVideo && !adVideo.paused) {
+						// Apply YouTube Music tolerance for ultra-low-end devices
+						if (window.YOUTUBE_MUSIC_ANTI_CHEAT && window.YOUTUBE_MUSIC_ANTI_CHEAT.shouldAllowEvent()) {
+							console.log('[YOUTUBE-MUSIC-MODE] Page freeze event tolerated');
+							return;
+						}
+						
 						adVideo.pause();
 						wasAutoPaused = true;
 						console.log('[ANTI-CHEAT] Page frozen, video paused');
@@ -3505,7 +3987,7 @@ function initAntiCheatSystem() {
 				document.addEventListener('resume', function() {
 					if (adSequenceActive && wasAutoPaused) {
 						wasAutoPaused = false;
-						const mobileResumeDelay = isLowEndDevice ? 2000 : 800;
+						const mobileResumeDelay = getAntiCheatDelay('pageLifecycle');
 						
 						setTimeout(() => {
 							if (adVideo && adVideo.paused && adVideo.readyState >= 2) {
@@ -3525,13 +4007,19 @@ function initAntiCheatSystem() {
 			}
 		}
 		
-		// Enhanced Visibility API with ultra-conservative timing
+		// Enhanced Visibility API with ultra-conservative timing + YouTube Music mode
 		try {
 			document.addEventListener('visibilitychange', function() {
 				if (document.hidden) {
-					// Page became hidden - use longer delays for old devices
+					// Page became hidden - use YouTube Music-style lenient delays
 					if (adSequenceActive && adVideo && !adVideo.paused) {
-						const hideDelay = isExtremelyLowEnd ? 3000 : (isLowEndDevice ? 2000 : 1000);
+						// Check if we should apply tolerance for ultra-low-end devices
+						if (window.YOUTUBE_MUSIC_ANTI_CHEAT && window.YOUTUBE_MUSIC_ANTI_CHEAT.shouldAllowEvent()) {
+							console.log('[YOUTUBE-MUSIC-MODE] Visibility hidden event tolerated');
+							return;
+						}
+						
+						const hideDelay = getAntiCheatDelay('visibilityHide');
 						setTimeout(() => {
 							// Triple-check for old devices to avoid false positives
 							if (document.hidden && adVideo && !adVideo.paused) {
@@ -3542,16 +4030,11 @@ function initAntiCheatSystem() {
 						}, hideDelay);
 					}
 				} else {
-					// Page became visible - ultra-conservative resume
+					// Page became visible - ultra-conservative resume with YouTube Music delays
 					if (adSequenceActive && wasAutoPaused) {
 						wasAutoPaused = false;
 						
-						let visibilityResumeDelay = 1000;
-						if (isExtremelyLowEnd) {
-							visibilityResumeDelay = 4000; // Very long for old devices
-						} else if (isLowEndDevice) {
-							visibilityResumeDelay = 2500;
-						}
+						const visibilityResumeDelay = getAntiCheatDelay('visibilityResume');
 						
 						setTimeout(() => {
 							if (adVideo && adVideo.paused && !document.hidden) {
@@ -4343,28 +4826,87 @@ function playCurrentInlineAd(){
 			adVideo.removeAttribute('data-verified');
 		}
 		
-		// INSTANT VIDEO LOADING WITH GOOGLE CDN OPTIMIZATION
+		// INSTANT VIDEO LOADING WITH GOOGLE CDN OPTIMIZATION + YOUTUBE MUSIC MODE
 		const videoUrl = entry.url; // Direct Google CDN URL for maximum speed
 		console.log('[GOOGLE-CDN] Loading fast Google video:', videoUrl);
 		
-		// Use preloaded video if available for instant start
-		if (preloadedVideos[videoUrl]) {
-			console.log('[GOOGLE-CDN] Using preloaded Google video for instant start!');
-			const preloadedVid = preloadedVideos[videoUrl];
-			// Copy the preloaded video to our player
-			adVideo.src = preloadedVid.src;
-			adVideo.currentTime = 0;
-		} else {
-			console.log('[GOOGLE-CDN] Loading Google video directly for fast response');
-			adVideo.src = videoUrl;
+		// Apply YouTube Music-style optimizations for ultra-low-end devices
+		let optimizedVideoUrl = videoUrl;
+		if (window.YOUTUBE_MUSIC_MODE && window.YOUTUBE_MUSIC_MODE.getOptimizedVideoUrl) {
+			optimizedVideoUrl = window.YOUTUBE_MUSIC_MODE.getOptimizedVideoUrl(videoUrl);
+			console.log('[YOUTUBE-MUSIC-MODE] Video URL optimized for device tier:', window.YOUTUBE_MUSIC_MODE.tier);
+			console.log('[YOUTUBE-MUSIC-MODE] Quality settings:', window.YOUTUBE_MUSIC_MODE.quality);
+			
+			// Reset anti-cheat tolerance for new video (YouTube Music style)
+			if (window.YOUTUBE_MUSIC_ANTI_CHEAT && window.YOUTUBE_MUSIC_ANTI_CHEAT.resetTolerance) {
+				window.YOUTUBE_MUSIC_ANTI_CHEAT.resetTolerance();
+			}
 		}
 		
-		// OPTIMIZED SETUP FOR GOOGLE CDN VIDEOS
+		// Ultra-lightweight loading for 10MB RAM devices
+		if (window.YOUTUBE_MUSIC_MODE && window.YOUTUBE_MUSIC_MODE.tier === 'ultraLow') {
+			console.log('[YOUTUBE-MUSIC-MODE] Ultra-low-end device: applying 10MB RAM optimizations');
+			
+			// Clear any existing video data to free memory
+			adVideo.removeAttribute('src');
+			adVideo.load();
+			
+			// Wait a moment for memory cleanup, then load optimized video
+			setTimeout(() => {
+				adVideo.src = optimizedVideoUrl;
+				// Force lowest quality and most compatible settings
+				adVideo.setAttribute('preload', 'none');
+				adVideo.setAttribute('playsinline', 'true');
+				adVideo.setAttribute('webkit-playsinline', 'true');
+				adVideo.style.maxWidth = '256px';  // Reduce rendering load
+				adVideo.style.maxHeight = '144px'; // YouTube Music ultra-low quality
+				
+				console.log('[YOUTUBE-MUSIC-MODE] Video element configured for 10MB RAM device');
+			}, 100);
+		} else {
+			// Use preloaded video if available for instant start
+			if (preloadedVideos[videoUrl]) {
+				console.log('[GOOGLE-CDN] Using preloaded Google video for instant start!');
+				const preloadedVid = preloadedVideos[videoUrl];
+				// Copy the preloaded video to our player
+				adVideo.src = preloadedVid.src;
+				adVideo.currentTime = 0;
+			} else {
+				console.log('[GOOGLE-CDN] Loading Google video directly for fast response');
+				adVideo.src = optimizedVideoUrl;
+			}
+		}
+		
+		// OPTIMIZED SETUP FOR GOOGLE CDN VIDEOS + YOUTUBE MUSIC MODE
 		adVideo.pause();
 		adVideo.currentTime = 0; 
 		adVideo.volume = 1; 
 		adVideo.style.display = 'block'; 
 		adVideo.classList.remove('visible');
+		
+		// Apply YouTube Music-style video element optimizations
+		if (window.YOUTUBE_MUSIC_MODE) {
+			window.YOUTUBE_MUSIC_MODE.optimizeVideoElement(adVideo);
+			
+			// Additional ultra-low-end optimizations
+			if (window.YOUTUBE_MUSIC_MODE.tier === 'ultraLow') {
+				// YouTube Music ultra-low-end mode: minimize everything
+				adVideo.style.transform = 'scale(1)'; // No scaling to save GPU
+				adVideo.style.filter = 'none';        // No filters to save processing
+				adVideo.style.opacity = '1';          // No transparency effects
+				adVideo.style.willChange = 'auto';    // Don't hint for optimizations that might use more memory
+				
+				// Disable hardware acceleration if it might cause issues on very old devices
+				try {
+					adVideo.style.transform = 'translateZ(0)'; // Force hardware acceleration where beneficial
+				} catch(e) {
+					console.log('[YOUTUBE-MUSIC-MODE] Hardware acceleration not available');
+				}
+				
+				console.log('[YOUTUBE-MUSIC-MODE] Ultra-lightweight video setup complete');
+			}
+		}
+		
 		// ENHANCED BROWSER MEDIA CONTROLS BLOCKING (SPOTIFY FREE STYLE) - PHONE OPTIMIZED
 		adVideo.removeAttribute('controls'); // Remove controls attribute
 		adVideo.controls = false; // Force controls to false
@@ -4375,6 +4917,127 @@ function playCurrentInlineAd(){
 		adVideo.setAttribute('webkit-playsinline', 'true'); // Force inline on iOS
 		adVideo.setAttribute('playsinline', 'true'); // Force inline on iOS
 		adVideo.muted = false; // Ensure audio works
+		
+		// DYNAMIC BACKGROUND COLOR EXTRACTION - Netflix/YouTube Style
+		function setupDynamicBackground() {
+			if (!adVideo || window.YOUTUBE_MUSIC_MODE?.tier === 'ultraLow') {
+				console.log('[DYNAMIC-BG] Skipped for ultra-low-end device');
+				return;
+			}
+			
+			const videoShell = adVideo.closest('.video-shell');
+			if (!videoShell) return;
+			
+			// Create canvas for color extraction
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			canvas.width = 100;  // Small canvas for performance
+			canvas.height = 56;  // 16:9 aspect ratio
+			
+			let extractionInterval;
+			
+			function extractVideoColors() {
+				try {
+					if (adVideo.videoWidth === 0 || adVideo.videoHeight === 0) return;
+					
+					// Draw current video frame to canvas
+					ctx.drawImage(adVideo, 0, 0, canvas.width, canvas.height);
+					
+					// Get image data
+					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+					const data = imageData.data;
+					
+					// Extract dominant colors (simplified algorithm for performance)
+					const colorCounts = {};
+					const step = 4; // Sample every 4th pixel for performance
+					
+					for (let i = 0; i < data.length; i += 4 * step) {
+						const r = data[i];
+						const g = data[i + 1];
+						const b = data[i + 2];
+						
+						// Skip very dark or very bright pixels
+						const brightness = (r + g + b) / 3;
+						if (brightness < 30 || brightness > 225) continue;
+						
+						// Reduce color precision for grouping
+						const rr = Math.floor(r / 32) * 32;
+						const gg = Math.floor(g / 32) * 32;
+						const bb = Math.floor(b / 32) * 32;
+						
+						const colorKey = `${rr},${gg},${bb}`;
+						colorCounts[colorKey] = (colorCounts[colorKey] || 0) + 1;
+					}
+					
+					// Find most common colors
+					const sortedColors = Object.entries(colorCounts)
+						.sort((a, b) => b[1] - a[1])
+						.slice(0, 3)
+						.map(([color]) => color.split(',').map(Number));
+					
+					if (sortedColors.length > 0) {
+						// Create gradient from dominant colors
+						const color1 = sortedColors[0] || [26, 26, 26];
+						const color2 = sortedColors[1] || [45, 45, 45];
+						const color3 = sortedColors[2] || [60, 60, 60];
+						
+						// Apply dynamic background
+						const gradient = `linear-gradient(135deg, 
+							rgba(${color1[0]}, ${color1[1]}, ${color1[2]}, 0.8) 0%, 
+							rgba(${color2[0]}, ${color2[1]}, ${color2[2]}, 0.7) 50%, 
+							rgba(${color3[0]}, ${color3[1]}, ${color3[2]}, 0.6) 100%)`;
+						
+						videoShell.style.setProperty('--dynamic-bg', gradient);
+						videoShell.classList.add('dynamic-bg');
+						
+						console.log('[DYNAMIC-BG] Colors extracted:', color1, color2, color3);
+					}
+				} catch (error) {
+					console.log('[DYNAMIC-BG] Extraction failed:', error.message);
+				}
+			}
+			
+			// Start color extraction when video is playing
+			adVideo.addEventListener('loadedmetadata', () => {
+				// Check if video is landscape for mobile centering
+				if (adVideo.videoWidth > adVideo.videoHeight) {
+					videoShell.classList.add('landscape-video');
+				} else {
+					videoShell.classList.remove('landscape-video');
+				}
+			});
+			
+			adVideo.addEventListener('canplay', () => {
+				if (extractionInterval) clearInterval(extractionInterval);
+				
+				// Extract colors every 2 seconds for performance
+				extractionInterval = setInterval(extractVideoColors, 2000);
+				
+				// Initial extraction
+				setTimeout(extractVideoColors, 500);
+			});
+			
+			adVideo.addEventListener('pause', () => {
+				if (extractionInterval) {
+					clearInterval(extractionInterval);
+					extractionInterval = null;
+				}
+			});
+			
+			adVideo.addEventListener('ended', () => {
+				if (extractionInterval) {
+					clearInterval(extractionInterval);
+					extractionInterval = null;
+				}
+				
+				// Reset background
+				videoShell.classList.remove('dynamic-bg');
+				videoShell.style.removeProperty('--dynamic-bg');
+			});
+		}
+		
+		// Initialize dynamic background system
+		setupDynamicBackground();
 		
 		// PHONE ENHANCEMENT: Block ALL possible control interactions
 		adVideo.addEventListener('contextmenu', e => e.preventDefault()); // Block right-click menu
