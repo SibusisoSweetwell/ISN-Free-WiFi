@@ -34,10 +34,11 @@ Successfully implemented Netflix-style auto-playing video preview for the home s
 - Intelligent pause/resume on user interaction
 
 #### 🎲 **Random Video Selection**
-- **Mobile**: Randomly selects from `mobileMp4Ads` array (240p-360p for smooth playback)
-- **Desktop**: Randomly selects from `mp4Ads` array (720p+ for crisp quality)
-- Auto-cycles through different random videos when current ends
-- Quality-appropriate sources for each device type
+- **Mobile**: Randomly selects from Google CDN videos only (filtered from `mobileMp4Ads`)
+- **Desktop**: Randomly selects from Google CDN videos only (filtered from `mp4Ads`) 
+- **Google Videos Only**: Filters for `commondatastorage.googleapis.com` and `gtv-videos-bucket` URLs
+- Auto-cycles through different random Google videos when current ends
+- Premium Google CDN quality for Netflix preview experience
 
 #### 🎮 **Smart User Interaction Handling**
 - Stops preview when user clicks, touches, or scrolls
@@ -80,9 +81,10 @@ Successfully implemented Netflix-style auto-playing video preview for the home s
 - Handles mobile detection and element setup
 
 #### **getRandomVideo()**
-- **Mobile**: Selects from mobileMp4Ads array (240p-360p)
-- **Desktop**: Selects from mp4Ads array (720p+)
-- Automatically detects device and uses appropriate quality
+- **Mobile**: Filters and selects from Google CDN videos in mobileMp4Ads
+- **Desktop**: Filters and selects from Google CDN videos in mp4Ads  
+- **Google Filter**: Only uses `commondatastorage.googleapis.com` URLs
+- Automatically detects device and uses appropriate Google video quality
 
 #### **startNetflixPreview()**
 - Handles video loading and playback

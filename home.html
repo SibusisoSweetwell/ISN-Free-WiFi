@@ -7087,9 +7087,18 @@ function initNetflixPreview() {
 	
 	function getRandomVideo() {
 		// Use higher quality videos for desktop, mobile-optimized for phones
-		const videoArray = isMobile ? 
+		const originalVideoArray = isMobile ? 
 			(window.mobileMp4Ads || []) : 
 			(window.mp4Ads || window.mobileMp4Ads || []);
+			
+		// 🎬 NETFLIX PREVIEW: Filter to use ONLY GOOGLE CDN VIDEOS
+		const googleVideos = originalVideoArray.filter(url => 
+			url.includes('commondatastorage.googleapis.com') || 
+			url.includes('gtv-videos-bucket')
+		);
+		
+		// Use Google videos if available, otherwise fallback to all videos
+		const videoArray = googleVideos.length > 0 ? googleVideos : originalVideoArray;
 			
 		if (videoArray.length === 0) {
 			console.warn('[NETFLIX-PREVIEW] No videos available');
@@ -7098,7 +7107,7 @@ function initNetflixPreview() {
 		
 		const randomIndex = Math.floor(Math.random() * videoArray.length);
 		const selectedVideo = videoArray[randomIndex];
-		console.log(`[NETFLIX-PREVIEW] ${isMobile ? 'Mobile' : 'Desktop'} - Selected random video ${randomIndex + 1}/${videoArray.length}:`, selectedVideo);
+		console.log(`[NETFLIX-PREVIEW] ${isMobile ? 'Mobile' : 'Desktop'} - Selected random GOOGLE video ${randomIndex + 1}/${videoArray.length}:`, selectedVideo);
 		return selectedVideo;
 	}
 	
