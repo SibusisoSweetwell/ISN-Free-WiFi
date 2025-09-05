@@ -409,22 +409,26 @@
 			}
 		}
 		
-		/* Enhanced mobile video rendering for phones - Perfect centering with quality optimization */
+		/* Enhanced mobile video rendering for phones - ANTI-GLITCH VERSION */
 		@media (max-width:700px){
 			.video-shell {
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				position: relative;
-				/* Square container on mobile for compact display */
-				aspect-ratio: 1/1; /* Square aspect ratio for mobile */
+				/* Taller container on mobile for better viewing experience */
+				aspect-ratio: 4/5; /* Taller aspect ratio for mobile - increased height */
 				width: 100%;
-				max-width: 360px; /* Increased from 320px for better viewing */
+				max-width: 380px; /* Increased from 360px for larger video */
+				max-height: 480px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* Mobile-specific performance optimizations */
-				transform: translateZ(0); /* Hardware acceleration */
-				-webkit-transform: translateZ(0);
-				will-change: auto; /* Don't hint for optimizations that use more memory */
+				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
+				transform: none; /* Disable transform to prevent glitching */
+				-webkit-transform: none;
+				will-change: auto; /* Let browser decide to prevent over-optimization */
+				/* MOBILE ANTI-GLITCH: Stable rendering */
+				backface-visibility: hidden;
+				-webkit-backface-visibility: hidden;
 			}
 			
 			.video-shell video,
@@ -435,11 +439,13 @@
 				height: 100%;
 				max-width: 100%;
 				max-height: 100%;
-				/* Mobile video performance optimizations */
-				border-radius: 8px; /* Reduce border radius for better rendering performance */
+				/* MOBILE ANTI-GLITCH: Simplified styling */
+				border-radius: 8px; 
+				/* MOBILE ANTI-GLITCH: Prevent rendering issues */
+				image-rendering: auto; /* Let browser optimize */
 			}
 			
-			/* Special handling for ultra-low quality videos (240p and below) */
+			/* Special handling for ultra-low quality videos */
 			.video-shell[data-quality="ultraLow"] {
 				max-width: 240px; /* Smaller for ultra-low quality */
 				aspect-ratio: 1/1; /* Square for compact display */
@@ -466,22 +472,25 @@
 			}
 		}
 		
-		/* Ultra-mobile video optimizations for small phones */
+		/* Ultra-mobile video optimizations for small phones - ANTI-GLITCH VERSION */
 		@media (max-width:480px){
 			.video-shell{
-				/* Square container for small phones */
+				/* Taller container for small phones */
 				position:relative;
 				overflow:hidden;
 				background:transparent;
-				aspect-ratio: 1/1; /* Square aspect ratio for compact mobile display */
+				aspect-ratio: 3/4; /* Taller aspect ratio for better mobile viewing */
 				width: 100%;
-				max-width: 300px; /* Increased from 280px */
+				max-width: 320px; /* Increased from 300px */
+				max-height: 430px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* Performance optimizations for low-end phones */
-				transform: translateZ(0);
-				-webkit-transform: translateZ(0);
+				/* MOBILE ANTI-GLITCH: Stable performance optimizations */
+				transform: none; /* Disable transform to prevent glitching */
+				-webkit-transform: none;
 				backface-visibility: hidden;
 				-webkit-backface-visibility: hidden;
+				/* MOBILE ANTI-GLITCH: Prevent over-optimization */
+				will-change: auto;
 			}
 			.video-shell video,
 			.video-shell iframe{
@@ -489,49 +498,58 @@
 				object-position:center;
 				width: 100%;
 				height: 100%;
-				/* Small phone specific optimizations */
-				border-radius: 4px; /* Minimal radius for better performance */
+				/* MOBILE ANTI-GLITCH: Minimal styling for stability */
+				border-radius: 4px; 
+				/* MOBILE ANTI-GLITCH: Stable image rendering */
+				image-rendering: auto;
 			}
 			
 			/* Ultra-low quality videos on small phones */
 			.video-shell[data-quality="ultraLow"] {
 				max-width: 240px;
-				max-height: 240px; /* Square dimensions for ultra-low quality */
-				aspect-ratio: 1/1;
+				max-height: 320px; /* Taller dimensions for better mobile viewing */
+				aspect-ratio: 3/4; /* Taller aspect ratio even for ultra-low quality */
 			}
 		}
 		
 		/* Enhanced video visibility for Google CDN instant appearance */
 		.video-shell video{
 			opacity:0; /* Start hidden for instant transition */
-			transform:scale(0.98); /* Slight scale for instant zoom */
-			transition:opacity 0.1s ease, transform 0.1s ease; /* Ultra-fast transition for Google CDN */
+			/* REMOVED: transform scale to prevent mobile glitching */
+			transition:opacity 0.2s ease; /* Smoother transition, removed transform to fix mobile glitching */
 			/* ENHANCED VIDEO SETTINGS FOR GOOGLE CDN */
 			pointer-events:auto;
 			user-select:none;
 			-webkit-user-select:none;
 			/* PREVENT DOWNLOAD CONTEXT MENU */
 			-webkit-touch-callout:none;
-			/* GPU ACCELERATION FOR INSTANT APPEARANCE */
-			will-change:opacity, transform;
+			/* REDUCED GPU HINTS TO PREVENT MOBILE GLITCHING */
+			will-change:opacity; /* Only opacity, not transform */
 		}
 		
-		/* Mobile video loading optimizations */
+		/* Mobile video loading optimizations - ANTI-GLITCH FIXES */
 		@media (max-width:700px){
 			.video-shell video{
-				/* Faster mobile loading */
-				transition:opacity 0.15s ease, transform 0.15s ease;
-				/* Mobile-specific rendering */
-				-webkit-transform:translateZ(0);
-				transform:translateZ(0);
-				will-change:transform;
+				/* MOBILE ANTI-GLITCH: Simplified transitions */
+				transition:opacity 0.3s ease; /* Longer, smoother transition for mobile */
+				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
+				-webkit-transform:none; /* Disable transform to prevent glitching */
+				transform:none; /* Disable transform to prevent glitching */
+				will-change:auto; /* Let browser decide, prevents over-acceleration */
+				/* MOBILE ANTI-GLITCH: Stable rendering */
+				backface-visibility:hidden;
+				-webkit-backface-visibility:hidden;
+				/* MOBILE ANTI-GLITCH: Prevent subpixel rendering issues */
+				image-rendering: -webkit-optimize-contrast;
+				image-rendering: optimize-contrast;
+				image-rendering: crisp-edges;
 			}
 		}
 		
-		/* Video ready state for instant appearance */
+		/* Video ready state for instant appearance - MOBILE OPTIMIZED */
 		.video-shell.video-ready video{
 			opacity:1;
-			transform:scale(1);
+			/* REMOVED: transform scale to prevent mobile glitching */
 		}
 		
 		/* Loading state styling for mobile */
@@ -1521,7 +1539,7 @@
 
 			/* Keep ad-player layout rules but don't force it visible; the active class controls display. */
 			#accessModal .ad-player{flex-direction:column;gap:12px;}
-			#accessModal .video-shell{aspect-ratio:unset;height:min(35vh,300px);border-radius:12px;}
+			#accessModal .video-shell{aspect-ratio:unset;height:min(50vh,400px);border-radius:12px;} /* Increased from 35vh,300px for taller mobile videos */
 
 			/* Ensure <video> and iframe both letterbox (contain) so landscape recordings aren't cropped in portrait phones */
 			#accessModal .video-shell video,
@@ -1753,7 +1771,7 @@
 		</section>
 		<div class="hero-image" aria-hidden="true">
 			<img src="BCO.17d05157-b139-4009-bc75-4a877b9a0e43.png" alt="User holding phone" id="heroStaticImage" />
-			<!-- Netflix-style Auto-Play Video Overlay (Mobile Only) -->
+			<!-- Netflix-style Auto-Play Video Overlay (Mobile & Desktop) -->
 			<video 
 				id="heroVideoPreview" 
 				muted 
@@ -5134,15 +5152,22 @@ function playCurrentInlineAd(){
 			
 			// Additional ultra-low-end optimizations
 			if (window.YOUTUBE_MUSIC_MODE.tier === 'ultraLow') {
-				// YouTube Music ultra-low-end mode: minimize everything
-				adVideo.style.transform = 'scale(1)'; // No scaling to save GPU
+				// MOBILE ANTI-GLITCH: Ultra-stable video settings
+				adVideo.style.transform = 'none'; // No transforms to prevent glitching
 				adVideo.style.filter = 'none';        // No filters to save processing
 				adVideo.style.opacity = '1';          // No transparency effects
 				adVideo.style.willChange = 'auto';    // Don't hint for optimizations that might use more memory
 				
-				// Disable hardware acceleration if it might cause issues on very old devices
+				// MOBILE ANTI-GLITCH: Disable hardware acceleration on mobile to prevent glitching
 				try {
-					adVideo.style.transform = 'translateZ(0)'; // Force hardware acceleration where beneficial
+					// Only apply hardware acceleration on desktop, not mobile
+					const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+					if (!isMobile) {
+						adVideo.style.transform = 'translateZ(0)'; // Only on desktop
+					} else {
+						adVideo.style.transform = 'none'; // Disable on mobile to prevent glitching
+						console.log('[MOBILE-ANTI-GLITCH] Hardware acceleration disabled on mobile');
+					}
 				} catch(e) {
 					console.log('[YOUTUBE-MUSIC-MODE] Hardware acceleration not available');
 				}
@@ -7112,7 +7137,7 @@ if(!window._wakeAudioInit){
 	});
 }
 
-// ========== NETFLIX-STYLE AUTO-PLAY PREVIEW (MOBILE ONLY) ==========
+// ========== NETFLIX-STYLE AUTO-PLAY PREVIEW (MOBILE & DESKTOP) ==========
 // Netflix-like feature: Auto-play random video preview after delay on home screen
 let netflixPreviewTimer = null;
 let netflixVideoActive = false;
@@ -7217,6 +7242,17 @@ function initNetflixPreview() {
 		const randomIndex = Math.floor(Math.random() * videoArray.length);
 		const selectedVideo = videoArray[randomIndex];
 		console.log(`[NETFLIX-PREVIEW] ${isMobile ? 'Mobile' : 'Desktop'} - Selected random GOOGLE video ${randomIndex + 1}/${videoArray.length}:`, selectedVideo);
+		
+		// Additional debugging for desktop video issues
+		if (!isMobile) {
+			console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video debugging:', {
+				videoArrayLength: videoArray.length,
+				selectedVideo: selectedVideo,
+				heroVideoElement: !!document.getElementById('heroVideoPreview'),
+				heroImageElement: !!document.getElementById('heroStaticImage')
+			});
+		}
+		
 		return selectedVideo;
 	}
 	
@@ -7230,16 +7266,33 @@ function initNetflixPreview() {
 		netflixVideoActive = true;
 		
 		// Set video source
+		console.log(`[NETFLIX-PREVIEW] Setting video source: ${randomVideo}`);
 		heroVideoSource.src = randomVideo;
 		heroVideo.load();
+		
+		// Enhanced video loading verification for desktop debugging
+		heroVideo.addEventListener('loadedmetadata', () => {
+			console.log(`[NETFLIX-PREVIEW] Video metadata loaded successfully for ${isMobile ? 'mobile' : 'desktop'}`);
+		}, { once: true });
+		
+		heroVideo.addEventListener('canplay', () => {
+			console.log(`[NETFLIX-PREVIEW] Video can start playing for ${isMobile ? 'mobile' : 'desktop'}`);
+		}, { once: true });
+		
+		heroVideo.addEventListener('loadstart', () => {
+			console.log(`[NETFLIX-PREVIEW] Video loading started for ${isMobile ? 'mobile' : 'desktop'}`);
+		}, { once: true });
 		
 		// Show video overlay
 		heroVideo.style.display = 'block';
 		
 		// Apply Netflix mobile layout changes (mobile only)
 		if (isMobile) {
-			document.body.classList.add('netflix-video-playing');
-			console.log('[NETFLIX-PREVIEW] Applied Netflix mobile layout - buttons moved to corner');
+			const heroSection = document.querySelector('.hero');
+			if (heroSection) {
+				heroSection.classList.add('netflix-video-playing');
+				console.log('[NETFLIX-PREVIEW] Applied Netflix mobile layout - buttons moved to corner');
+			}
 		}
 		
 		// Fade in video while fading out image
@@ -7367,24 +7420,30 @@ function initNetflixPreview() {
 	
 	console.log(`[NETFLIX-PREVIEW] Netflix-style preview system initialized for ${isMobile ? 'mobile' : 'desktop'}`);
 	
-	// 📱 MOBILE UI RESET: When buttons are pressed, reset Netflix mobile layout
+	// 📱 MOBILE UI RESET: When buttons are pressed, completely reset Netflix mobile layout
 	function resetNetflixMobileUI() {
 		if (isMobile && netflixVideoActive) {
-			console.log('[NETFLIX-MOBILE] Button pressed - resetting mobile UI to normal state');
+			console.log('[NETFLIX-MOBILE] Button pressed - completely resetting mobile UI to original state');
 			const heroSection = document.querySelector('.hero');
 			if (heroSection) {
 				heroSection.classList.remove('netflix-video-playing');
+				console.log('[NETFLIX-MOBILE] Mobile UI class removed - buttons, title, and description returned to original positions');
 			}
-			// Schedule to re-apply when video starts again (if still playing)
+			
+			// Stop and reschedule Netflix preview to allow full reset
+			netflixVideoActive = false;
+			if (netflixPreviewTimer) {
+				clearTimeout(netflixPreviewTimer);
+				netflixPreviewTimer = null;
+			}
+			
+			// Schedule to restart Netflix preview after user interaction is complete
 			setTimeout(() => {
-				if (netflixVideoActive && isMobile) {
-					const heroSection = document.querySelector('.hero');
-					if (heroSection) {
-						heroSection.classList.add('netflix-video-playing');
-						console.log('[NETFLIX-MOBILE] Re-applied mobile UI after button interaction');
-					}
+				if (!adSequenceActive && !document.body.classList.contains('video-playing')) {
+					console.log('[NETFLIX-MOBILE] Restarting Netflix preview after button interaction');
+					scheduleNetflixPreview();
 				}
-			}, 100);
+			}, 2000); // Give user time to interact with modal/interface
 		}
 	}
 	
