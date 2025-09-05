@@ -1723,6 +1723,8 @@
 				transform: translateZ(0); /* Force hardware acceleration */
 				-webkit-backface-visibility: hidden;
 				backface-visibility: hidden;
+				/* Enhanced desktop visibility */
+				display: block !important;
 			}
 			
 			/* Desktop hero image container */
@@ -1776,7 +1778,7 @@
 				id="heroVideoPreview" 
 				muted 
 				loop 
-				preload="metadata" 
+				preload="auto" 
 				playsinline
 				style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; z-index: 2; display: none;"
 				aria-hidden="true">
@@ -7265,26 +7267,58 @@ function initNetflixPreview() {
 		console.log('[NETFLIX-PREVIEW] Starting auto-play preview');
 		netflixVideoActive = true;
 		
-		// Set video source
+		// Set video source and remove any size restrictions for original quality
 		console.log(`[NETFLIX-PREVIEW] Setting video source: ${randomVideo}`);
 		heroVideoSource.src = randomVideo;
+		
+		// Remove any size restrictions to enable original video quality
+		heroVideo.style.maxWidth = 'none';
+		heroVideo.style.maxHeight = 'none';
+		heroVideo.style.width = '100%';
+		heroVideo.style.height = '100%';
+		
 		heroVideo.load();
 		
 		// Enhanced video loading verification for desktop debugging
 		heroVideo.addEventListener('loadedmetadata', () => {
 			console.log(`[NETFLIX-PREVIEW] Video metadata loaded successfully for ${isMobile ? 'mobile' : 'desktop'}`);
+			if (!isMobile) {
+				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video metadata:', {
+					videoWidth: heroVideo.videoWidth,
+					videoHeight: heroVideo.videoHeight,
+					duration: heroVideo.duration,
+					currentSrc: heroVideo.currentSrc
+				});
+			}
 		}, { once: true });
 		
 		heroVideo.addEventListener('canplay', () => {
 			console.log(`[NETFLIX-PREVIEW] Video can start playing for ${isMobile ? 'mobile' : 'desktop'}`);
+			if (!isMobile) {
+				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video ready to play:', {
+					readyState: heroVideo.readyState,
+					networkState: heroVideo.networkState,
+					buffered: heroVideo.buffered.length > 0 ? heroVideo.buffered.end(0) : 0
+				});
+			}
 		}, { once: true });
 		
 		heroVideo.addEventListener('loadstart', () => {
 			console.log(`[NETFLIX-PREVIEW] Video loading started for ${isMobile ? 'mobile' : 'desktop'}`);
+			if (!isMobile) {
+				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video loading started - source:', heroVideo.src);
+			}
 		}, { once: true });
 		
 		// Show video overlay
 		heroVideo.style.display = 'block';
+		
+		// Enhanced desktop video visibility fix
+		if (!isMobile) {
+			heroVideo.style.visibility = 'visible';
+			heroVideo.style.zIndex = '10';
+			console.log('[NETFLIX-PREVIEW-DESKTOP] Enhanced desktop video visibility applied');
+		}
 		
 		// Apply Netflix mobile layout changes (mobile only)
 		if (isMobile) {
@@ -7305,11 +7339,30 @@ function initNetflixPreview() {
 			heroImage.style.opacity = '0.3'; // Keep image slightly visible for fallback
 		}, 100);
 		
-		// Play video
-		heroVideo.play().then(() => {
-			console.log('[NETFLIX-PREVIEW] Video preview started successfully');
+		// Play video with enhanced desktop debugging
+		const playPromise = heroVideo.play();
+		playPromise.then(() => {
+			console.log(`[NETFLIX-PREVIEW] Video preview started successfully on ${isMobile ? 'mobile' : 'desktop'}`);
+			if (!isMobile) {
+				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video playing successfully:', {
+					currentTime: heroVideo.currentTime,
+					paused: heroVideo.paused,
+					ended: heroVideo.ended,
+					muted: heroVideo.muted,
+					volume: heroVideo.volume
+				});
+			}
 		}).catch(error => {
-			console.warn('[NETFLIX-PREVIEW] Video play failed:', error);
+			console.warn(`[NETFLIX-PREVIEW] Video play failed on ${isMobile ? 'mobile' : 'desktop'}:`, error);
+			if (!isMobile) {
+				console.error('[NETFLIX-PREVIEW-DESKTOP] Desktop video play error details:', {
+					error: error.name,
+					message: error.message,
+					videoSrc: heroVideo.src,
+					readyState: heroVideo.readyState,
+					networkState: heroVideo.networkState
+				});
+			}
 			stopNetflixPreview();
 		});
 		
