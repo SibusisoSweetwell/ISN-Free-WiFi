@@ -393,6 +393,10 @@
 			backface-visibility:hidden;
 			-webkit-backface-visibility:hidden;
 			z-index: 2; /* Above dynamic background */
+			/* NETFLIX-STYLE ANTI-GLITCH ENHANCEMENTS */
+			image-rendering: auto; /* Let browser optimize for smooth playback */
+			-webkit-font-smoothing: antialiased; /* Smooth rendering */
+			font-smooth: always; /* Additional smoothing */
 		}
 
 		/* Mobile landscape video centering */
@@ -409,7 +413,7 @@
 			}
 		}
 		
-		/* Enhanced mobile video rendering for phones - ANTI-GLITCH VERSION */
+		/* Enhanced mobile video rendering for phones - NETFLIX-STYLE ANTI-GLITCH VERSION */
 		@media (max-width:700px){
 			.video-shell {
 				display: flex;
@@ -422,13 +426,16 @@
 				max-width: 380px; /* Increased from 360px for larger video */
 				max-height: 480px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
-				transform: none; /* Disable transform to prevent glitching */
-				-webkit-transform: none;
+				/* NETFLIX-STYLE ANTI-GLITCH: Same stable acceleration as Netflix preview */
+				transform: translateZ(0); /* Same as Netflix - controlled hardware acceleration */
+				-webkit-transform: translateZ(0); /* Same as Netflix */
 				will-change: auto; /* Let browser decide to prevent over-optimization */
-				/* MOBILE ANTI-GLITCH: Stable rendering */
+				/* NETFLIX-STYLE ANTI-GLITCH: Same backface visibility as Netflix */
 				backface-visibility: hidden;
 				-webkit-backface-visibility: hidden;
+				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
+				-webkit-font-smoothing: antialiased;
+				font-smooth: always;
 			}
 			
 			.video-shell video,
@@ -472,7 +479,7 @@
 			}
 		}
 		
-		/* Ultra-mobile video optimizations for small phones - ANTI-GLITCH VERSION */
+		/* Ultra-mobile video optimizations for small phones - NETFLIX-STYLE ANTI-GLITCH VERSION */
 		@media (max-width:480px){
 			.video-shell{
 				/* Taller container for small phones */
@@ -484,13 +491,16 @@
 				max-width: 320px; /* Increased from 300px */
 				max-height: 430px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* MOBILE ANTI-GLITCH: Stable performance optimizations */
-				transform: none; /* Disable transform to prevent glitching */
-				-webkit-transform: none;
+				/* NETFLIX-STYLE ANTI-GLITCH: Same stable acceleration as Netflix preview */
+				transform: translateZ(0); /* Same as Netflix - controlled hardware acceleration */
+				-webkit-transform: translateZ(0); /* Same as Netflix */
 				backface-visibility: hidden;
 				-webkit-backface-visibility: hidden;
-				/* MOBILE ANTI-GLITCH: Prevent over-optimization */
+				/* NETFLIX-STYLE ANTI-GLITCH: Prevent over-optimization like Netflix */
 				will-change: auto;
+				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
+				-webkit-font-smoothing: antialiased;
+				font-smooth: always;
 			}
 			.video-shell video,
 			.video-shell iframe{
@@ -498,10 +508,12 @@
 				object-position:center;
 				width: 100%;
 				height: 100%;
-				/* MOBILE ANTI-GLITCH: Minimal styling for stability */
+				/* NETFLIX-STYLE ANTI-GLITCH: Smooth styling like Netflix */
 				border-radius: 4px; 
-				/* MOBILE ANTI-GLITCH: Stable image rendering */
-				image-rendering: auto;
+				/* NETFLIX-STYLE ANTI-GLITCH: Same image rendering as Netflix */
+				image-rendering: auto; /* Let browser optimize like Netflix */
+				-webkit-font-smoothing: antialiased;
+				font-smooth: always;
 			}
 			
 			/* Ultra-low quality videos on small phones */
@@ -515,41 +527,49 @@
 		/* Enhanced video visibility for Google CDN instant appearance */
 		.video-shell video{
 			opacity:0; /* Start hidden for instant transition */
-			/* REMOVED: transform scale to prevent mobile glitching */
-			transition:opacity 0.2s ease; /* Smoother transition, removed transform to fix mobile glitching */
+			/* NETFLIX-STYLE: Use same smooth transition as Netflix preview */
+			transition:opacity 0.8s ease-in-out; /* Same timing as Netflix preview for consistency */
 			/* ENHANCED VIDEO SETTINGS FOR GOOGLE CDN */
 			pointer-events:auto;
 			user-select:none;
 			-webkit-user-select:none;
 			/* PREVENT DOWNLOAD CONTEXT MENU */
 			-webkit-touch-callout:none;
-			/* REDUCED GPU HINTS TO PREVENT MOBILE GLITCHING */
-			will-change:opacity; /* Only opacity, not transform */
+			/* NETFLIX-STYLE GPU HINTS FOR SMOOTH PLAYBACK */
+			will-change:opacity; /* Only opacity, same as Netflix preview */
+			/* NETFLIX-STYLE: Same rendering optimizations as Netflix */
+			image-rendering: auto;
+			-webkit-font-smoothing: antialiased;
+			font-smooth: always;
 		}
 		
-		/* Mobile video loading optimizations - ANTI-GLITCH FIXES */
+		/* Mobile video loading optimizations - NETFLIX-STYLE ANTI-GLITCH FIXES */
 		@media (max-width:700px){
 			.video-shell video{
-				/* MOBILE ANTI-GLITCH: Simplified transitions */
-				transition:opacity 0.3s ease; /* Longer, smoother transition for mobile */
-				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
-				-webkit-transform:none; /* Disable transform to prevent glitching */
-				transform:none; /* Disable transform to prevent glitching */
-				will-change:auto; /* Let browser decide, prevents over-acceleration */
-				/* MOBILE ANTI-GLITCH: Stable rendering */
+				/* NETFLIX-STYLE ANTI-GLITCH: Ultra-smooth transitions */
+				transition:opacity 0.8s ease-in-out; /* Match Netflix preview timing */
+				/* NETFLIX-STYLE ANTI-GLITCH: Stable hardware acceleration like Netflix */
+				-webkit-transform:translateZ(0); /* Same as Netflix preview */
+				transform:translateZ(0); /* Same as Netflix preview */
+				will-change:opacity; /* Only opacity like Netflix, not transform */
+				/* NETFLIX-STYLE ANTI-GLITCH: Same backface visibility as Netflix */
 				backface-visibility:hidden;
 				-webkit-backface-visibility:hidden;
-				/* MOBILE ANTI-GLITCH: Prevent subpixel rendering issues */
-				image-rendering: -webkit-optimize-contrast;
-				image-rendering: optimize-contrast;
-				image-rendering: crisp-edges;
+				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
+				image-rendering: auto; /* Let browser optimize like Netflix */
+				-webkit-font-smoothing: antialiased; /* Smooth like Netflix */
+				font-smooth: always; /* Additional smoothing like Netflix */
+				/* NETFLIX-STYLE ANTI-GLITCH: Prevent subpixel issues */
+				-webkit-transform-style: preserve-3d;
+				transform-style: preserve-3d;
 			}
 		}
 		
-		/* Video ready state for instant appearance - MOBILE OPTIMIZED */
+		/* Video ready state for instant appearance - NETFLIX-STYLE SMOOTHNESS */
 		.video-shell.video-ready video{
 			opacity:1;
-			/* REMOVED: transform scale to prevent mobile glitching */
+			/* NETFLIX-STYLE: Same smooth appearance as Netflix preview */
+			transition:opacity 0.8s ease-in-out; /* Match Netflix timing */
 		}
 		
 		/* Loading state styling for mobile */
@@ -4464,8 +4484,11 @@ function preloadVideos() {
 		if (isMobile) {
 			video.setAttribute('playsinline', 'true');
 			video.setAttribute('webkit-playsinline', 'true');
-			video.style.maxWidth = '360px'; // Limit rendering size for mobile
-			video.style.maxHeight = '240px';
+			// REMOVED: size restrictions to allow full container usage
+			// video.style.maxWidth = '360px'; // Limit rendering size for mobile
+			// video.style.maxHeight = '240px';
+			video.style.width = '100%'; // Fill container properly
+			video.style.height = '100%'; // Fill container properly
 		}
 		
 		video.src = url; // Direct URL or mobile-optimized URL
@@ -5109,13 +5132,19 @@ function playCurrentInlineAd(){
 				
 				// Mobile-specific size and quality constraints
 				if (window.YOUTUBE_MUSIC_MODE.tier === 'ultraLow') {
-					adVideo.style.maxWidth = '240px';  // Phone-optimized size
-					adVideo.style.maxHeight = '135px'; // 240p aspect ratio
-					console.log('[MOBILE-OPTIMIZATION] Phone ultra-low quality: 240x135 max resolution');
+					// REMOVED: size restrictions to allow full container usage
+					// adVideo.style.maxWidth = '240px';  // Phone-optimized size
+					// adVideo.style.maxHeight = '135px'; // 240p aspect ratio
+					adVideo.style.width = '100%';  // Fill container properly
+					adVideo.style.height = '100%'; // Fill container properly
+					console.log('[MOBILE-OPTIMIZATION] Phone ultra-low quality: Full container size (no cropping)');
 				} else {
-					adVideo.style.maxWidth = '360px';  // Mobile-optimized size
-					adVideo.style.maxHeight = '240px'; // 360p aspect ratio
-					console.log('[MOBILE-OPTIMIZATION] Mobile low quality: 360x240 max resolution');
+					// REMOVED: size restrictions to allow full container usage
+					// adVideo.style.maxWidth = '360px';  // Mobile-optimized size
+					// adVideo.style.maxHeight = '240px'; // 360p aspect ratio
+					adVideo.style.width = '100%';  // Fill container properly
+					adVideo.style.height = '100%'; // Fill container properly
+					console.log('[MOBILE-OPTIMIZATION] Mobile standard quality: Full container size (no cropping)');
 				}
 				
 				console.log('[MOBILE-OPTIMIZATION] Video element configured for mobile device');
