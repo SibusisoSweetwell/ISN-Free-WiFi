@@ -1622,6 +1622,58 @@
 				z-index: 1 !important;
 				transition: opacity 0.8s ease-in-out !important;
 			}
+			
+			/* Netflix-style mobile layout changes when video is playing */
+			.netflix-video-playing .hero-content {
+				/* Netflix mobile style: move to top-left corner */
+				position: absolute !important;
+				top: 20px !important;
+				left: 20px !important;
+				right: auto !important;
+				bottom: auto !important;
+				width: auto !important;
+				max-width: 60% !important;
+				padding: 0 !important;
+				background: none !important;
+				z-index: 10 !important;
+				transition: all 0.8s ease-in-out !important;
+			}
+			
+			.netflix-video-playing .hero-content .tag-title {
+				font-size: 28px !important; /* Smaller Netflix-style title */
+				margin-bottom: 8px !important;
+				line-height: 1.2 !important;
+				text-shadow: 0 2px 8px rgba(0,0,0,0.8) !important;
+			}
+			
+			.netflix-video-playing .hero-content .tag-text {
+				display: none !important; /* Hide description like Netflix mobile */
+			}
+			
+			.netflix-video-playing .cta-group {
+				flex-direction: row !important;
+				gap: 8px !important;
+				margin-top: 8px !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn {
+				width: auto !important;
+				padding: 8px 16px !important;
+				font-size: 14px !important;
+				min-width: 80px !important;
+				height: 36px !important;
+				border-radius: 6px !important;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important;
+				background: rgba(0,0,0,0.7) !important;
+				backdrop-filter: blur(4px) !important;
+				border: 1px solid rgba(255,255,255,0.2) !important;
+				transition: all 0.3s ease !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn:hover {
+				background: rgba(0,0,0,0.8) !important;
+				border-color: rgba(255,255,255,0.4) !important;
+			}
 		}
 		
 		@media (max-width: 480px) {
@@ -1669,7 +1721,7 @@
 			
 			/* Desktop-specific video behavior */
 			#heroVideoPreview {
-				object-position: right center !important; /* Match desktop image positioning */
+				object-position: center center !important; /* Center video to cut both sides equally */
 			}
 		}
 	</style>
@@ -7184,6 +7236,12 @@ function initNetflixPreview() {
 		// Show video overlay
 		heroVideo.style.display = 'block';
 		
+		// Apply Netflix mobile layout changes (mobile only)
+		if (isMobile) {
+			document.body.classList.add('netflix-video-playing');
+			console.log('[NETFLIX-PREVIEW] Applied Netflix mobile layout - buttons moved to corner');
+		}
+		
 		// Fade in video while fading out image
 		heroVideo.style.transition = 'opacity 0.8s ease-in-out';
 		heroImage.style.transition = 'opacity 0.8s ease-in-out';
@@ -7224,6 +7282,12 @@ function initNetflixPreview() {
 		
 		console.log('[NETFLIX-PREVIEW] Stopping auto-play preview');
 		netflixVideoActive = false;
+		
+		// Remove Netflix mobile layout class
+		const heroSection = document.querySelector('.hero');
+		if (heroSection) {
+			heroSection.classList.remove('netflix-video-playing');
+		}
 		
 		// Fade out video and restore image
 		heroVideo.style.opacity = '0';
