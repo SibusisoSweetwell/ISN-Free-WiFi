@@ -310,7 +310,7 @@
 		.modal-overlay.active .access-modal h2 {
 			display: block !important;
 		}
-		/* VIDEO STABILIZATION - Enhanced YouTube/Netflix Style with Dynamic Background */
+		/* VIDEO SHELL - NON-INTERACTIVE IN SMALL SCREEN MODE */
 		.video-shell{
 			position:relative;
 			width:100%;
@@ -328,6 +328,9 @@
 			transform:translateZ(0);
 			-webkit-transform:translateZ(0);
 			border:none;
+			/* DISABLE SMALL SCREEN INTERACTION */
+			pointer-events: none !important;
+			cursor: default !important;
 		}
 
 		/* Dynamic Background Canvas - Netflix/YouTube Style */
@@ -925,22 +928,14 @@
 		}
 		.video-shell.loading-thumb #adThumb{display:block;}
 
-		/* STABLE OVERLAY CONTROLS - Small buttons at top of video */
+		/* STABLE OVERLAY CONTROLS - COMPLETELY DISABLED FOR SMALL SCREEN */
 		.video-overlay-btn{
-			position:absolute;
-			top:8px;
-			left:8px;
-			right:8px;
-			display:flex;
-			gap:4px;
-			justify-content:flex-start;
-			align-items:flex-start;
-			flex-wrap:nowrap;
-			/* STABLE OVERLAY - No conflicts */
-			z-index:15;
-			isolation:isolate;
-			contain:layout;
-			pointer-events:auto;
+			/* COMPLETELY HIDE ALL SMALL SCREEN VIDEO CONTROLS */
+			display: none !important;
+			visibility: hidden !important;
+			opacity: 0 !important;
+			pointer-events: none !important;
+			/* Small screen video controls no longer accessible - only fullscreen available */
 		}
 	/* COMPACT VIDEO CONTROL BUTTONS - Small and at top */
 	.video-overlay-btn button{
@@ -1133,12 +1128,21 @@
 			}
 		}
 		
-		/* Keep buttons visible inside fullscreen - small and at top */
+		/* Keep buttons visible inside fullscreen - RE-ENABLE CONTROLS IN FULLSCREEN ONLY */
 		.video-shell:fullscreen .video-overlay-btn,
 		.video-shell:-webkit-full-screen .video-overlay-btn{
+			/* RE-ENABLE ALL CONTROLS IN FULLSCREEN MODE */
+			display: flex !important;
+			visibility: visible !important;
+			opacity: 1 !important;
+			pointer-events: auto !important;
+			/* Fullscreen positioning */
 			top:6px;
 			left:6px;
 			right:6px;
+			z-index: 999999 !important;
+			background: rgba(0,0,0,.8) !important;
+			border-radius: 8px !important;
 		}
 		.video-overlay-btn button.enabled{cursor:pointer;background:var(--brand);border:1px solid rgba(255,255,255,.3);} 
 		.video-overlay-btn button.enabled:hover{background:var(--brand-dark);box-shadow:0 4px 12px rgba(255,65,108,.4), 0 2px 6px rgba(0,0,0,.15);} 
@@ -1762,6 +1766,160 @@
 			/* Desktop-specific video behavior */
 			#heroVideoPreview {
 				object-position: center center !important; /* Center video to cut both sides equally */
+			}
+		}
+	</style>
+	
+	<!-- NETFLIX-STYLE FULLSCREEN ANIMATIONS -->
+	<style>
+		/* Netflix-Style Fullscreen Entry Animation */
+		.video-shell {
+			transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), 
+			           opacity 0.4s ease-out,
+			           box-shadow 0.4s ease-out !important;
+		}
+		
+		/* Netflix-Style Animation States */
+		.netflix-fullscreen-entering {
+			animation: netflixFullscreenEnter 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+			z-index: 999998 !important;
+		}
+		
+		.netflix-fullscreen-exiting {
+			animation: netflixFullscreenExit 0.5s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards !important;
+		}
+		
+		/* Netflix-Style Fullscreen Entry Animation Keyframes */
+		@keyframes netflixFullscreenEnter {
+			0% {
+				transform: scale(1) translateZ(0);
+				border-radius: 16px;
+				box-shadow: 0 12px 32px -8px rgba(0,0,0,.4), 0 4px 16px -4px rgba(0,0,0,.2);
+			}
+			25% {
+				transform: scale(1.05) translateZ(0);
+				border-radius: 12px;
+				box-shadow: 0 20px 48px -8px rgba(0,0,0,.6), 0 8px 24px -4px rgba(0,0,0,.3);
+			}
+			50% {
+				transform: scale(1.1) translateZ(0);
+				border-radius: 8px;
+				box-shadow: 0 32px 64px -8px rgba(0,0,0,.8), 0 12px 32px -4px rgba(0,0,0,.4);
+			}
+			75% {
+				transform: scale(1.02) translateZ(0);
+				border-radius: 4px;
+				box-shadow: 0 40px 80px -8px rgba(0,0,0,.9), 0 16px 40px -4px rgba(0,0,0,.5);
+			}
+			100% {
+				transform: scale(1) translateZ(0);
+				border-radius: 0px;
+				box-shadow: none;
+			}
+		}
+		
+		/* Netflix-Style Fullscreen Exit Animation Keyframes */
+		@keyframes netflixFullscreenExit {
+			0% {
+				transform: scale(1) translateZ(0);
+				border-radius: 0px;
+				box-shadow: none;
+			}
+			25% {
+				transform: scale(0.98) translateZ(0);
+				border-radius: 4px;
+				box-shadow: 0 16px 40px -8px rgba(0,0,0,.5), 0 8px 24px -4px rgba(0,0,0,.3);
+			}
+			50% {
+				transform: scale(0.95) translateZ(0);
+				border-radius: 8px;
+				box-shadow: 0 24px 48px -8px rgba(0,0,0,.6), 0 12px 28px -4px rgba(0,0,0,.4);
+			}
+			75% {
+				transform: scale(0.92) translateZ(0);
+				border-radius: 12px;
+				box-shadow: 0 16px 32px -8px rgba(0,0,0,.4), 0 6px 18px -4px rgba(0,0,0,.25);
+			}
+			100% {
+				transform: scale(1) translateZ(0);
+				border-radius: 16px;
+				box-shadow: 0 12px 32px -8px rgba(0,0,0,.4), 0 4px 16px -4px rgba(0,0,0,.2);
+			}
+		}
+		
+		/* Netflix-Style Background Fade Animation */
+		.netflix-fullscreen-backdrop {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0, 0, 0, 0);
+			z-index: 999997;
+			pointer-events: none;
+			animation: netflixBackdropFadeIn 0.6s ease-out forwards;
+		}
+		
+		.netflix-fullscreen-backdrop.exiting {
+			animation: netflixBackdropFadeOut 0.5s ease-out forwards;
+		}
+		
+		@keyframes netflixBackdropFadeIn {
+			0% {
+				background: rgba(0, 0, 0, 0);
+				backdrop-filter: blur(0px);
+			}
+			100% {
+				background: rgba(0, 0, 0, 0.8);
+				backdrop-filter: blur(10px);
+			}
+		}
+		
+		@keyframes netflixBackdropFadeOut {
+			0% {
+				background: rgba(0, 0, 0, 0.8);
+				backdrop-filter: blur(10px);
+			}
+			100% {
+				background: rgba(0, 0, 0, 0);
+				backdrop-filter: blur(0px);
+			}
+		}
+		
+		/* Smooth scale animation for video element during fullscreen */
+		.video-shell video {
+			transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+		}
+		
+		/* Netflix-style fullscreen exit animation class */
+		.netflix-fullscreen-exiting {
+			animation: netflixFullscreenExit 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+			z-index: 999998 !important;
+		}
+		
+		/* Enhanced mobile animations */
+		@media (max-width: 700px) {
+			@keyframes netflixFullscreenEnter {
+				0% {
+					transform: scale(1) translateZ(0);
+					border-radius: 16px;
+				}
+				30% {
+					transform: scale(1.08) translateZ(0);
+					border-radius: 8px;
+				}
+				60% {
+					transform: scale(1.15) translateZ(0);
+					border-radius: 4px;
+				}
+				80% {
+					transform: scale(1.05) translateZ(0);
+					border-radius: 2px;
+				}
+				100% {
+					transform: scale(1) translateZ(0);
+					border-radius: 0px;
+				}
 			}
 		}
 	</style>
@@ -3559,11 +3717,13 @@ function blockMediaControls() {
 		return false;
 	});
 	
-	// Block fullscreen exit attempts during video
+	// Block fullscreen exit attempts during video (but allow during sequence completion)
 	document.addEventListener('fullscreenchange', function() {
-		if (adSequenceActive && !document.fullscreenElement) {
+		if (adSequenceActive && !document.fullscreenElement && !window.sequenceCompleting) {
 			console.log('[MEDIA-BLOCK] Fullscreen exit during video - attempting re-enter');
 			// Optionally re-enter fullscreen
+		} else if (window.sequenceCompleting) {
+			console.log('[SEQUENCE-COMPLETION] Fullscreen exit allowed during sequence completion');
 		}
 	});
 	
@@ -5804,31 +5964,100 @@ if(playPauseBtn){
 	}));
 }
 
+// Netflix-Style Fullscreen Animation Functions
+function createNetflixBackdrop() {
+	const backdrop = document.createElement('div');
+	backdrop.className = 'netflix-fullscreen-backdrop';
+	document.body.appendChild(backdrop);
+	return backdrop;
+}
+
+function removeNetflixBackdrop() {
+	const backdrop = document.querySelector('.netflix-fullscreen-backdrop');
+	if (backdrop) {
+		backdrop.classList.add('exiting');
+		setTimeout(() => {
+			if (backdrop.parentNode) {
+				backdrop.parentNode.removeChild(backdrop);
+			}
+		}, 500);
+	}
+}
+
+function triggerNetflixFullscreenAnimation(entering = true) {
+	const videoShell = document.querySelector('.video-shell');
+	if (!videoShell) return;
+	
+	// Remove any existing animation classes
+	videoShell.classList.remove('netflix-fullscreen-entering', 'netflix-fullscreen-exiting');
+	
+	if (entering) {
+		console.log('[NETFLIX-ANIMATION] Starting Netflix-style fullscreen entry animation');
+		// Create backdrop
+		createNetflixBackdrop();
+		// Add entering animation
+		videoShell.classList.add('netflix-fullscreen-entering');
+		// Clean up animation class after animation completes
+		setTimeout(() => {
+			videoShell.classList.remove('netflix-fullscreen-entering');
+		}, 600);
+	} else {
+		console.log('[NETFLIX-ANIMATION] Starting Netflix-style fullscreen exit animation');
+		// Add exiting animation
+		videoShell.classList.add('netflix-fullscreen-exiting');
+		// Remove backdrop
+		removeNetflixBackdrop();
+		// Clean up animation class after animation completes
+		setTimeout(() => {
+			videoShell.classList.remove('netflix-fullscreen-exiting');
+		}, 500);
+	}
+}
+
 // Fullscreen stability: when entering fullscreen, reduce CSS transitions/animations to avoid visual jitter
 function applyStableForFullscreen(enable){
 	try{
-		if(enable) document.documentElement.classList.add('stable');
-		else document.documentElement.classList.remove('stable');
+		if(enable) {
+			document.documentElement.classList.add('stable');
+			// Trigger Netflix-style entry animation
+			triggerNetflixFullscreenAnimation(true);
+		} else {
+			document.documentElement.classList.remove('stable');
+			// Trigger Netflix-style exit animation
+			triggerNetflixFullscreenAnimation(false);
+		}
 	}catch(e){}
 }
 document.addEventListener('fullscreenchange', ()=>{ applyStableForFullscreen(!!document.fullscreenElement); });
 // Attach to fsBtn if present (prevent focus jumps)
 try{
 	if(fsBtn){
-		// Debounced fullscreen toggle
+		// Debounced fullscreen toggle with Netflix-style animations
 		fsBtn.addEventListener('click', debounceClick(()=>{
 			try{
 				if(!document.fullscreenElement){
 					const el = adPlayer || document.documentElement;
-					el.requestFullscreen && el.requestFullscreen().catch(()=>{});
-					applyStableForFullscreen(true);
-					fsBtn.textContent='Exit FS'; fsBtn.setAttribute('aria-label','Exit fullscreen');
+					el.requestFullscreen && el.requestFullscreen().then(() => {
+						console.log('[NETFLIX-FULLSCREEN] Manual fullscreen entered with animation');
+						applyStableForFullscreen(true); // Triggers Netflix animation
+						fsBtn.textContent='Exit FS'; 
+						fsBtn.setAttribute('aria-label','Exit fullscreen');
+					}).catch((err) => {
+						console.warn('[NETFLIX-FULLSCREEN] Manual fullscreen failed:', err);
+					});
 				} else {
-					document.exitFullscreen && document.exitFullscreen().catch(()=>{});
-					applyStableForFullscreen(false);
-					fsBtn.textContent='Fullscreen'; fsBtn.setAttribute('aria-label','Fullscreen video');
+					document.exitFullscreen && document.exitFullscreen().then(() => {
+						console.log('[NETFLIX-FULLSCREEN] Fullscreen exited with animation');
+						applyStableForFullscreen(false); // Triggers Netflix exit animation
+						fsBtn.textContent='Fullscreen'; 
+						fsBtn.setAttribute('aria-label','Fullscreen video');
+					}).catch((err) => {
+						console.warn('[NETFLIX-FULLSCREEN] Exit fullscreen failed:', err);
+					});
 				}
-			}catch{}
+			}catch(e){
+				console.warn('[NETFLIX-FULLSCREEN] Fullscreen toggle error:', e);
+			}
 		},200));
 		fsBtn.addEventListener('mousedown', (e)=>{ e.preventDefault(); });
 	}
@@ -5869,7 +6098,7 @@ adVideo.addEventListener('playing',()=>{
 			if (el.requestFullscreen) {
 				el.requestFullscreen().then(() => {
 					console.log('[MOBILE-AUTO-FULLSCREEN] Successfully entered fullscreen mode');
-					applyStableForFullscreen(true);
+					applyStableForFullscreen(true); // This will trigger Netflix animation
 					// Update fullscreen button text
 					if (fsBtn) {
 						fsBtn.textContent = 'Exit FS';
@@ -6219,6 +6448,9 @@ function closeAccessModal(){
 	accessModal.classList.remove('active');
 	accessModal.setAttribute('aria-hidden','true');
 	
+	// Clear completion flag
+	window.sequenceCompleting = false;
+	
 	// CRITICAL FIX: Remove modal-open class to restore page functionality
 	document.body.classList.remove('modal-open');
 	
@@ -6459,6 +6691,9 @@ function grantBundle(){
 	// End ad sequence and clean up wake lock systems
 	adSequenceActive=false;
 	
+	// Flag to indicate we're completing the sequence (prevents interference)
+	window.sequenceCompleting = true;
+	
 	// ═══ DEACTIVATE COMPREHENSIVE MEDIA CONTROL BLOCKING ═══
 	const videoShell = document.querySelector('.video-shell');
 	if (videoShell) {
@@ -6602,7 +6837,40 @@ function grantBundle(){
 		}
 		
 		refreshProxyStatusSoon();
-		setTimeout(()=>{ closeAccessModal(); }, 1500); // Give user time to see success message
+		
+		// NETFLIX-STYLE FULLSCREEN CLOSING ANIMATION
+		if (document.fullscreenElement) {
+			console.log('[NETFLIX-ANIMATION] Starting fullscreen exit animation after video sequence completion');
+			
+			// Trigger Netflix exit animation
+			const fullscreenElement = document.fullscreenElement;
+			fullscreenElement.classList.add('netflix-fullscreen-exiting');
+			
+			// Create backdrop for smooth transition
+			const backdrop = document.createElement('div');
+			backdrop.className = 'netflix-fullscreen-backdrop exiting';
+			document.body.appendChild(backdrop);
+			
+			// Start exit animation
+			setTimeout(() => {
+				// Exit fullscreen with animation
+				document.exitFullscreen().then(() => {
+					console.log('[NETFLIX-ANIMATION] Fullscreen exited with animation');
+				}).catch(err => {
+					console.warn('[NETFLIX-ANIMATION] Error exiting fullscreen:', err);
+				});
+			}, 200);
+			
+			// Clean up animation classes and close modal after animation
+			setTimeout(() => {
+				fullscreenElement.classList.remove('netflix-fullscreen-exiting');
+				backdrop.remove();
+				closeAccessModal();
+			}, 1500); // Allow time for success message and smooth animation
+		} else {
+			// Not in fullscreen, close normally
+			setTimeout(() => { closeAccessModal(); }, 1500); // Give user time to see success message
+		}
 	}, grantDelay);
 	
 	disableSpatialAudioSimulation();
