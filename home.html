@@ -7067,15 +7067,32 @@ let netflixVideoActive = false;
 let netflixInitialized = false;
 
 function initNetflixPreview() {
-	if (netflixInitialized) return;
+	console.log('[NETFLIX-PREVIEW] Starting initialization...');
+	
+	if (netflixInitialized) {
+		console.log('[NETFLIX-PREVIEW] Already initialized, skipping');
+		return;
+	}
 	netflixInitialized = true;
 	
+	console.log('[NETFLIX-PREVIEW] Looking for required elements...');
 	const heroVideo = document.getElementById('heroVideoPreview');
 	const heroImage = document.getElementById('heroStaticImage');
 	const heroVideoSource = document.getElementById('heroVideoSource');
 	
+	console.log('[NETFLIX-PREVIEW] Elements found:', {
+		heroVideo: !!heroVideo,
+		heroImage: !!heroImage, 
+		heroVideoSource: !!heroVideoSource
+	});
+	
 	if (!heroVideo || !heroImage || !heroVideoSource) {
-		console.log('[NETFLIX-PREVIEW] Required elements not found');
+		console.error('[NETFLIX-PREVIEW] Required elements not found - Netflix preview disabled');
+		console.log('[NETFLIX-PREVIEW] Debug info:', {
+			heroVideo: heroVideo ? 'found' : 'missing',
+			heroImage: heroImage ? 'found' : 'missing',
+			heroVideoSource: heroVideoSource ? 'found' : 'missing'
+		});
 		return;
 	}
 	
@@ -7086,22 +7103,62 @@ function initNetflixPreview() {
 	console.log(`[NETFLIX-PREVIEW] Device detected: ${isMobile ? 'Mobile' : 'Desktop'} - Initializing Netflix-style preview`);
 	
 	function getRandomVideo() {
-		// Use higher quality videos for desktop, mobile-optimized for phones
-		const originalVideoArray = isMobile ? 
-			(window.mobileMp4Ads || []) : 
-			(window.mp4Ads || window.mobileMp4Ads || []);
-			
+		console.log('[NETFLIX-PREVIEW] Getting random video...');
+		
+		// Try to access the video arrays - they might not be in window scope
+		let originalVideoArray = [];
+		
+		if (isMobile) {
+			// Try multiple ways to access mobile videos
+			if (typeof mobileMp4Ads !== 'undefined') {
+				originalVideoArray = mobileMp4Ads;
+				console.log('[NETFLIX-PREVIEW] Using direct mobileMp4Ads:', mobileMp4Ads.length);
+			} else if (window.mobileMp4Ads) {
+				originalVideoArray = window.mobileMp4Ads;
+				console.log('[NETFLIX-PREVIEW] Using window.mobileMp4Ads:', window.mobileMp4Ads.length);
+			}
+		} else {
+			// Try multiple ways to access desktop videos
+			if (typeof mp4Ads !== 'undefined') {
+				originalVideoArray = mp4Ads;
+				console.log('[NETFLIX-PREVIEW] Using direct mp4Ads:', mp4Ads.length);
+			} else if (window.mp4Ads) {
+				originalVideoArray = window.mp4Ads;
+				console.log('[NETFLIX-PREVIEW] Using window.mp4Ads:', window.mp4Ads.length);
+			} else if (typeof mobileMp4Ads !== 'undefined') {
+				originalVideoArray = mobileMp4Ads;
+				console.log('[NETFLIX-PREVIEW] Fallback to mobileMp4Ads:', mobileMp4Ads.length);
+			} else if (window.mobileMp4Ads) {
+				originalVideoArray = window.mobileMp4Ads;
+				console.log('[NETFLIX-PREVIEW] Fallback to window.mobileMp4Ads:', window.mobileMp4Ads.length);
+			}
+		}
+		
+		console.log('[NETFLIX-PREVIEW] Original video array length:', originalVideoArray.length);
+		console.log('[NETFLIX-PREVIEW] Video debugging info:', {
+			isMobile: isMobile,
+			'typeof mp4Ads': typeof mp4Ads,
+			'typeof mobileMp4Ads': typeof mobileMp4Ads,
+			'window.mp4Ads': !!window.mp4Ads,
+			'window.mobileMp4Ads': !!window.mobileMp4Ads,
+			'selected array length': originalVideoArray.length
+		});
+		
 		// 🎬 NETFLIX PREVIEW: Filter to use ONLY GOOGLE CDN VIDEOS
 		const googleVideos = originalVideoArray.filter(url => 
-			url.includes('commondatastorage.googleapis.com') || 
-			url.includes('gtv-videos-bucket')
+			url && (url.includes('commondatastorage.googleapis.com') || 
+			url.includes('gtv-videos-bucket'))
 		);
+		
+		console.log('[NETFLIX-PREVIEW] Google videos filtered:', googleVideos.length, 'from', originalVideoArray.length);
+		console.log('[NETFLIX-PREVIEW] Google videos list:', googleVideos);
 		
 		// Use Google videos if available, otherwise fallback to all videos
 		const videoArray = googleVideos.length > 0 ? googleVideos : originalVideoArray;
 			
 		if (videoArray.length === 0) {
-			console.warn('[NETFLIX-PREVIEW] No videos available');
+			console.error('[NETFLIX-PREVIEW] No videos available - Netflix preview cannot start');
+			console.error('[NETFLIX-PREVIEW] This might mean video arrays are not loaded yet or are empty');
 			return null;
 		}
 		
@@ -7180,6 +7237,8 @@ function initNetflixPreview() {
 	}
 	
 	function scheduleNetflixPreview() {
+		console.log('[NETFLIX-PREVIEW] Scheduling Netflix preview...');
+		
 		// Clear any existing timer
 		if (netflixPreviewTimer) {
 			clearTimeout(netflixPreviewTimer);
@@ -7195,6 +7254,7 @@ function initNetflixPreview() {
 		// Schedule preview to start after 4 seconds (Netflix-like timing)
 		console.log('[NETFLIX-PREVIEW] Scheduling preview in 4 seconds');
 		netflixPreviewTimer = setTimeout(() => {
+			console.log('[NETFLIX-PREVIEW] Timer fired - starting preview');
 			startNetflixPreview();
 		}, 4000);
 	}
@@ -7242,6 +7302,30 @@ function initNetflixPreview() {
 	});
 	
 	console.log(`[NETFLIX-PREVIEW] Netflix-style preview system initialized for ${isMobile ? 'mobile' : 'desktop'}`);
+	
+	// Add global test function for debugging
+	window.testNetflixPreview = function() {
+		console.log('[NETFLIX-TEST] Manual test triggered');
+		stopNetflixPreview();
+		setTimeout(() => {
+			startNetflixPreview();
+		}, 1000);
+	};
+	
+	window.debugNetflixPreview = function() {
+		console.log('[NETFLIX-DEBUG] Debug info:', {
+			netflixInitialized: netflixInitialized,
+			netflixVideoActive: netflixVideoActive,
+			netflixPreviewTimer: !!netflixPreviewTimer,
+			heroVideo: !!document.getElementById('heroVideoPreview'),
+			heroImage: !!document.getElementById('heroStaticImage'),
+			heroVideoSource: !!document.getElementById('heroVideoSource'),
+			mp4Ads: typeof mp4Ads !== 'undefined' ? mp4Ads.length : 'undefined',
+			mobileMp4Ads: typeof mobileMp4Ads !== 'undefined' ? mobileMp4Ads.length : 'undefined',
+			isMobile: isMobile,
+			adSequenceActive: typeof adSequenceActive !== 'undefined' ? adSequenceActive : 'undefined'
+		});
+	};
 }
 
 // Initialize Netflix preview when DOM is ready
