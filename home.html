@@ -7205,12 +7205,12 @@ function initNetflixPreview() {
 		console.log('[NETFLIX-PREVIEW] Google videos filtered:', googleVideos.length, 'from', originalVideoArray.length);
 		console.log('[NETFLIX-PREVIEW] Google videos list:', googleVideos);
 		
-		// Use Google videos if available, otherwise fallback to all videos
-		const videoArray = googleVideos.length > 0 ? googleVideos : originalVideoArray;
+		// 🎬 NETFLIX PREVIEW: ONLY USE GOOGLE CDN VIDEOS (both mobile and desktop)
+		const videoArray = googleVideos.length > 0 ? googleVideos : [];
 			
 		if (videoArray.length === 0) {
-			console.error('[NETFLIX-PREVIEW] No videos available - Netflix preview cannot start');
-			console.error('[NETFLIX-PREVIEW] This might mean video arrays are not loaded yet or are empty');
+			console.error('[NETFLIX-PREVIEW] No Google videos available - Netflix preview cannot start');
+			console.error('[NETFLIX-PREVIEW] Only Google CDN videos are allowed for Netflix preview');
 			return null;
 		}
 		
@@ -7366,6 +7366,41 @@ function initNetflixPreview() {
 	});
 	
 	console.log(`[NETFLIX-PREVIEW] Netflix-style preview system initialized for ${isMobile ? 'mobile' : 'desktop'}`);
+	
+	// 📱 MOBILE UI RESET: When buttons are pressed, reset Netflix mobile layout
+	function resetNetflixMobileUI() {
+		if (isMobile && netflixVideoActive) {
+			console.log('[NETFLIX-MOBILE] Button pressed - resetting mobile UI to normal state');
+			const heroSection = document.querySelector('.hero');
+			if (heroSection) {
+				heroSection.classList.remove('netflix-video-playing');
+			}
+			// Schedule to re-apply when video starts again (if still playing)
+			setTimeout(() => {
+				if (netflixVideoActive && isMobile) {
+					const heroSection = document.querySelector('.hero');
+					if (heroSection) {
+						heroSection.classList.add('netflix-video-playing');
+						console.log('[NETFLIX-MOBILE] Re-applied mobile UI after button interaction');
+					}
+				}
+			}, 100);
+		}
+	}
+	
+	// Add event listeners to hero buttons for mobile UI reset
+	const connectButton = document.querySelector('.hero .btn[onclick="openAccessModal()"]');
+	const accountButton = document.querySelector('.hero .btn[onclick="openAccountModal()"]');
+	
+	if (connectButton) {
+		connectButton.addEventListener('click', resetNetflixMobileUI);
+		console.log('[NETFLIX-MOBILE] Added reset listener to Connect button');
+	}
+	
+	if (accountButton) {
+		accountButton.addEventListener('click', resetNetflixMobileUI);
+		console.log('[NETFLIX-MOBILE] Added reset listener to Account button');
+	}
 	
 	// Add global test function for debugging
 	window.testNetflixPreview = function() {
