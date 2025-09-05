@@ -3253,6 +3253,17 @@ function chooseBundle(size){
 	// INSTANT VIDEO START - No delays, no selection screens
 	adStatus.textContent = 'Starting instant video playback...';
 	
+	// Check if mobile device for auto-fullscreen
+	const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+		|| window.matchMedia('(max-width: 700px)').matches;
+	
+	if (isMobile) {
+		console.log('[MOBILE-AUTO-FULLSCREEN] Mobile device detected - will auto-fullscreen after video starts');
+		
+		// Set flag for auto-fullscreen after first video begins playing
+		window.mobileAutoFullscreen = true;
+	}
+	
 	// Don't call openAccessModal(true) - modal is already open
 	// Just transition to ad mode directly
 	startAdSequence(size);
@@ -5848,6 +5859,31 @@ adVideo.addEventListener('playing',()=>{
 		videoWatchTime = 0;
 		videoCompletionValidated = false;
 		console.log('[VIDEO-TRACKING] Video playback started');
+	}
+	
+	// AUTO-FULLSCREEN FOR MOBILE: Trigger fullscreen immediately when video starts
+	if (window.mobileAutoFullscreen && !document.fullscreenElement) {
+		console.log('[MOBILE-AUTO-FULLSCREEN] Auto-triggering fullscreen for mobile device');
+		try {
+			const el = adPlayer || document.documentElement;
+			if (el.requestFullscreen) {
+				el.requestFullscreen().then(() => {
+					console.log('[MOBILE-AUTO-FULLSCREEN] Successfully entered fullscreen mode');
+					applyStableForFullscreen(true);
+					// Update fullscreen button text
+					if (fsBtn) {
+						fsBtn.textContent = 'Exit FS';
+						fsBtn.setAttribute('aria-label', 'Exit fullscreen');
+					}
+				}).catch((err) => {
+					console.warn('[MOBILE-AUTO-FULLSCREEN] Failed to enter fullscreen:', err);
+				});
+			}
+		} catch (e) {
+			console.warn('[MOBILE-AUTO-FULLSCREEN] Error requesting fullscreen:', e);
+		}
+		// Clear the flag so it only happens once
+		window.mobileAutoFullscreen = false;
 	}
 });
 
