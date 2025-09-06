@@ -1653,8 +1653,10 @@
 				max-width: 60% !important;
 				padding: 0 !important;
 				background: none !important;
-				z-index: 10 !important;
+				z-index: 12 !important; /* Above video, below buttons */
 				transition: all 0.8s ease-in-out !important;
+				/* Ensure content and buttons are interactive */
+				pointer-events: auto !important;
 			}
 			
 			.netflix-video-playing .hero-content .tag-title {
@@ -1672,6 +1674,9 @@
 				flex-direction: row !important;
 				gap: 8px !important;
 				margin-top: 8px !important;
+				/* Ensure buttons are interactive */
+				pointer-events: auto !important;
+				touch-action: manipulation !important;
 			}
 			
 			.netflix-video-playing .cta-group .btn {
@@ -1686,11 +1691,33 @@
 				backdrop-filter: blur(4px) !important;
 				border: 1px solid rgba(255,255,255,0.2) !important;
 				transition: all 0.3s ease !important;
+				/* Enhanced mobile touch functionality */
+				cursor: pointer !important;
+				user-select: none !important;
+				-webkit-tap-highlight-color: rgba(255,255,255,0.1) !important;
+				z-index: 15 !important; /* Above video */
+				position: relative !important;
 			}
 			
 			.netflix-video-playing .cta-group .btn:hover {
 				background: rgba(0,0,0,0.8) !important;
 				border-color: rgba(255,255,255,0.4) !important;
+			}
+			
+			/* Enhanced mobile touch states */
+			.netflix-video-playing .cta-group .btn:active,
+			.netflix-video-playing .cta-group .btn.netflix-btn-pressed,
+			.netflix-video-playing .cta-group .btn.pressed {
+				transform: scale(0.95) !important;
+				background: rgba(255,255,255,0.12) !important;
+				border-color: rgba(255,255,255,0.5) !important;
+				transition: all 0.1s ease !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn:focus {
+				outline: 2px solid rgba(255,255,255,0.6) !important;
+				outline-offset: 2px !important;
+				background: rgba(0,0,0,0.8) !important;
 			}
 		}
 		
@@ -1714,8 +1741,10 @@
 				max-width: 50% !important;
 				padding: 0 !important;
 				background: none !important;
-				z-index: 10 !important;
+				z-index: 12 !important; /* Above video, below buttons */
 				transition: all 0.8s ease-in-out !important;
+				/* Ensure content and buttons are interactive */
+				pointer-events: auto !important;
 			}
 			
 			.netflix-video-playing .hero-content .tag-title {
@@ -1739,6 +1768,9 @@
 				flex-direction: row !important;
 				gap: 12px !important;
 				margin-top: 12px !important;
+				/* Ensure buttons are interactive */
+				pointer-events: auto !important;
+				touch-action: manipulation !important;
 			}
 			
 			.netflix-video-playing .cta-group .btn {
@@ -1754,6 +1786,20 @@
 				border: 1px solid rgba(255,255,255,0.2) !important;
 				transition: all 0.3s ease !important;
 				font-weight: 600 !important;
+				/* Enhanced tablet touch functionality */
+				cursor: pointer !important;
+				user-select: none !important;
+				-webkit-tap-highlight-color: rgba(255,255,255,0.1) !important;
+				z-index: 15 !important; /* Above video */
+				position: relative !important;
+				/* Enhanced touch targets and accessibility */
+				touch-action: manipulation !important;
+				-webkit-touch-callout: none !important;
+				-webkit-user-select: none !important;
+				-moz-user-select: none !important;
+				-ms-user-select: none !important;
+				/* Better button responsiveness */
+				will-change: transform, background-color, box-shadow !important;
 			}
 			
 			.netflix-video-playing .cta-group .btn:hover {
@@ -1761,6 +1807,36 @@
 				border-color: rgba(255,255,255,0.4) !important;
 				transform: translateY(-2px) !important;
 				box-shadow: 0 4px 16px rgba(0,0,0,0.7) !important;
+			}
+			
+			/* Tablet active/pressed state for better touch feedback */
+			.netflix-video-playing .cta-group .btn:active,
+			.netflix-video-playing .cta-group .btn.pressed {
+				background: rgba(255,255,255,0.15) !important;
+				border-color: rgba(255,255,255,0.6) !important;
+				transform: translateY(0px) scale(0.98) !important;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.8) !important;
+				transition: all 0.1s ease !important;
+			}
+			
+			/* Tablet focus state for accessibility */
+			.netflix-video-playing .cta-group .btn:focus {
+				outline: 2px solid rgba(255,255,255,0.8) !important;
+				outline-offset: 2px !important;
+				background: rgba(0,0,0,0.8) !important;
+			}
+			
+			/* Enhanced tablet touch states */
+			.netflix-video-playing .cta-group .btn:active,
+			.netflix-video-playing .cta-group .btn.netflix-btn-pressed {
+				transform: scale(0.95) translateY(-1px) !important;
+				background: rgba(0,0,0,0.9) !important;
+				transition: all 0.1s ease !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn:focus {
+				outline: 2px solid rgba(255,255,255,0.6) !important;
+				outline-offset: 2px !important;
 			}
 		}
 		
@@ -7610,8 +7686,104 @@ function initNetflixPreview() {
 	};
 }
 
+// Enhanced Netflix button touch functionality for mobile and tablet
+function enhanceNetflixButtonTouch() {
+	console.log('[NETFLIX-BUTTONS] Setting up enhanced touch handling for Netflix buttons');
+	
+	// Device detection for optimized touch handling
+	const isTablet = (/iPad/i.test(navigator.userAgent) || 
+		(/Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent))) ||
+		window.matchMedia('(min-width: 701px) and (max-width: 1024px)').matches;
+	const isMobile = /Mobi|Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+		|| window.matchMedia('(max-width: 700px)').matches;
+	
+	console.log(`[NETFLIX-BUTTONS] Device type: ${isTablet ? 'Tablet' : isMobile ? 'Mobile' : 'Desktop'}`);
+	
+	// Add enhanced touch handling to all buttons in hero section
+	const heroSection = document.querySelector('.hero');
+	if (!heroSection) return;
+	
+	const buttons = heroSection.querySelectorAll('.btn');
+	buttons.forEach(button => {
+		// Ensure button has proper touch behavior with enhanced tablet support
+		button.style.touchAction = 'manipulation';
+		button.style.userSelect = 'none';
+		button.style.webkitUserSelect = 'none';
+		button.style.pointerEvents = 'auto'; // Ensure buttons work in Netflix mode
+		button.style.position = 'relative';
+		button.style.zIndex = '20'; // Above video and other elements
+		
+		// Add touch feedback for better mobile/tablet experience
+		button.addEventListener('touchstart', function(e) {
+			this.classList.add('netflix-btn-pressed');
+			
+			// Enhanced haptic feedback with device-specific patterns
+			if ('vibrate' in navigator) {
+				if (isTablet) {
+					navigator.vibrate([15, 5, 10]); // Pattern for tablets
+				} else if (isMobile) {
+					navigator.vibrate(10); // Subtle for phones
+				}
+			}
+			
+			console.log(`[NETFLIX-BUTTONS] Touch start on ${isTablet ? 'tablet' : 'mobile'}:`, this.textContent);
+		}, { passive: true });
+		
+		button.addEventListener('touchend', function(e) {
+			this.classList.remove('netflix-btn-pressed');
+			console.log('[NETFLIX-BUTTONS] Touch end:', this.textContent);
+		}, { passive: true });
+		
+		button.addEventListener('touchcancel', function(e) {
+			this.classList.remove('netflix-btn-pressed');
+			console.log('[NETFLIX-BUTTONS] Touch cancelled:', this.textContent);
+		}, { passive: true });
+		
+		// Prevent double-tap zoom on buttons (especially important for tablets)
+		let lastTouchEnd = 0;
+		button.addEventListener('touchend', function(e) {
+			const now = (new Date()).getTime();
+			if (now - lastTouchEnd <= 300) {
+				e.preventDefault();
+				console.log('[NETFLIX-BUTTONS] Prevented double-tap zoom');
+			}
+			lastTouchEnd = now;
+		}, false);
+		
+		// Enhanced click handling for Netflix mode with device-specific optimizations
+		button.addEventListener('click', function(e) {
+			// Ensure clicks work in Netflix mode by preventing event propagation issues
+			e.stopPropagation();
+			e.stopImmediatePropagation(); // Extra safety for tablets
+			
+			// Add visual feedback even for mouse clicks with device-specific timing
+			this.classList.add('netflix-btn-pressed');
+			setTimeout(() => {
+				this.classList.remove('netflix-btn-pressed');
+			}, isTablet ? 200 : 150); // Longer feedback for tablets
+			
+			console.log(`[NETFLIX-BUTTONS] Button clicked on ${isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop'}:`, this.textContent);
+			
+			// Tablet-specific success verification
+			if (isTablet) {
+				console.log('[NETFLIX-BUTTONS] Tablet button interaction verified and working');
+			}
+		}, true); // Use capture phase to ensure it works over video
+		
+		// Add tablet-specific focus handling for accessibility
+		if (isTablet) {
+			button.addEventListener('focus', function(e) {
+				console.log('[NETFLIX-BUTTONS] Tablet button focused:', this.textContent);
+			});
+		}
+	});
+	
+	console.log('[NETFLIX-BUTTONS] Enhanced touch handling applied to', buttons.length, `buttons for ${isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop'} device`);
+}
+
 // Initialize Netflix preview when DOM is ready
 document.addEventListener('DOMContentLoaded', initNetflixPreview);
+document.addEventListener('DOMContentLoaded', enhanceNetflixButtonTouch);
 </script>
 </body>
 </html>
