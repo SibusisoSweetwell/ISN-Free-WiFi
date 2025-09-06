@@ -219,28 +219,14 @@
 					.access-modal{padding:0px;margin:-14px;max-height:114vh;width:calc(100vw + 28px);max-width:calc(100vw + 28px);}
 					.access-modal h2{font-size:22px;margin-bottom:8px;}
 					.access-modal p.lead{font-size:13px;margin-bottom:16px;}
-					/* FULL-SCREEN EXTERNAL VIDEO BOX - Touch all phone edges */
-					.ad-player{
-						padding:0px;
-						gap:0px;
-						width:calc(100vw);  /* Full viewport width */
-						height:calc(100vh - 100px); /* Nearly full height, leaving small margin */
-						margin:0px; /* Remove all margins */
-						position:fixed; /* Fixed positioning to break out of container */
-						top:20px; /* Small top margin */
-						left:0; /* Touch left edge */
-						right:0; /* Touch right edge */
-						z-index:1000; /* Above other content */
-						background:#ffffff;
-						border-radius:0px; /* No border radius for full edge contact */
-					}
+					.ad-player{padding:0px;gap:0px;width:calc(100% + 28px);margin:-14px;margin-top:-20px;margin-bottom:10px;position:relative;}
 					.video-shell{
 						border-radius:0px;
 						aspect-ratio:16/9;
-						max-height:80vh; /* Bigger within the now full-screen container */
-						min-height:60vh; /* Much larger minimum height */
-						width:90%; /* Take up 90% of the full-screen container */
-						margin:5vh auto; /* Center with larger margins */
+						max-height:70vh;
+						min-height:200px;
+						width:calc(100% + 28px);
+						margin:-14px auto;
 						position:relative;
 					}
 					.video-controls{
@@ -407,10 +393,6 @@
 			backface-visibility:hidden;
 			-webkit-backface-visibility:hidden;
 			z-index: 2; /* Above dynamic background */
-			/* NETFLIX-STYLE ANTI-GLITCH ENHANCEMENTS */
-			image-rendering: auto; /* Let browser optimize for smooth playback */
-			-webkit-font-smoothing: antialiased; /* Smooth rendering */
-			font-smooth: always; /* Additional smoothing */
 		}
 
 		/* Mobile landscape video centering */
@@ -427,42 +409,36 @@
 			}
 		}
 		
-		/* Enhanced mobile video rendering for phones - NETFLIX-STYLE ANTI-GLITCH VERSION */
+		/* Enhanced mobile video rendering for phones - ANTI-GLITCH VERSION */
 		@media (max-width:700px){
 			.video-shell {
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				position: relative;
-				/* BIGGER INTERNAL VIDEO BOX - Much larger within full-screen external container */
-				aspect-ratio: 16/9; /* Wider aspect ratio for bigger video area */
-				width: 95%; /* Take up 95% of the external container */
-				max-width: 95vw; /* Nearly full viewport width */
-				max-height: 70vh; /* Much taller - 70% of viewport height */
-				min-height: 50vh; /* Large minimum height */
+				/* Taller container on mobile for better viewing experience */
+				aspect-ratio: 4/5; /* Taller aspect ratio for mobile - increased height */
+				width: 100%;
+				max-width: 380px; /* Increased from 360px for larger video */
+				max-height: 480px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* NETFLIX-STYLE ANTI-GLITCH: Same stable acceleration as Netflix preview */
-				transform: translateZ(0); /* Same as Netflix - controlled hardware acceleration */
-				-webkit-transform: translateZ(0); /* Same as Netflix */
+				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
+				transform: none; /* Disable transform to prevent glitching */
+				-webkit-transform: none;
 				will-change: auto; /* Let browser decide to prevent over-optimization */
-				/* NETFLIX-STYLE ANTI-GLITCH: Same backface visibility as Netflix */
+				/* MOBILE ANTI-GLITCH: Stable rendering */
 				backface-visibility: hidden;
 				-webkit-backface-visibility: hidden;
-				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
-				-webkit-font-smoothing: antialiased;
-				font-smooth: always;
 			}
 			
 			.video-shell video,
 			.video-shell iframe{
 				object-fit: contain;
 				object-position: center center;
-				/* VIDEO CONTENT - 70% of internal video box */
-				width: 70%; /* Video takes 70% of internal container */
-				height: 70%; /* Video takes 70% of internal container */
-				max-width: 70%;
-				max-height: 70%;
-				margin: auto; /* Center the 70% video within the container */
+				width: 100%;
+				height: 100%;
+				max-width: 100%;
+				max-height: 100%;
 				/* MOBILE ANTI-GLITCH: Simplified styling */
 				border-radius: 8px; 
 				/* MOBILE ANTI-GLITCH: Prevent rendering issues */
@@ -496,44 +472,36 @@
 			}
 		}
 		
-		/* Ultra-mobile video optimizations for small phones - NETFLIX-STYLE ANTI-GLITCH VERSION */
+		/* Ultra-mobile video optimizations for small phones - ANTI-GLITCH VERSION */
 		@media (max-width:480px){
 			.video-shell{
-				/* BIGGER INTERNAL VIDEO BOX for small phones */
+				/* Taller container for small phones */
 				position:relative;
 				overflow:hidden;
 				background:transparent;
-				aspect-ratio: 16/9; /* Wider aspect ratio for better viewing */
-				width: 95%; /* Take up 95% of full-screen external container */
-				max-width: 95vw; /* Nearly full viewport width */
-				max-height: 65vh; /* Large height - 65% of viewport */
-				min-height: 45vh; /* Large minimum height */
+				aspect-ratio: 3/4; /* Taller aspect ratio for better mobile viewing */
+				width: 100%;
+				max-width: 320px; /* Increased from 300px */
+				max-height: 430px; /* Added explicit max-height for taller videos */
 				margin: 0 auto;
-				/* NETFLIX-STYLE ANTI-GLITCH: Same stable acceleration as Netflix preview */
-				transform: translateZ(0); /* Same as Netflix - controlled hardware acceleration */
-				-webkit-transform: translateZ(0); /* Same as Netflix */
+				/* MOBILE ANTI-GLITCH: Stable performance optimizations */
+				transform: none; /* Disable transform to prevent glitching */
+				-webkit-transform: none;
 				backface-visibility: hidden;
 				-webkit-backface-visibility: hidden;
-				/* NETFLIX-STYLE ANTI-GLITCH: Prevent over-optimization like Netflix */
+				/* MOBILE ANTI-GLITCH: Prevent over-optimization */
 				will-change: auto;
-				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
-				-webkit-font-smoothing: antialiased;
-				font-smooth: always;
 			}
 			.video-shell video,
 			.video-shell iframe{
 				object-fit:contain;
 				object-position:center;
-				/* VIDEO CONTENT - 70% of internal video box on small phones */
-				width: 70%; /* Video takes 70% of internal container */
-				height: 70%; /* Video takes 70% of internal container */
-				margin: auto; /* Center the 70% video within the container */
-				/* NETFLIX-STYLE ANTI-GLITCH: Smooth styling like Netflix */
+				width: 100%;
+				height: 100%;
+				/* MOBILE ANTI-GLITCH: Minimal styling for stability */
 				border-radius: 4px; 
-				/* NETFLIX-STYLE ANTI-GLITCH: Same image rendering as Netflix */
-				image-rendering: auto; /* Let browser optimize like Netflix */
-				-webkit-font-smoothing: antialiased;
-				font-smooth: always;
+				/* MOBILE ANTI-GLITCH: Stable image rendering */
+				image-rendering: auto;
 			}
 			
 			/* Ultra-low quality videos on small phones */
@@ -547,49 +515,41 @@
 		/* Enhanced video visibility for Google CDN instant appearance */
 		.video-shell video{
 			opacity:0; /* Start hidden for instant transition */
-			/* NETFLIX-STYLE: Use same smooth transition as Netflix preview */
-			transition:opacity 0.8s ease-in-out; /* Same timing as Netflix preview for consistency */
+			/* REMOVED: transform scale to prevent mobile glitching */
+			transition:opacity 0.2s ease; /* Smoother transition, removed transform to fix mobile glitching */
 			/* ENHANCED VIDEO SETTINGS FOR GOOGLE CDN */
 			pointer-events:auto;
 			user-select:none;
 			-webkit-user-select:none;
 			/* PREVENT DOWNLOAD CONTEXT MENU */
 			-webkit-touch-callout:none;
-			/* NETFLIX-STYLE GPU HINTS FOR SMOOTH PLAYBACK */
-			will-change:opacity; /* Only opacity, same as Netflix preview */
-			/* NETFLIX-STYLE: Same rendering optimizations as Netflix */
-			image-rendering: auto;
-			-webkit-font-smoothing: antialiased;
-			font-smooth: always;
+			/* REDUCED GPU HINTS TO PREVENT MOBILE GLITCHING */
+			will-change:opacity; /* Only opacity, not transform */
 		}
 		
-		/* Mobile video loading optimizations - NETFLIX-STYLE ANTI-GLITCH FIXES */
+		/* Mobile video loading optimizations - ANTI-GLITCH FIXES */
 		@media (max-width:700px){
 			.video-shell video{
-				/* NETFLIX-STYLE ANTI-GLITCH: Ultra-smooth transitions */
-				transition:opacity 0.8s ease-in-out; /* Match Netflix preview timing */
-				/* NETFLIX-STYLE ANTI-GLITCH: Stable hardware acceleration like Netflix */
-				-webkit-transform:translateZ(0); /* Same as Netflix preview */
-				transform:translateZ(0); /* Same as Netflix preview */
-				will-change:opacity; /* Only opacity like Netflix, not transform */
-				/* NETFLIX-STYLE ANTI-GLITCH: Same backface visibility as Netflix */
+				/* MOBILE ANTI-GLITCH: Simplified transitions */
+				transition:opacity 0.3s ease; /* Longer, smoother transition for mobile */
+				/* MOBILE ANTI-GLITCH: Reduced hardware acceleration */
+				-webkit-transform:none; /* Disable transform to prevent glitching */
+				transform:none; /* Disable transform to prevent glitching */
+				will-change:auto; /* Let browser decide, prevents over-acceleration */
+				/* MOBILE ANTI-GLITCH: Stable rendering */
 				backface-visibility:hidden;
 				-webkit-backface-visibility:hidden;
-				/* NETFLIX-STYLE ANTI-GLITCH: Smooth rendering like Netflix */
-				image-rendering: auto; /* Let browser optimize like Netflix */
-				-webkit-font-smoothing: antialiased; /* Smooth like Netflix */
-				font-smooth: always; /* Additional smoothing like Netflix */
-				/* NETFLIX-STYLE ANTI-GLITCH: Prevent subpixel issues */
-				-webkit-transform-style: preserve-3d;
-				transform-style: preserve-3d;
+				/* MOBILE ANTI-GLITCH: Prevent subpixel rendering issues */
+				image-rendering: -webkit-optimize-contrast;
+				image-rendering: optimize-contrast;
+				image-rendering: crisp-edges;
 			}
 		}
 		
-		/* Video ready state for instant appearance - NETFLIX-STYLE SMOOTHNESS */
+		/* Video ready state for instant appearance - MOBILE OPTIMIZED */
 		.video-shell.video-ready video{
 			opacity:1;
-			/* NETFLIX-STYLE: Same smooth appearance as Netflix preview */
-			transition:opacity 0.8s ease-in-out; /* Match Netflix timing */
+			/* REMOVED: transform scale to prevent mobile glitching */
 		}
 		
 		/* Loading state styling for mobile */
@@ -945,19 +905,19 @@
 		}
 		.video-shell.loading-thumb #adThumb{display:block;}
 
-		/* STABLE OVERLAY CONTROLS - Enhanced for full-screen video */
+		/* STABLE OVERLAY CONTROLS - Small buttons at top of video */
 		.video-overlay-btn{
 			position:absolute;
-			top:20px; /* More space from top in full-screen */
-			left:20px; /* More space from left */
-			right:20px; /* More space from right */
+			top:8px;
+			left:8px;
+			right:8px;
 			display:flex;
-			gap:8px; /* Slightly larger gaps for better touch targets */
+			gap:4px;
 			justify-content:flex-start;
 			align-items:flex-start;
 			flex-wrap:nowrap;
-			/* STABLE OVERLAY - Enhanced for full-screen */
-			z-index:1001; /* Above full-screen container */
+			/* STABLE OVERLAY - No conflicts */
+			z-index:15;
 			isolation:isolate;
 			contain:layout;
 			pointer-events:auto;
@@ -1738,6 +1698,69 @@
 			.mobile-progress-bar {
 				height: 14px;
 				margin: 6px 0;
+			}
+		}
+		
+		/* Netflix-style tablet layout changes when video is playing */
+		@media (min-width: 701px) and (max-width: 1024px) {
+			.netflix-video-playing .hero-content {
+				/* Netflix tablet style: move to top-left corner with larger sizing */
+				position: absolute !important;
+				top: 30px !important;
+				left: 30px !important;
+				right: auto !important;
+				bottom: auto !important;
+				width: auto !important;
+				max-width: 50% !important;
+				padding: 0 !important;
+				background: none !important;
+				z-index: 10 !important;
+				transition: all 0.8s ease-in-out !important;
+			}
+			
+			.netflix-video-playing .hero-content .tag-title {
+				font-size: 36px !important; /* Larger than mobile, smaller than desktop */
+				margin-bottom: 12px !important;
+				line-height: 1.2 !important;
+				text-shadow: 0 2px 12px rgba(0,0,0,0.8) !important;
+			}
+			
+			.netflix-video-playing .hero-content .tag-text {
+				display: block !important; /* Show description on tablets */
+				font-size: 16px !important;
+				margin-bottom: 16px !important;
+				opacity: 0.9 !important;
+				text-shadow: 0 2px 8px rgba(0,0,0,0.8) !important;
+				max-width: 400px !important;
+				line-height: 1.4 !important;
+			}
+			
+			.netflix-video-playing .cta-group {
+				flex-direction: row !important;
+				gap: 12px !important;
+				margin-top: 12px !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn {
+				width: auto !important;
+				padding: 12px 24px !important; /* Larger than mobile */
+				font-size: 16px !important;
+				min-width: 120px !important;
+				height: 44px !important;
+				border-radius: 8px !important;
+				box-shadow: 0 3px 12px rgba(0,0,0,0.6) !important;
+				background: rgba(0,0,0,0.7) !important;
+				backdrop-filter: blur(6px) !important;
+				border: 1px solid rgba(255,255,255,0.2) !important;
+				transition: all 0.3s ease !important;
+				font-weight: 600 !important;
+			}
+			
+			.netflix-video-playing .cta-group .btn:hover {
+				background: rgba(0,0,0,0.8) !important;
+				border-color: rgba(255,255,255,0.4) !important;
+				transform: translateY(-2px) !important;
+				box-shadow: 0 4px 16px rgba(0,0,0,0.7) !important;
 			}
 		}
 		
@@ -4504,11 +4527,8 @@ function preloadVideos() {
 		if (isMobile) {
 			video.setAttribute('playsinline', 'true');
 			video.setAttribute('webkit-playsinline', 'true');
-			// REMOVED: size restrictions to allow full container usage
-			// video.style.maxWidth = '360px'; // Limit rendering size for mobile
-			// video.style.maxHeight = '240px';
-			video.style.width = '100%'; // Fill container properly
-			video.style.height = '100%'; // Fill container properly
+			video.style.maxWidth = '360px'; // Limit rendering size for mobile
+			video.style.maxHeight = '240px';
 		}
 		
 		video.src = url; // Direct URL or mobile-optimized URL
@@ -5152,19 +5172,13 @@ function playCurrentInlineAd(){
 				
 				// Mobile-specific size and quality constraints
 				if (window.YOUTUBE_MUSIC_MODE.tier === 'ultraLow') {
-					// REMOVED: size restrictions to allow full container usage
-					// adVideo.style.maxWidth = '240px';  // Phone-optimized size
-					// adVideo.style.maxHeight = '135px'; // 240p aspect ratio
-					adVideo.style.width = '100%';  // Fill container properly
-					adVideo.style.height = '100%'; // Fill container properly
-					console.log('[MOBILE-OPTIMIZATION] Phone ultra-low quality: Full container size (no cropping)');
+					adVideo.style.maxWidth = '240px';  // Phone-optimized size
+					adVideo.style.maxHeight = '135px'; // 240p aspect ratio
+					console.log('[MOBILE-OPTIMIZATION] Phone ultra-low quality: 240x135 max resolution');
 				} else {
-					// REMOVED: size restrictions to allow full container usage
-					// adVideo.style.maxWidth = '360px';  // Mobile-optimized size
-					// adVideo.style.maxHeight = '240px'; // 360p aspect ratio
-					adVideo.style.width = '100%';  // Fill container properly
-					adVideo.style.height = '100%'; // Fill container properly
-					console.log('[MOBILE-OPTIMIZATION] Mobile standard quality: Full container size (no cropping)');
+					adVideo.style.maxWidth = '360px';  // Mobile-optimized size
+					adVideo.style.maxHeight = '240px'; // 360p aspect ratio
+					console.log('[MOBILE-OPTIMIZATION] Mobile low quality: 360x240 max resolution');
 				}
 				
 				console.log('[MOBILE-OPTIMIZATION] Video element configured for mobile device');
@@ -7225,10 +7239,16 @@ function initNetflixPreview() {
 	}
 	
 	// Detect device type for different behavior
-	const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+	const isMobile = /Mobi|Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
 		|| window.matchMedia('(max-width: 700px)').matches;
 	
-	console.log(`[NETFLIX-PREVIEW] Device detected: ${isMobile ? 'Mobile' : 'Desktop'} - Initializing Netflix-style preview`);
+	// Detect tablet specifically (iPad or Android tablet in landscape/portrait)
+	const isTablet = (/iPad/i.test(navigator.userAgent) || 
+		(/Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent))) ||
+		window.matchMedia('(min-width: 701px) and (max-width: 1024px)').matches;
+	
+	const deviceType = isMobile ? 'Mobile' : (isTablet ? 'Tablet' : 'Desktop');
+	console.log(`[NETFLIX-PREVIEW] Device detected: ${deviceType} - Initializing Netflix-style preview`);
 	
 	function getRandomVideo() {
 		console.log('[NETFLIX-PREVIEW] Getting random video...');
@@ -7264,7 +7284,9 @@ function initNetflixPreview() {
 		
 		console.log('[NETFLIX-PREVIEW] Original video array length:', originalVideoArray.length);
 		console.log('[NETFLIX-PREVIEW] Video debugging info:', {
+			deviceType: deviceType,
 			isMobile: isMobile,
+			isTablet: isTablet,
 			'typeof mp4Ads': typeof mp4Ads,
 			'typeof mobileMp4Ads': typeof mobileMp4Ads,
 			'window.mp4Ads': !!window.mp4Ads,
@@ -7292,10 +7314,10 @@ function initNetflixPreview() {
 		
 		const randomIndex = Math.floor(Math.random() * videoArray.length);
 		const selectedVideo = videoArray[randomIndex];
-		console.log(`[NETFLIX-PREVIEW] ${isMobile ? 'Mobile' : 'Desktop'} - Selected random GOOGLE video ${randomIndex + 1}/${videoArray.length}:`, selectedVideo);
+		console.log(`[NETFLIX-PREVIEW] ${deviceType} - Selected random GOOGLE video ${randomIndex + 1}/${videoArray.length}:`, selectedVideo);
 		
-		// Additional debugging for desktop video issues
-		if (!isMobile) {
+		// Additional debugging for desktop video issues (desktop only, not tablets)
+		if (!isMobile && !isTablet) {
 			console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video debugging:', {
 				videoArrayLength: videoArray.length,
 				selectedVideo: selectedVideo,
@@ -7330,8 +7352,8 @@ function initNetflixPreview() {
 		
 		// Enhanced video loading verification for desktop debugging
 		heroVideo.addEventListener('loadedmetadata', () => {
-			console.log(`[NETFLIX-PREVIEW] Video metadata loaded successfully for ${isMobile ? 'mobile' : 'desktop'}`);
-			if (!isMobile) {
+			console.log(`[NETFLIX-PREVIEW] Video metadata loaded successfully for ${deviceType.toLowerCase()}`);
+			if (!isMobile && !isTablet) {
 				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video metadata:', {
 					videoWidth: heroVideo.videoWidth,
 					videoHeight: heroVideo.videoHeight,
@@ -7342,8 +7364,8 @@ function initNetflixPreview() {
 		}, { once: true });
 		
 		heroVideo.addEventListener('canplay', () => {
-			console.log(`[NETFLIX-PREVIEW] Video can start playing for ${isMobile ? 'mobile' : 'desktop'}`);
-			if (!isMobile) {
+			console.log(`[NETFLIX-PREVIEW] Video can start playing for ${deviceType.toLowerCase()}`);
+			if (!isMobile && !isTablet) {
 				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video ready to play:', {
 					readyState: heroVideo.readyState,
 					networkState: heroVideo.networkState,
@@ -7353,8 +7375,8 @@ function initNetflixPreview() {
 		}, { once: true });
 		
 		heroVideo.addEventListener('loadstart', () => {
-			console.log(`[NETFLIX-PREVIEW] Video loading started for ${isMobile ? 'mobile' : 'desktop'}`);
-			if (!isMobile) {
+			console.log(`[NETFLIX-PREVIEW] Video loading started for ${deviceType.toLowerCase()}`);
+			if (!isMobile && !isTablet) {
 				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video loading started - source:', heroVideo.src);
 			}
 		}, { once: true });
@@ -7362,19 +7384,19 @@ function initNetflixPreview() {
 		// Show video overlay
 		heroVideo.style.display = 'block';
 		
-		// Enhanced desktop video visibility fix
-		if (!isMobile) {
+		// Enhanced desktop video visibility fix (desktop only, not tablets)
+		if (!isMobile && !isTablet) {
 			heroVideo.style.visibility = 'visible';
 			heroVideo.style.zIndex = '10';
 			console.log('[NETFLIX-PREVIEW-DESKTOP] Enhanced desktop video visibility applied');
 		}
 		
-		// Apply Netflix mobile layout changes (mobile only)
-		if (isMobile) {
+		// Apply Netflix layout changes (mobile and tablet)
+		if (isMobile || isTablet) {
 			const heroSection = document.querySelector('.hero');
 			if (heroSection) {
 				heroSection.classList.add('netflix-video-playing');
-				console.log('[NETFLIX-PREVIEW] Applied Netflix mobile layout - buttons moved to corner');
+				console.log(`[NETFLIX-PREVIEW] Applied Netflix ${deviceType.toLowerCase()} layout - buttons moved to corner`);
 			}
 		}
 		
@@ -7391,8 +7413,8 @@ function initNetflixPreview() {
 		// Play video with enhanced desktop debugging
 		const playPromise = heroVideo.play();
 		playPromise.then(() => {
-			console.log(`[NETFLIX-PREVIEW] Video preview started successfully on ${isMobile ? 'mobile' : 'desktop'}`);
-			if (!isMobile) {
+			console.log(`[NETFLIX-PREVIEW] Video preview started successfully on ${deviceType.toLowerCase()}`);
+			if (!isMobile && !isTablet) {
 				console.log('[NETFLIX-PREVIEW-DESKTOP] Desktop video playing successfully:', {
 					currentTime: heroVideo.currentTime,
 					paused: heroVideo.paused,
@@ -7402,8 +7424,8 @@ function initNetflixPreview() {
 				});
 			}
 		}).catch(error => {
-			console.warn(`[NETFLIX-PREVIEW] Video play failed on ${isMobile ? 'mobile' : 'desktop'}:`, error);
-			if (!isMobile) {
+			console.warn(`[NETFLIX-PREVIEW] Video play failed on ${deviceType.toLowerCase()}:`, error);
+			if (!isMobile && !isTablet) {
 				console.error('[NETFLIX-PREVIEW-DESKTOP] Desktop video play error details:', {
 					error: error.name,
 					message: error.message,
